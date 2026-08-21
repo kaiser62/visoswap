@@ -156,6 +156,28 @@ line number is the upstream number **+5** — and for `models_processor.py` the 
 then shift everything below line 14 further. Read this table as evidence against upstream, which
 is the stable reference, and re-derive against the vendored file when editing it.
 
+**Resolved for `models_processor.py` (plan 01-03 Task 2, 2026-08-21).** The file is now
+vendored and de-Qt'd, so the eight emission sites no longer exist as lines. What survives is the
+method that contained each one. Anyone re-adding progress via the `on_model_load` callback above
+should reinstate the calls at these positions in `visoswap/processors/models_processor.py`:
+
+| Upstream line | Was | Vendored anchor |
+|---|---|---|
+| 128 | `model_loading_signal` | first statement inside `with self.model_lock:` in `load_model` (def at vendored :128) |
+| 142 | `model_loaded_signal` | just before `return model_instance` in `load_model` |
+| 149 | `model_loading_signal` | first statement inside `if not self.dfm_models.get(...)` in `load_dfm_model` (def at vendored :146) |
+| 163 | `model_loaded_signal` | after the `try/except`, before `return self.dfm_models[dfm_model]` |
+| 170 | `model_loading_signal` | top of `load_model_trt` (def at vendored :165) |
+| 181 | `model_loaded_signal` | just before `return model_instance` in `load_model_trt` |
+| 280 | `model_loading_signal` | first statement inside `if not self.models[model_name]:` in `load_inswapper_iss_emap` (def at vendored :266) |
+| 283 | `model_loaded_signal` | after `self.emap = ...` in `load_inswapper_iss_emap` |
+
+`showModelLoadingProgressBar` and `hideModelLoadProgressBar` (upstream 214-219) were deleted
+outright; they sat between `delete_models_trt` and `switch_providers_priority` (vendored :210).
+The commented-out `# self.showModelLoadingProgressBar()` at vendored :166 was left exactly as
+upstream wrote it, so the file keeps diffing clean -- it is upstream's own dead comment, not a
+stub this project introduced.
+
 ## What disagreed with the plan
 
 One thing, minor and in the plan's own prose rather than in the measurement:

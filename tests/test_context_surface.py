@@ -18,6 +18,7 @@ none of the engine dependencies. If this file cannot import it, that is a
 failure, not a reason to stand down.
 """
 
+import ast
 import dataclasses
 from pathlib import Path
 
@@ -153,4 +154,72 @@ def test_surface_document_names_every_kept_field():
         "EngineContext fields absent from {}: {}".format(
             matches[0].relative_to(REPO_ROOT), missing
         )
+    )
+
+
+
+def _context_reads(path):
+    """Every ``<x>.context.<attr>`` attribute name read in one source file.
+
+    Parsed rather than imported: this file must load on an interpreter with no
+    engine dependencies, and ``models_processor`` needs torch and onnxruntime.
+
+    Scoped to files that name ``EngineContext``, because ``self.context`` is not
+    a unique name in the vendored tree: ``utils/tensorrt_predictor.py`` uses it
+    for a TensorRT execution context and reads ``set_tensor_address``,
+    ``execute_v2`` and friends off it. Those are nothing to do with this
+    boundary. Keying on the import is what tells the two apart, and it picks up
+    ``frame_worker.py`` automatically when plan 01-04 lands it.
+    """
+    source = path.read_text(encoding="utf-8")
+    if "EngineContext" not in source:
+        return set()
+    tree = ast.parse(source)
+    reads = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute):
+            continue
+        base = node.value
+        if isinstance(base, ast.Attribute) and base.attr == "context":
+            reads.add(node.attr)
+        elif isinstance(base, ast.Name) and base.id == "context":
+            reads.add(node.attr)
+    return reads
+
+
+def test_every_context_read_in_the_vendored_tree_resolves_to_a_field():
+    """The consumer side of the contract, which the field list alone does not cover.
+
+    ``test_engine_context_carries_exactly_the_kept_fields`` pins what the context
+    *offers*. This pins what the vendored code *asks for*. The two can diverge in
+    the direction that hurts: a read of a field that was dropped raises
+    ``AttributeError`` at first call, deep inside model loading, with no import-time
+    warning -- and Phase 1 executes none of these paths, so nothing else here would
+    catch it. Plan 01-03 names exactly this as the risk in its key_links.
+
+    Plan 01-04 rewrites roughly fifteen more of these reads in ``frame_worker.py``;
+    this test covers them the moment that file lands, with no edit.
+    """
+    field_names = {f.name for f in dataclasses.fields(EngineContext)}
+
+    offenders = {}
+    files_read = 0
+    for path in sorted((REPO_ROOT / "visoswap").rglob("*.py")):
+        reads = _context_reads(path)
+        if reads:
+            files_read += 1
+        unknown = sorted(reads - field_names)
+        if unknown:
+            offenders[str(path.relative_to(REPO_ROOT))] = unknown
+
+    assert files_read, (
+        "No EngineContext consumer under visoswap/ reads self.context at all. "
+        "tree lost its EngineContext consumers or this scan stopped finding them; "
+        "either way it is passing vacuously."
+    )
+    assert not offenders, (
+        "Vendored code reads context attributes that EngineContext does not "
+        "define: {}. Either the read should have been dropped with the rest of "
+        "the main_window surface, or 01-CONTEXT-SURFACE.md is wrong about what "
+        "is kept.".format(offenders)
     )

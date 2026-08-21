@@ -20,9 +20,9 @@ VISOSWAP_ROOT = REPO_ROOT / "visoswap"
 PROBE = Path(__file__).resolve().parent / "_qt_guard_probe.py"
 
 #: The only vendored modules allowed to fail the Qt gate, because they have not
-#: been de-Qt'd yet. Plan 01-03 lands ``models_processor``; plan 01-04 lands
-#: ``frame_worker`` and **empties this set** -- deleting these two lines is the
-#: whole of that plan's gate work.
+#: been de-Qt'd yet. Plan 01-03 landed ``models_processor`` and removed it from
+#: here; plan 01-04 lands ``frame_worker`` and **empties this set** -- deleting
+#: the one remaining line is the whole of that plan's gate work.
 #:
 #: Both the import gate and the static source scan read this one set, so a
 #: module can never be excluded from one and not the other. Everything else is
@@ -30,7 +30,6 @@ PROBE = Path(__file__).resolve().parent / "_qt_guard_probe.py"
 #: newly vendored file impossible rather than merely unlikely.
 PENDING_QT_STRIP = frozenset(
     {
-        "visoswap.processors.models_processor",
         "visoswap.processors.workers.frame_worker",
     }
 )
