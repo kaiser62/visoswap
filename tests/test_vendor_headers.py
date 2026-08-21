@@ -36,9 +36,22 @@ ATTRIBUTION_HEADER = (
 #: upstream. Only the attribute *surface* it has to cover was derived from
 #: upstream, and a measured list of attribute names is not copyrightable
 #: expression.
+#:
+#: ``engine.py`` -- ``Engine`` and ``FaceCard``, the project's own published API.
+#: The three-method surface is this project's design, and ``FaceCard`` is a
+#: deliberate *reduction* of upstream's ``TargetFaceCardButton`` to the three
+#: members the swap pipeline actually reads. The call sequences it performs
+#: against vendored code are interface use, not copied expression.
+#:
+#: This stays an explicit per-file entry rather than becoming a pattern. A
+#: pattern -- "anything not under ``processors/``", say -- would exempt the next
+#: vendored file that happened to land outside the matched tree, and would do it
+#: silently. Adding a name here costs a reviewed edit to a test, which is exactly
+#: the price this gate exists to charge.
 PROJECT_AUTHORED = frozenset(
     {
         "processors/context.py",
+        "engine.py",
     }
 )
 
