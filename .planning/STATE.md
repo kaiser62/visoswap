@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Vendor the Engine & Strip Qt
 status: in-progress
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-08-21T04:02:20.892Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-08-21T04:21:28.226Z"
 last_activity: 2026-08-21
 last_activity_desc: "Completed 01-01: package skeleton, GPLv3 licensing, and the Qt-reachability gate proven on the faceutil.py tracer"
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 4
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-21)
 ## Current Position
 
 Phase: 1 of 6 (Vendor the Engine & Strip Qt)
-Plan: 2 of 4 in current phase
+Plan: 3 of 4 in current phase
 Status: Ready to execute
 Last activity: 2026-08-21 — Completed 01-01: package skeleton, GPLv3 licensing, and the Qt-reachability gate proven on the faceutil.py tracer
 
-Progress: [██░░░░░░░░] 25% (of Phase 1's 4 plans)
+Progress: [█████░░░░░] 50% (of Phase 1's 4 plans)
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Progress: [██░░░░░░░░] 25% (of Phase 1's 4 plans)
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 01 P01 | 25 | 2 tasks | 14 files |
+| Phase 01 P02 | 30 min | 3 tasks | 27 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,9 @@ Recent decisions affecting current work:
 - [Phase 1]: Probe exit codes separate CLEAN / QT_REACHED / DEPS_MISSING / IMPORT_ERROR so a missing engine dependency can never read as a Qt-cleanliness pass.
 - [Phase 1]: The vendored-file attribution header is byte-identical across files (no per-file origin line) so the header gate matches exactly rather than pattern-guessing.
 - [Phase 1]: NOTICE records the upstream revision as explicitly undeterminable, quoting the git error, rather than leaving provenance blank.
+- [Phase 1]: Vendor at the byte level so CRLF survives and each file is provably upstream-plus-rewrite-map and nothing else
+- [Phase 1]: PENDING_QT_STRIP lives in conftest.py so the import gate and the static Qt scan read one exclusion set and cannot diverge
+- [Phase 1]: Static Qt scan strips COMMENT tokens only, never STRING tokens: a Qt name in a string is reachable via importlib
 
 ### Pending Todos
 
@@ -92,6 +96,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-21T04:02:20.875Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-08-21T04:21:28.217Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
