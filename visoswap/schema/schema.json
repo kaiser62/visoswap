@@ -1,0 +1,1015 @@
+{
+  "schema": {
+    "generated": "2026-08-22",
+    "licence": "Derived from VisoMaster (https://github.com/visomaster/VisoMaster), which is licensed GPLv3; this derived file inherits that licence like the rest of the vendored tree. See NOTICE and LICENSE.",
+    "source": "D:/Visomaster",
+    "version": 1
+  },
+  "widgets": {
+    "AudioMuxingToggle": {
+      "default": true,
+      "tier": "global",
+      "type": "toggle"
+    },
+    "AutoColorBlendAmountSlider": {
+      "default": 80,
+      "tier": "project",
+      "type": "int"
+    },
+    "AutoColorEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "AutoColorTransferTypeSelection": {
+      "default": "Test",
+      "tier": "project",
+      "type": "selection"
+    },
+    "AutoRotationToggle": {
+      "default": false,
+      "tier": "global",
+      "type": "toggle"
+    },
+    "AutoSwapToggle": {
+      "default": false,
+      "tier": "global",
+      "type": "toggle"
+    },
+    "BackgroundBlurParserSlider": {
+      "default": 5,
+      "tier": "project",
+      "type": "int"
+    },
+    "BackgroundParserSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "BorderBlurSlider": {
+      "default": 10,
+      "tier": "project",
+      "type": "int"
+    },
+    "BorderBottomSlider": {
+      "default": 10,
+      "tier": "project",
+      "type": "int"
+    },
+    "BorderLeftSlider": {
+      "default": 10,
+      "tier": "project",
+      "type": "int"
+    },
+    "BorderRightSlider": {
+      "default": 10,
+      "tier": "project",
+      "type": "int"
+    },
+    "BorderTopSlider": {
+      "default": 10,
+      "tier": "project",
+      "type": "int"
+    },
+    "ClipAmountSlider": {
+      "default": 50,
+      "tier": "project",
+      "type": "int"
+    },
+    "ClipEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "ClipText": {
+      "default": "",
+      "tier": "project",
+      "type": "text"
+    },
+    "ColorBlueSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "ColorBrightnessDecimalSlider": {
+      "default": 1.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "ColorContrastDecimalSlider": {
+      "default": 1.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "ColorEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "ColorGammaDecimalSlider": {
+      "default": 1.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "ColorGreenSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "ColorHueDecimalSlider": {
+      "default": 0.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "ColorNoiseDecimalSlider": {
+      "default": 0.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "ColorRedSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "ColorSaturationDecimalSlider": {
+      "default": 1.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "ColorSharpnessDecimalSlider": {
+      "default": 1.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "DFLXSegEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "DFLXSegSizeSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "DFMAmpMorphSlider": {
+      "default": 50,
+      "tier": "project",
+      "type": "int"
+    },
+    "DFMModelSelection": {
+      "default": null,
+      "tier": "project",
+      "type": "selection"
+    },
+    "DFMRCTColorToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "DetectFromPointsToggle": {
+      "default": false,
+      "tier": "global",
+      "type": "toggle"
+    },
+    "DetectorModelSelection": {
+      "default": "RetinaFace",
+      "tier": "global",
+      "type": "selection"
+    },
+    "DetectorScoreSlider": {
+      "default": 50,
+      "tier": "global",
+      "type": "int"
+    },
+    "DifferencingAmountSlider": {
+      "default": 4,
+      "tier": "project",
+      "type": "int"
+    },
+    "DifferencingBlendAmountSlider": {
+      "default": 5,
+      "tier": "project",
+      "type": "int"
+    },
+    "DifferencingEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "EmbMergeMethodSelection": {
+      "default": "Mean",
+      "tier": "global",
+      "type": "selection"
+    },
+    "EyeBrowsDirectionDecimalSlider": {
+      "default": 0.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "EyeBrowsMakeupBlendAmountDecimalSlider": {
+      "default": 0.05,
+      "tier": "project",
+      "type": "float"
+    },
+    "EyeBrowsMakeupBlueSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "EyeBrowsMakeupEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "EyeBrowsMakeupGreenSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "EyeBrowsMakeupRedSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "EyeGazeHorizontalDecimalSlider": {
+      "default": 0.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "EyeGazeVerticalDecimalSlider": {
+      "default": 0.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "EyeGlassesParserSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "EyeLeftXAmountSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "EyeLeftYAmountSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "EyeRightXAmountSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "EyeRightYAmountSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "EyeWinkDecimalSlider": {
+      "default": 0.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "EyesOpenRatioDecimalSlider": {
+      "default": 0.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "FaceAdjEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "FaceBlurParserSlider": {
+      "default": 5,
+      "tier": "project",
+      "type": "int"
+    },
+    "FaceEditorBlurAmountSlider": {
+      "default": 5,
+      "tier": "project",
+      "type": "int"
+    },
+    "FaceEditorCropScaleDecimalSlider": {
+      "default": 2.5,
+      "tier": "project",
+      "type": "float"
+    },
+    "FaceEditorEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "FaceEditorTypeSelection": {
+      "default": "Human-Face",
+      "tier": "project",
+      "type": "selection"
+    },
+    "FaceEditorVYRatioDecimalSlider": {
+      "default": -0.125,
+      "tier": "project",
+      "type": "float"
+    },
+    "FaceExpressionAnimationRegionSelection": {
+      "default": "all",
+      "tier": "project",
+      "type": "selection"
+    },
+    "FaceExpressionCropScaleDecimalSlider": {
+      "default": 2.3,
+      "tier": "project",
+      "type": "float"
+    },
+    "FaceExpressionEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "FaceExpressionFriendlyFactorDecimalSlider": {
+      "default": 1.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "FaceExpressionNormalizeLipsEnableToggle": {
+      "default": true,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "FaceExpressionNormalizeLipsThresholdDecimalSlider": {
+      "default": 0.03,
+      "tier": "project",
+      "type": "float"
+    },
+    "FaceExpressionRetargetingEyesEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "FaceExpressionRetargetingEyesMultiplierDecimalSlider": {
+      "default": 1.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "FaceExpressionRetargetingLipsEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "FaceExpressionRetargetingLipsMultiplierDecimalSlider": {
+      "default": 1.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "FaceExpressionVYRatioDecimalSlider": {
+      "default": -0.125,
+      "tier": "project",
+      "type": "float"
+    },
+    "FaceFidelityWeight2DecimalSlider": {
+      "default": 0.9,
+      "tier": "project",
+      "type": "float"
+    },
+    "FaceFidelityWeightDecimalSlider": {
+      "default": 0.9,
+      "tier": "project",
+      "type": "float"
+    },
+    "FaceLikenessEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "FaceLikenessFactorDecimalSlider": {
+      "default": 0.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "FaceMakeupBlendAmountDecimalSlider": {
+      "default": 0.05,
+      "tier": "project",
+      "type": "float"
+    },
+    "FaceMakeupBlueSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "FaceMakeupEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "FaceMakeupGreenSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "FaceMakeupRedSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "FaceParserEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "FaceParserHairMakeupBlendAmountDecimalSlider": {
+      "default": 0.2,
+      "tier": "project",
+      "type": "float"
+    },
+    "FaceParserHairMakeupBlueSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "FaceParserHairMakeupEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "FaceParserHairMakeupGreenSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "FaceParserHairMakeupRedSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "FaceParserLipsMakeupBlendAmountDecimalSlider": {
+      "default": 0.2,
+      "tier": "project",
+      "type": "float"
+    },
+    "FaceParserLipsMakeupBlueSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "FaceParserLipsMakeupEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "FaceParserLipsMakeupGreenSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "FaceParserLipsMakeupRedSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "FaceParserSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "FaceRestorerBlend2Slider": {
+      "default": 100,
+      "tier": "project",
+      "type": "int"
+    },
+    "FaceRestorerBlendSlider": {
+      "default": 100,
+      "tier": "project",
+      "type": "int"
+    },
+    "FaceRestorerDetType2Selection": {
+      "default": "Original",
+      "tier": "project",
+      "type": "selection"
+    },
+    "FaceRestorerDetTypeSelection": {
+      "default": "Reference",
+      "tier": "project",
+      "type": "selection"
+    },
+    "FaceRestorerEnable2Toggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "FaceRestorerEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "FaceRestorerType2Selection": {
+      "default": "GFPGAN-v1.4",
+      "tier": "project",
+      "type": "selection"
+    },
+    "FaceRestorerTypeSelection": {
+      "default": "GFPGAN-v1.4",
+      "tier": "project",
+      "type": "selection"
+    },
+    "FaceScaleAmountSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "FinalBlendAdjEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "FinalBlendAmountSlider": {
+      "default": 1,
+      "tier": "project",
+      "type": "int"
+    },
+    "FrameEnhancerBlendSlider": {
+      "default": 100,
+      "tier": "global",
+      "type": "int"
+    },
+    "FrameEnhancerEnableToggle": {
+      "default": false,
+      "tier": "global",
+      "type": "toggle"
+    },
+    "FrameEnhancerTypeSelection": {
+      "default": "RealEsrgan-x2-Plus",
+      "tier": "global",
+      "type": "selection"
+    },
+    "HairMakeupBlendAmountDecimalSlider": {
+      "default": 0.05,
+      "tier": "project",
+      "type": "float"
+    },
+    "HairMakeupBlueSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "HairMakeupEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "HairMakeupGreenSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "HairMakeupRedSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "HairParserSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "HeadPitchSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "HeadRollSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "HeadYawSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "InputFacesFolderRecursiveToggle": {
+      "default": false,
+      "tier": "global",
+      "type": "toggle"
+    },
+    "KpsScaleSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "KpsXSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "KpsYSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "LandmarkDetectModelSelection": {
+      "default": "203",
+      "tier": "global",
+      "type": "selection"
+    },
+    "LandmarkDetectScoreSlider": {
+      "default": 50,
+      "tier": "global",
+      "type": "int"
+    },
+    "LandmarkDetectToggle": {
+      "default": false,
+      "tier": "global",
+      "type": "toggle"
+    },
+    "LandmarksPositionAdjEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "LeftEyeParserSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "LeftEyebrowParserSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "LipsCloseOpenSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "LipsMakeupBlendAmountDecimalSlider": {
+      "default": 0.05,
+      "tier": "project",
+      "type": "float"
+    },
+    "LipsMakeupBlueSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "LipsMakeupEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "LipsMakeupGreenSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "LipsMakeupRedSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "LipsOpenRatioDecimalSlider": {
+      "default": 0.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "LowerLipParserSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "ManualRotationAngleSlider": {
+      "default": 0,
+      "tier": "global",
+      "type": "int"
+    },
+    "ManualRotationEnableToggle": {
+      "default": false,
+      "tier": "global",
+      "type": "toggle"
+    },
+    "MaxDFMModelsSlider": {
+      "default": 1,
+      "tier": "global",
+      "type": "int"
+    },
+    "MaxFacesToDetectSlider": {
+      "default": 20,
+      "tier": "global",
+      "type": "int"
+    },
+    "MouthGrinDecimalSlider": {
+      "default": 0.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "MouthLeftXAmountSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "MouthLeftYAmountSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "MouthParserSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "MouthPoutingDecimalSlider": {
+      "default": 0.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "MouthPursingDecimalSlider": {
+      "default": 0.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "MouthRightXAmountSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "MouthRightYAmountSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "MouthSmileDecimalSlider": {
+      "default": 0.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "NeckParserSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "NoseParserSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "NoseXAmountSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "NoseYAmountSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "OccluderEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "OccluderSizeSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "OccluderXSegBlurSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "OverallMaskBlendAmountSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "ProvidersPrioritySelection": {
+      "default": "CUDA",
+      "tier": "global",
+      "type": "selection"
+    },
+    "RecognitionModelSelection": {
+      "default": "Inswapper128ArcFace",
+      "tier": "global",
+      "type": "selection"
+    },
+    "RestoreEyesBlendAmountSlider": {
+      "default": 50,
+      "tier": "project",
+      "type": "int"
+    },
+    "RestoreEyesEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "RestoreEyesFeatherBlendSlider": {
+      "default": 10,
+      "tier": "project",
+      "type": "int"
+    },
+    "RestoreEyesMouthBlurSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "RestoreEyesSizeFactorDecimalSlider": {
+      "default": 3.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "RestoreEyesSpacingOffsetSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "RestoreMouthBlendAmountSlider": {
+      "default": 50,
+      "tier": "project",
+      "type": "int"
+    },
+    "RestoreMouthEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "RestoreMouthFeatherBlendSlider": {
+      "default": 10,
+      "tier": "project",
+      "type": "int"
+    },
+    "RestoreMouthSizeFactorSlider": {
+      "default": 25,
+      "tier": "project",
+      "type": "int"
+    },
+    "RestoreXEyesOffsetSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "RestoreXEyesRadiusFactorDecimalSlider": {
+      "default": 1.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "RestoreXMouthOffsetSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "RestoreXMouthRadiusFactorDecimalSlider": {
+      "default": 1.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "RestoreYEyesOffsetSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "RestoreYEyesRadiusFactorDecimalSlider": {
+      "default": 1.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "RestoreYMouthOffsetSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "RestoreYMouthRadiusFactorDecimalSlider": {
+      "default": 1.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "RightEyeParserSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "RightEyebrowParserSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "ShowAllDetectedFacesBBoxToggle": {
+      "default": false,
+      "tier": "global",
+      "type": "toggle"
+    },
+    "ShowLandmarksEnableToggle": {
+      "default": false,
+      "tier": "global",
+      "type": "toggle"
+    },
+    "SimilarityThresholdSlider": {
+      "default": 60,
+      "tier": "project",
+      "type": "int"
+    },
+    "SimilarityTypeSelection": {
+      "default": "Opal",
+      "tier": "global",
+      "type": "selection"
+    },
+    "StrengthAmountSlider": {
+      "default": 100,
+      "tier": "project",
+      "type": "int"
+    },
+    "StrengthEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "SwapModelSelection": {
+      "default": "Inswapper128",
+      "tier": "project",
+      "type": "selection"
+    },
+    "SwapperResSelection": {
+      "default": "128",
+      "tier": "project",
+      "type": "selection"
+    },
+    "TargetMediaFolderRecursiveToggle": {
+      "default": false,
+      "tier": "global",
+      "type": "toggle"
+    },
+    "ThemeSelection": {
+      "default": "Dark",
+      "tier": "global",
+      "type": "selection"
+    },
+    "UpperLipParserSlider": {
+      "default": 0,
+      "tier": "project",
+      "type": "int"
+    },
+    "VideoPlaybackCustomFpsSlider": {
+      "default": 30,
+      "tier": "global",
+      "type": "int"
+    },
+    "VideoPlaybackCustomFpsToggle": {
+      "default": false,
+      "tier": "global",
+      "type": "toggle"
+    },
+    "ViewFaceCompareEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "ViewFaceMaskEnableToggle": {
+      "default": false,
+      "tier": "project",
+      "type": "toggle"
+    },
+    "WebCamMaxFPSSelection": {
+      "default": "30",
+      "tier": "global",
+      "type": "selection"
+    },
+    "WebcamBackendSelection": {
+      "default": "Default",
+      "tier": "global",
+      "type": "selection"
+    },
+    "WebcamEnableToggle": {
+      "default": false,
+      "tier": "global",
+      "type": "toggle"
+    },
+    "WebcamMaxNoSelection": {
+      "default": "1",
+      "tier": "global",
+      "type": "selection"
+    },
+    "WebcamMaxResSelection": {
+      "default": "1280x720",
+      "tier": "global",
+      "type": "selection"
+    },
+    "XAxisMovementDecimalSlider": {
+      "default": 0.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "YAxisMovementDecimalSlider": {
+      "default": 0.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "ZAxisMovementDecimalSlider": {
+      "default": 1.0,
+      "tier": "project",
+      "type": "float"
+    },
+    "nThreadsSlider": {
+      "default": 2,
+      "tier": "global",
+      "type": "int"
+    }
+  }
+}

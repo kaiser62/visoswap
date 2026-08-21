@@ -43,6 +43,19 @@ ATTRIBUTION_HEADER = (
 #: members the swap pipeline actually reads. The call sequences it performs
 #: against vendored code are interface use, not copied expression.
 #:
+#: ``schema/__init__.py``, ``settings/__init__.py``, ``settings/db.py`` and
+#: ``settings/store.py`` -- Phase 3's typed settings schema and its three-tier
+#: store. One stated reason covers all four: they are written for VisoSwap and
+#: copy nothing from upstream. What was derived is the *measured shape* of
+#: upstream's data -- a list of key names, the widget shape each one has, and
+#: which of two tiers it belongs to -- and a list of measured names is not
+#: copyrightable expression. The SQL, the resolution order and the JSON encoding
+#: are this project's own design; upstream has no database at all.
+#: ``schema.json`` is not a ``.py`` file so no gate walks it, but it *is* derived
+#: from GPLv3 material -- that is what the licence note in its own header object
+#: records, and it is why it needs no exemption here rather than being an
+#: oversight.
+#:
 #: This stays an explicit per-file entry rather than becoming a pattern. A
 #: pattern -- "anything not under ``processors/``", say -- would exempt the next
 #: vendored file that happened to land outside the matched tree, and would do it
@@ -52,6 +65,10 @@ PROJECT_AUTHORED = frozenset(
     {
         "processors/context.py",
         "engine.py",
+        "schema/__init__.py",
+        "settings/__init__.py",
+        "settings/db.py",
+        "settings/store.py",
     }
 )
 
