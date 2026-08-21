@@ -45,11 +45,11 @@ downstream phase has invested in an API around it. Nothing before this phase exi
   4. `frame_worker.py`'s two `app/ui` action-module imports that pulled in PySide6 transitively (`get_pixmap_from_frame`, `update_parameters_and_control_from_marker`) are removed, along with the Qt boolean reads (`swapfacesButton.isChecked()`, `editFacesButton.isChecked()`) and the display-path signal/frame-queue plumbing (former lines 60-78) — all replaced by reads on the new context object where still needed
   5. A `LICENSE` file (GPLv3 full text) exists at the repo root, vendored files carry a VisoMaster attribution header, and `grep -ril "pyside\|qtcore\|qtwidgets" visoswap/processors/` returns no matches outside of removal-note comments
 
-**Plans**: 2/4 plans executed
+**Plans**: 3/4 plans executed
 
 - [x] 01-01-PLAN.md — Package skeleton, GPLv3 licensing, and the Qt-reachability gate proven on one tracer module
 - [x] 01-02-PLAN.md — Vendor the Qt-free bulk of `app/processors/` plus `visoswap/models/`, rewriting `app.*` imports
-- [ ] 01-03-PLAN.md — Enumerate the `main_window` attribute surface, define `EngineContext`, de-Qt `models_processor.py`
+- [x] 01-03-PLAN.md — Enumerate the `main_window` attribute surface, define `EngineContext`, de-Qt `models_processor.py`
 - [ ] 01-04-PLAN.md — De-Qt `frame_worker.py`, close the gate on the whole tree, confirm in a Qt-free virtualenv
 
 ### Phase 2: Engine API & First Swap
@@ -212,7 +212,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Vendor the Engine & Strip Qt | 2/4 | In Progress|  |
+| 1. Vendor the Engine & Strip Qt | 3/4 | In Progress|  |
 | 2. Engine API & First Swap | 0/TBD | Not started | - |
 | 3. Settings Schema & Three-Tier Resolution | 0/TBD | Not started | - |
 | 4. Backend Integration & Model Bootstrap | 0/TBD | Not started | - |
