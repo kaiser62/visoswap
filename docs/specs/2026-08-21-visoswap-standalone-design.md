@@ -51,25 +51,44 @@ installed. That is the test that the boundary is real rather than nominal.
 
 ## Engine boundary
 
-Vendor `app/processors/` (10,635 LOC). Measured Qt coupling is small:
+Vendor `app/processors/` (10,635 LOC). Measured by running the import probe
+against unmodified source with Qt blocked: **8 of the 10 modules already import
+clean**. Only two fail.
 
 - `video_processor.py` (421 LOC) is a Qt playback loop. **Dropped whole** — the
   scheduler already owns playback.
-- `models_processor.py` subclasses `QtCore.QObject` and declares two Signals
-  that nothing on our path consumes. Drop the base class and the signals.
+- `models_processor.py` imports `QtCore`, subclasses `QtCore.QObject`, and
+  declares two Signals — and beyond those, emits `model_loading_signal` /
+  `model_loaded_signal` on the host window at 8 sites (lines 128, 142, 149, 163,
+  170, 181, 280, 283) and touches `model_load_dialog` at 3 (215, 218, 219).
+  Those are the engine's only model-load progress signalling; they are deleted,
+  and the re-add path is recorded so a later phase finds a decision rather than
+  an absence.
 - `workers/frame_worker.py` (1306 LOC, the actual swap pipeline) imports no Qt
-  directly, but does import two `app/ui` action modules (lines 16-17) that pull
-  in PySide6 transitively. It calls exactly two functions from them:
+  directly, but imports two `app/ui` action modules (lines 16-17) that pull in
+  PySide6 transitively. It calls exactly two functions from them:
   `get_pixmap_from_frame` (line 57, the display path) and
   `update_parameters_and_control_from_marker` (line 43, timeline markers). Both
-  are on paths we drop, so both imports go. It also touches Qt as
-  `swapfacesButton.isChecked()` and `editFacesButton.isChecked()` (lines 48,
-  137, 163, 170), used purely as booleans, plus signal emission and frame-queue
-  plumbing confined to lines 60-78 — again the display path.
+  are on paths we drop, so both imports go. It also reads
+  `swapfacesButton.isChecked()` / `editFacesButton.isChecked()` at five sites
+  (48, 137, 163, 170, 183) purely as booleans, and signal emission plus
+  frame-queue plumbing at lines 60-78 — again the display path.
 
-`main_window` is replaced by an explicit context object carrying `control`,
-`parameters`, `target_faces`, `models_processor`, and the two former button
-flags. Across the three coupled files the surface is 15 attributes.
+`app/processors/` does **not** stand alone: it hard-imports
+`app/helpers/{downloader,miscellaneous,integrity_checker}.py` at module scope.
+`downloader` and `integrity_checker` are vendored into `visoswap/models/`; only
+the five symbols actually imported from `miscellaneous` come across.
+
+Blocking `PySide6` alone does not prove anything. `frame_worker.py` fails with
+`QtBindingsNotFoundError` raised by **`qtpy`**, not by the block. The gate blocks
+`PySide6`, `PySide2`, `PyQt5`, `PyQt6`, `qtpy`, `shiboken6`, and `shiboken2`.
+
+`main_window` is replaced by an explicit context object. The raw attribute
+surface across the coupled files is 15, but 8 of those die with
+`video_processor.py`. `EngineContext` carries **7**: `control`, `parameters`,
+`target_faces`, `models_processor`, `dfm_models_data`, `swap_faces_enabled`,
+`edit_faces_enabled` — pinned by a test so it cannot quietly grow back into a
+god object.
 
 Public API:
 
