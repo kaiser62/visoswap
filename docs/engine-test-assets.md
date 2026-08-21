@@ -196,3 +196,94 @@ against that list, so coercing them to ints would silently stop the comparison
 matching. `tests/test_engine_settings_fixture.py` names them as the *only*
 permitted string-that-parses-as-a-number, which is what keeps the "no slider
 leaked through as a string" check sharp instead of blanket.
+
+---
+
+## 3. The runtime: a sealed subprocess
+
+`tests/_engine_runner.py` is the only thing in this project that executes engine
+code. It runs as a subprocess and is **never imported by pytest**, the same shape
+as `tests/_qt_guard_probe.py` and for the same reason: the interpreter that runs
+pytest has no torch, and the interpreter that has torch also has Qt. Neither can
+both drive a test and execute the engine, so the two live on opposite sides of a
+process boundary.
+
+Before anything else is imported, a `sys.meta_path` finder is installed at index
+0 refusing three groups of roots:
+
+| Group | Roots | Why |
+|-------|-------|-----|
+| `qt` | the seven Qt bindings | Phase 1's result, enforced at runtime |
+| `visomaster` | `app` | a surviving `app.*` import means the module only works inside the source tree |
+| `backend` | `backend` | the engine is a library and must not know the web layer exists |
+
+Blocking the second and third is what turns the roadmap's Phase 2 criterion 3
+from a text search into a **runtime proof**. A grep says no line imports
+`backend`. The seal says the engine *cannot* reach it — and the two fail
+differently, so both are kept: a grep misses an `importlib` call built from a
+string, and a runtime seal misses a line nothing executes.
+
+### One block list, not three
+
+The roots are defined once in `tests/_blocked_roots.py`, a module that imports
+nothing. `conftest.py` re-exports them, `_qt_guard_probe.py` reads `QT_ROOTS` from
+them, `_engine_runner.py` reads all three groups. Two copies of a block list is
+how two gates silently diverge — one grows a root, the other keeps passing, and
+the weaker gate is the one everybody reads.
+
+The definitions do not live in `conftest.py` itself because the probe and the
+runner execute on the *engine* interpreter, which carries torch, onnxruntime and
+PySide6 but **no pytest** — measured on both
+`D:/Visomaster/dependencies/Python/python.exe` and `.venv-clean`. Neither can
+import a module that imports pytest at module scope.
+
+### Not inert
+
+A blocker is inert wherever the thing it blocks is absent, and an inert blocker
+reports exactly the same `CLEAN` as a working one. That is the lesson plan 01-04
+paid for. So the runner appends the VisoMaster checkout (`VISOMASTER_DIR`,
+default `D:/Visomaster`) to `sys.path` **before** arming, measures which sealed
+roots would genuinely have resolved, and reports it:
+
+```
+reachable_before_seal=PyQt5=no,PyQt6=no,PySide2=no,PySide6=yes,app=yes,backend=no,...
+```
+
+`PySide6=yes` and `app=yes` mean those two seals refused packages that really
+were there. `backend=no` is honest: the package does not exist until Phase 5, so
+that seal is armed and provably fires on the name, but cannot yet be shown
+non-inert. The self-test provokes each group *separately* — concluding "the seal
+is armed" from one group firing is how the other two end up unenforced.
+
+### Exit codes
+
+| Code | Label | Meaning |
+|------|-------|---------|
+| 0 | `CLEAN` | the mode completed and no sealed root was reached |
+| 1 | `SEAL_BREACHED` | a sealed root was reached, or leaked into `sys.modules` |
+| 2 | `DEPS_MISSING` | an engine dependency is not installed |
+| 3 | `ASSET_MISSING` | a required asset or fixture is not on disk |
+| 4 | `ENGINE_ERROR` | anything else |
+
+The vocabulary exists so a **harness** fault can never be read as an engine pass.
+Every one of the five is exercised by `tests/test_engine_seal.py` or by hand;
+`ASSET_MISSING` is reachable in a test because the fixture path is overridable
+via `VISOSWAP_SETTINGS_FIXTURE`. An exit code nobody has watched fire is an exit
+code nobody knows the meaning of.
+
+Exactly one machine-readable line is printed before exit, `LABEL:mode:detail`, so
+pytest attributes a failure without parsing a traceback.
+
+### Modes
+
+```
+python tests/_engine_runner.py --selftest              # arm, provoke all three groups
+python tests/_engine_runner.py --import PySide6.QtCore # show it capable of exit 1
+```
+
+Later plans add modes that actually swap a frame. This plan proves only that the
+harness is armed and capable of failing — which is what has to be true before any
+engine failure can be believed. **A failure in the runner is a harness failure; a
+failure after it is an engine failure. Keeping those separable is the point.**
+
+Run it from the repository root. Always. See section 1.

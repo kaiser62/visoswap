@@ -27,18 +27,18 @@ import importlib
 import os
 import sys
 
+# ``sys.path[0]`` is this script's own directory when it is run as a script, so
+# the shared block list resolves as a plain module -- no ``tests`` package, no
+# pytest, neither of which exists on the engine interpreter.
+from _blocked_roots import QT_ROOTS
+
 #: Every Qt binding root. All of them, for the measured reason above.
-BLOCKED_ROOTS = frozenset(
-    {
-        "PySide6",
-        "PySide2",
-        "PyQt5",
-        "PyQt6",
-        "qtpy",
-        "shiboken6",
-        "shiboken2",
-    }
-)
+#:
+#: Defined once, in ``tests/_blocked_roots.py``, and read from there by this
+#: probe, by ``tests/_engine_runner.py`` and by ``tests/conftest.py``. Plan 02-01
+#: lifted it out: two copies of a block list is how two gates silently diverge,
+#: one growing a root while the other keeps passing.
+BLOCKED_ROOTS = QT_ROOTS
 
 EXIT_CLEAN = 0
 EXIT_QT_REACHED = 1

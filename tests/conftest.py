@@ -15,9 +15,37 @@ from pathlib import Path
 
 import pytest
 
+from tests._blocked_roots import (
+    ALL_SEALED_ROOTS,
+    BACKEND_ROOTS,
+    QT_ROOTS,
+    SEALED_GROUPS,
+    VISOMASTER_ROOTS,
+)
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VISOSWAP_ROOT = REPO_ROOT / "visoswap"
 PROBE = Path(__file__).resolve().parent / "_qt_guard_probe.py"
+ENGINE_RUNNER = Path(__file__).resolve().parent / "_engine_runner.py"
+
+#: The seals, re-exported so the pytest side has one obvious import site.
+#:
+#: The definitions live in ``tests/_blocked_roots.py`` rather than inline here,
+#: and that is not a stylistic preference. ``_qt_guard_probe.py`` and
+#: ``_engine_runner.py`` both need these lists and both run on the *engine*
+#: interpreter, which carries torch, onnxruntime and PySide6 but **no pytest** --
+#: measured on both ``D:/Visomaster/dependencies/Python/python.exe`` and
+#: ``.venv-clean``. So neither can import this module, which imports pytest
+#: above. One dependency-free definition, re-exported here, keeps a single source
+#: of truth across that split without teaching a conftest to pretend pytest is
+#: optional.
+__all__ = [
+    "ALL_SEALED_ROOTS",
+    "BACKEND_ROOTS",
+    "QT_ROOTS",
+    "SEALED_GROUPS",
+    "VISOMASTER_ROOTS",
+]
 
 #: Vendored modules allowed to fail the Qt gate because they have not been
 #: de-Qt'd yet.
@@ -133,11 +161,39 @@ def run_probe(engine_python, modules) -> tuple[int, str]:
     Anything the interpreter writes to stderr is appended to the returned text
     so a crash before the probe's own reporting can still be attributed.
     """
+    return _run_subprocess([str(engine_python), str(PROBE), *modules])
+
+
+def run_engine_runner(engine_python, args, env=None) -> tuple[int, str]:
+    """Run the sealed engine runner on ``engine_python``. -> (exit_code, stdout).
+
+    ``cwd`` is the repository root and that is load-bearing, not tidiness:
+    ``models_data.models_dir`` is the relative string ``'./model_assets'`` until
+    Phase 4, and ``ModelsProcessor`` defaults to TensorRT, whose provider options
+    write a cache into a relative ``tensorrt-engines/``. From the wrong directory
+    the engine reads no weights and writes into the read-only source tree.
+    """
+    return _run_subprocess(
+        [str(engine_python), "-B", str(ENGINE_RUNNER), *args], env=env
+    )
+
+
+def _run_subprocess(command, env=None) -> tuple[int, str]:
+    """Run ``command`` from the repository root. -> (exit_code, stdout).
+
+    Anything the child writes to stderr is appended to the returned text so a
+    crash before its own reporting can still be attributed.
+    """
+    merged = None
+    if env:
+        merged = dict(os.environ)
+        merged.update(env)
     proc = subprocess.run(
-        [str(engine_python), str(PROBE), *modules],
+        command,
         capture_output=True,
         text=True,
         cwd=str(REPO_ROOT),
+        env=merged,
     )
     stdout = proc.stdout.strip()
     stderr = proc.stderr.strip()
