@@ -45,7 +45,7 @@ ATTRIBUTION_HEADER = (
 #:
 #: ``schema/__init__.py``, ``settings/__init__.py``, ``settings/db.py`` and
 #: ``settings/store.py`` -- Phase 3's typed settings schema and its three-tier
-#: store. One stated reason covers all four: they are written for VisoSwap and
+#: store. One stated reason covers all of them: they are written for VisoSwap and
 #: copy nothing from upstream. What was derived is the *measured shape* of
 #: upstream's data -- a list of key names, the widget shape each one has, and
 #: which of two tiers it belongs to -- and a list of measured names is not
@@ -55,6 +55,20 @@ ATTRIBUTION_HEADER = (
 #: from GPLv3 material -- that is what the licence note in its own header object
 #: records, and it is why it needs no exemption here rather than being an
 #: oversight.
+#:
+#: ``settings/faces.py`` -- the face-identity layer. It needs its own reason
+#: because, unlike the four above, it does contain a *transcription* rather than
+#: only a measured shape: ``cosine_similarity`` restates the five lines of
+#: arithmetic in ``ModelsProcessor.findCosineDistance``. Nothing is being
+#: smuggled past attribution by that. The original is vendored in full, under the
+#: header, a few directories away, and this repository's NOTICE and LICENSE
+#: already carry the GPLv3 obligation for the whole tree; the transcription
+#: exists so that ``import visoswap.settings`` does not require torch, and it
+#: carries a documented seam for deleting itself once Phase 4 can pass the
+#: engine's own bound method in. It is not vendored *code* -- it imports nothing
+#: from upstream and is written against the stdlib ``array`` and ``math``
+#: modules -- so the vendored-file header would be the wrong claim to make about
+#: it.
 #:
 #: This stays an explicit per-file entry rather than becoming a pattern. A
 #: pattern -- "anything not under ``processors/``", say -- would exempt the next
@@ -68,6 +82,7 @@ PROJECT_AUTHORED = frozenset(
         "schema/__init__.py",
         "settings/__init__.py",
         "settings/db.py",
+        "settings/faces.py",
         "settings/store.py",
     }
 )
