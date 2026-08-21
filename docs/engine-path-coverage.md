@@ -7,17 +7,24 @@ first.
 A vendored module that imports cleanly has been proven to parse and to reach none
 of its Qt ancestry. It has not been proven to work. Phase 1 was explicit that
 three paths — DFM, LivePortrait and CLIPseg — were vendored on that weaker
-footing, and the Broken Windows ledger carries an open item saying so. This file
-is the record of which third of that item has since been retired and which two
-thirds have not.
+footing, and the Broken Windows ledger carried an open item saying so. This file
+is the record of which third of that item has since been retired, which two
+thirds have not, and — as of plan 02-04 — how the item was disposed of.
+
+**All three verdicts below are final for Phase 2.** None is pending further work
+inside this phase.
 
 ## Status
 
-| Path | Executed? | Weights it needs | Present on this machine? | Owner |
-|------|-----------|------------------|--------------------------|-------|
-| **LivePortrait** (face editor) | **Yes** — plan 02-03, `tests/test_engine_liveportrait.py` | `model_assets/liveportrait_onnx/`: `motion_extractor.onnx` (107 MB), `warping_spade-fix.onnx` (402 MB), `warping_spade.onnx` (402 MB), `appearance_feature_extractor.onnx` (3.2 MB), `stitching.onnx`, `stitching_eye.onnx`, `stitching_lip.onnx`, `lip_array.pkl` (658 B) | **Yes, all eight** | Closed by plan 02-03 |
-| **CLIPseg** (text masking) | No — import-proven only, **deferred by decision** | `rd64-uni-refined.pth` in the models directory, plus a `ViT-B/16` CLIP backbone (~335 MB) fetched into `~/.cache/clip` on first run | **No.** `rd64-uni-refined.pth` exists nowhere on this machine outside `site-packages`, and it is absent from VisoMaster's own 62-entry model manifest — so upstream's text-masking control is non-functional on this install too. The vendoring did not break it. | **Phase 4's model bootstrap owns closing the gap.** Plan 02-04 only records it. |
-| **DFM** (DeepFaceLive models) | No — import-proven only, **deferred by decision** | At least one `.dfm` file in `model_assets/dfm_models/`, plus a populator for `EngineContext.dfm_models_data` | **No.** `model_assets/dfm_models/` contains only `.gitkeep`, and no `.dfm` file exists anywhere on the machine. | **Phase 4's model bootstrap owns closing the gap.** Plan 02-04 only records it. |
+| Path | Executed? | Weights it needs | Present on this machine? | Verdict (final) | Owner |
+|------|-----------|------------------|--------------------------|-----------------|-------|
+| **LivePortrait** (face editor) | **Yes** — plan 02-03, `tests/test_engine_liveportrait.py` | `model_assets/liveportrait_onnx/`: `motion_extractor.onnx` (107 MB), `warping_spade-fix.onnx` (402 MB), `warping_spade.onnx` (402 MB), `appearance_feature_extractor.onnx` (3.2 MB), `stitching.onnx`, `stitching_eye.onnx`, `stitching_lip.onnx`, `lip_array.pkl` (658 B) | **Yes, all eight** | **PROVEN.** Executed against real weights; roadmap criterion 4 satisfied in full. | Closed by plan 02-03 |
+| **CLIPseg** (text masking) | No — import-proven only, **deferred by decision** | `rd64-uni-refined.pth` in the models directory, plus a `ViT-B/16` CLIP backbone (~335 MB) fetched into `~/.cache/clip` on first run | **No.** `rd64-uni-refined.pth` exists nowhere on this machine outside `site-packages`, and it is absent from VisoMaster's own 62-entry model manifest — so upstream's text-masking control is non-functional on this install too. The vendoring did not break it. | **DEFERRED by decision**, per [`02-DECISION-deferred-paths.md`](../.planning/phases/02-engine-api-first-swap/02-DECISION-deferred-paths.md). Absent asset: **`rd64-uni-refined.pth`**. The path stays **vendored and left intact** — re-enabling it is a matter of supplying assets, never of re-vendoring. **Not** a failed roadmap criterion: criterion 4 names the LivePortrait editor path alone. | **Phase 4's model bootstrap** owns re-enablement. Plan 02-04 only records it. |
+| **DFM** (DeepFaceLive models) | No — import-proven only, **deferred by decision** | At least one `.dfm` file in `model_assets/dfm_models/`, plus a populator for `EngineContext.dfm_models_data` | **No.** `model_assets/dfm_models/` contains only `.gitkeep`, and no `.dfm` file exists anywhere on the machine. | **DEFERRED by decision**, per [`02-DECISION-deferred-paths.md`](../.planning/phases/02-engine-api-first-swap/02-DECISION-deferred-paths.md). Absent assets: any **`.dfm`** file under `model_assets/dfm_models/`, plus a populator for `EngineContext.dfm_models_data`. The path stays **vendored and left intact** — re-enabling it is a matter of supplying assets, never of re-vendoring. **Not** a failed roadmap criterion. | **Phase 4's model bootstrap** owns re-enablement. Plan 02-04 only records it. |
+
+Every asset named in the two deferred rows is inventoried, with its
+re-enablement path and with no fabricated digest, in
+[`engine-extra-assets.md`](engine-extra-assets.md).
 
 The decision to descope the bottom two rows is
 [`02-DECISION-deferred-paths.md`](../.planning/phases/02-engine-api-first-swap/02-DECISION-deferred-paths.md),
@@ -66,22 +73,50 @@ Three things in that line are the point:
 
 ## Re-enablement
 
+Full detail, including what must be supplied and where it must land, is in
+[`engine-extra-assets.md`](engine-extra-assets.md). In brief:
+
 **CLIPseg.** Put `rd64-uni-refined.pth` in the models directory and allow network
 access for the CLIP backbone on first run, then turn `ClipEnableToggle` on in the
 project tier. Two `torch.load` calls sit on that path — `face_masks.py:256` and
 `cliplib/clip.py:141` — and both pass `weights_only=True` as of plan 02-03, so a
 crafted checkpoint cannot execute code at load time.
 
+> **The missing `.pth` is not what makes this path inert.** `run_CLIPs`
+> constructs `CLIPDensePredT` at `face_masks.py:254`, which reaches
+> `clipseg.py:91` → `clip.load` → the ~335 MB `ViT-B/16` download into
+> `~/.cache/clip` and then a deserializer, all **before** line 256 ever looks for
+> `rd64-uni-refined.pth`. What keeps it inert in Phase 2 is
+> `frame_worker.py:654`'s `ClipEnableToggle` gate, which the fixture sets to
+> `false`. See the ordering walkthrough in
+> [`engine-extra-assets.md`](engine-extra-assets.md).
+
 **DFM.** Put at least one `.dfm` file in `model_assets/dfm_models/` and write a
 populator for `EngineContext.dfm_models_data`. Phase 1 deferred "who fills it" to
 Phase 2; with no models to enumerate, inventing a directory scan for an empty
 directory would have been inventing it blind.
+
+> `model_assets/` is a junction into the read-only `D:/Visomaster` source tree on
+> this machine, so "put the file in the models directory" is not literally
+> actionable until Phase 4 gives `models_dir` a project-owned location.
 
 Both belong to Phase 4's model bootstrap, which is where the model inventory
 becomes explicit and hash-verifiable.
 
 ## Ledger
 
-Broken Windows item 1 — "the DFM, LivePortrait and CLIPseg paths are
-import-proven only" — is **still open**. Plan 02-03 retires the LivePortrait
-third of it; plan 02-04 disposes of the item.
+Broken Windows item 1 — "CLIPseg, DFM and LivePortrait paths are import-proven
+only; nothing in Phase 1 executes them. Phase 2 exercises all three." — is
+**waived** as of plan 02-04.
+
+It was **waived, not fixed**, deliberately. Plan 02-03 retired the LivePortrait
+third of it, but the item's own second sentence became false the moment the
+descoping decision was taken: Phase 2 exercises LivePortrait **only**. Marking it
+`fixed` would assert something untrue about the other two thirds; leaving it
+`open` would block ship on work nobody intends to do in this phase. The waiver
+reason names `rd64-uni-refined.pth`, the absent `.dfm` files and Phase 4's model
+bootstrap as the owning phase.
+
+`tests/test_engine_deferred_paths.py` asserts that this waiver, and both
+deferrals behind it, survive in all three places that record them — this file,
+`engine-extra-assets.md`, and `.planning/WINDOWS.md`.
