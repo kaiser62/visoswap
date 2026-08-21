@@ -87,9 +87,9 @@ separate from settings/backend/frontend work so a failure here is cheap to isola
 **Plans**: 1/4 plans executed
 
 - [x] 02-01-PLAN.md
-- [ ] 02-02-PLAN.md
-- [ ] 02-03-PLAN.md
-- [ ] 02-04-PLAN.md
+- [x] 02-02-PLAN.md
+- [x] 02-03-PLAN.md
+- [x] 02-04-PLAN.md
 
 ### Phase 3: Settings Schema & Three-Tier Resolution
 
@@ -223,7 +223,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Vendor the Engine & Strip Qt | 4/4 | Complete | 2026-08-21 |
-| 2. Engine API & First Swap | 1/4 | In Progress|  |
+| 2. Engine API & First Swap | 4/4 | Complete | 2026-08-22 |
 | 3. Settings Schema & Three-Tier Resolution | 0/3 | Not started | - |
 | 4. Backend Integration & Model Bootstrap | 0/TBD | Not started | - |
 | 5. Frontend Schema Rendering | 0/TBD | Not started | - |

@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 2
-current_phase_name: Engine API & First Swap
+current_phase: 3
+current_phase_name: Settings Schema & Three-Tier Resolution
 status: in-progress
-stopped_at: Completed 02-01-PLAN.md
+stopped_at: Completed Phase 2
 last_updated: "2026-08-21T14:45:50.291Z"
 last_activity: 2026-08-21
-last_activity_desc: "Completed 02-01: the Phase 2 harness -- 12GB of weights reached by link, 201 settings typed by widget shape into a checked-in fixture, and a runner sealed against Qt, VisoMaster and the backend and proven non-inert"
+last_activity_desc: "Completed Phase 2: a real face swapped onto a real frame with no Qt in the process (111k pixels changed), LivePortrait exercised, and a live torch.load hole closed at cliplib/clip.py:141"
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 11
-  completed_plans: 5
+  completed_plans: 8
 ---
 
 # Project State
@@ -23,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-21)
 
 **Core value:** Playback never blocks on generation — a missing generated frame shows the original video frame rather than pausing the video.
-**Current focus:** Phase 2 — Engine API & First Swap
+**Current focus:** Phase 3 — Settings Schema & Three-Tier Resolution
 
 ## Current Position
 
-Phase: 2 of 6 (Engine API & First Swap)
-Plan: 1 of 4 in current phase
-Status: 02-01 complete (harness built and verified); 02-02 next
-Last activity: 2026-08-21 — 02-01: model_assets linked, engine_settings.json pinned at 168+33 typed keys, the sealed engine runner armed and shown capable of exit 1
+Phase: 3 of 6 (Settings Schema & Three-Tier Resolution)
+Plan: 0 of 3 in current phase
+Status: Plans written; 03-01 ready to execute
+Last activity: 2026-08-22 — Closed Phase 2. Engine.load/detect_faces/swap published, first real swap produced, 114 tests passing.
 
-Progress: [█████░░░░░] 45% (Phase 1 complete 4/4; Phase 2 at 1/4)
+Progress: [██████████] 100% (Phase 2 complete, 4/4 plans)
 
 ## Performance Metrics
 
@@ -85,6 +85,10 @@ Recent decisions affecting current work:
 - [Phase 1]: The clean-room check imports with NO blocker armed, not just with the probe. Where Qt is genuinely absent the meta_path blocker is inert, so `CLEAN` alone would be weaker there than on the Qt-bearing interpreter; a module swallowing an ImportError passes both gates and runs degraded.
 - [Phase 2]: DFM and CLIPseg are descoped -- vendored and import-proven, never exercised. No weights exist on any reachable machine. See 02-DECISION-deferred-paths.md.
 - [Phase 2]: Phase 4's model-file criterion is derived from the manifest at runtime, never a hardcoded count: models_list is 56 entries and models_trt_list is 6 or 0 depending on whether `import tensorrt` succeeds.
+- [Phase 2]: TensorRT is REFUSED with a ValueError in Engine's constructor, not merely deprioritised -- its provider options carry a relative `tensorrt-engines` cache path. Only CUDA and CPU are accepted.
+- [Phase 2]: FaceCard derives face_id by digesting its own recognition embedding, so no identifier originates in a widget and the same face keys identically across runs.
+- [Phase 2]: A THIRD torch.load existed at cliplib/clip.py:141, reached BEFORE the missing rd64-uni-refined.pth and operating on a URL-downloaded file. Descoping CLIPseg did NOT make it safe. Hardened with weights_only=True. What keeps the path inert is ClipEnableToggle=false, not the absent weights file.
+- [Phase 2]: ENGINE-01 stays Pending. Clause 1 (no PySide6) is proven; clause 2 (no VisoMaster install) is false while ./model_assets is a junction into D:/Visomaster. Phase 4 closes it.
 - [Phase 2]: Five widget shapes exist in the layout dicts, not four: ClipText carries min/max with no step (character bounds on a line edit) and types as an empty string, so there are 93 int keys, not 94
 - [Phase 2]: The seal block lists live in tests/_blocked_roots.py (import-free) and are re-exported by conftest.py, because both subprocess consumers run on the engine interpreter, which has no pytest
 
