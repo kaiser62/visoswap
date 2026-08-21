@@ -19,7 +19,7 @@ exercises it for real. It is the one deferred path Phase 2 actually proves.
 
 Verified by direct filesystem check, not inference:
 
-- `rd64-uni-refined.pth`, which `face_masks.py:251` loads for CLIPseg, **does not
+- `rd64-uni-refined.pth`, which `face_masks.py:256` loads for CLIPseg, **does not
   exist anywhere on this machine** outside `site-packages`. A whole-tree search
   for `*.pth` returns nothing.
 - It is **absent from VisoMaster's own model manifest** — 62 entries across
@@ -51,7 +51,7 @@ exercised; DFM and CLIPseg remain import-proven only, by decision.
 The security item stands, but state it accurately: `clipseg.py:305`'s
 unguarded `torch.load` is **dead on the live path** — it sits behind
 `fix_shift=False`, no construction site passes it, and the file it references
-does not exist. `face_masks.py:251` **already** passes `weights_only=True`.
+does not exist. `face_masks.py:256` **already** passes `weights_only=True`.
 
 Fix the keyword anyway, because a dead path is one refactor away from a live
 one. Do not describe it as closing a live hole.
