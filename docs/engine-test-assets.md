@@ -279,11 +279,120 @@ pytest attributes a failure without parsing a traceback.
 ```
 python tests/_engine_runner.py --selftest              # arm, provoke all three groups
 python tests/_engine_runner.py --import PySide6.QtCore # show it capable of exit 1
+python tests/_engine_runner.py --smoke                 # one real swap, see section 4
 ```
 
-Later plans add modes that actually swap a frame. This plan proves only that the
-harness is armed and capable of failing — which is what has to be true before any
-engine failure can be believed. **A failure in the runner is a harness failure; a
-failure after it is an engine failure. Keeping those separable is the point.**
+`--selftest` and `--import` prove only that the harness is armed and capable of
+failing — which is what has to be true before any engine failure can be believed.
+**A failure in the runner is a harness failure; a failure after it is an engine
+failure. Keeping those separable is the point.**
 
 Run it from the repository root. Always. See section 1.
+
+---
+
+## 4. The media pair: two people, deliberately
+
+Added by plan 02-02, which drives the first real swap. `--smoke` loads a video,
+detects faces, swaps one frame and writes two PNGs to `tests/artifacts/`.
+
+### The two files
+
+| Role | Default path | Override |
+|------|--------------|----------|
+| Target video | `D:/Visomaster/output/17f0d620_rosh_generate_135bda4c9686.mp4` | `VISOSWAP_TEST_VIDEO` |
+| Source face | `D:/Visomaster/inputt/598004cb_tonima.JPG` | `VISOSWAP_TEST_SOURCE` |
+
+Both are personal media and **neither is committed**. The video is 1920x1080,
+24 frames, 23.976 fps — the smallest real face-bearing clip on the machine, and
+small enough that a whole swap including both model loads measures around eight
+seconds.
+
+**They are two different people, and that is the point.** The video already
+contains the face in `17f0d620_rosh.jpg`. Using that image as the source would
+swap a face onto itself: the swap would run, the pipeline would report success,
+and the "did any pixel change" assertion would be testing nothing while
+appearing to pass. A source that is a *different* person is what makes a
+non-zero pixel diff mean the swap happened.
+
+### A missing file fails; it never skips
+
+If either media file, the settings fixture, or the `model_assets` link is
+absent, `--smoke` exits `ASSET_MISSING` (3) and `tests/test_engine_smoke.py`
+fails. There is no skip anywhere in that path, by design.
+
+Phase 1 established that a missing dependency must never read as a pass. That
+rule now covers media as well as packages, and for a sharper reason here: a
+skipped swap test is a phase that looks finished and has swapped nothing. All
+four exit-3 paths were provoked by hand rather than assumed.
+
+The `model_assets` check is a *directory* check done before any model loads,
+because `FaceEditors.__init__` swallows a missing `lip_array.pkl` and leaves
+`lp_lip_array` as `None` — see section 1. Without the early check, a missing
+weight set produces a degraded processor and a confusing inference failure
+instead of "the link is not there".
+
+### The smoke overrides
+
+The run is pinned to a known configuration rather than inheriting whatever the
+fixture currently holds. Most overrides restate the fixture's own value; that
+is deliberate, so that a regenerated fixture moving a default shows up as a
+diff on this list rather than as a differently-behaving swap.
+
+| Tier | Key | Value |
+|------|-----|-------|
+| global | `ProvidersPrioritySelection` | `CUDA` |
+| global | `DetectorModelSelection` | `RetinaFace` |
+| global | `RecognitionModelSelection` | `Inswapper128ArcFace` |
+| global | `SimilarityTypeSelection` | `Opal` |
+| global | `DetectorScoreSlider` | `50` |
+| global | `MaxFacesToDetectSlider` | `20` |
+| global | `LandmarkDetectToggle` | `False` |
+| global | `EmbMergeMethodSelection` | `Mean` |
+| global | `nThreadsSlider` | `1` |
+| project | `SwapModelSelection` | `Inswapper128` |
+| project | `SwapperResSelection` | `'128'` |
+| project | `SimilarityThresholdSlider` | `60` |
+| project | `ClipEnableToggle` | `False` |
+| project | `FaceEditorEnableToggle` | `False` |
+
+Every key is asserted to exist in the tier **before** it is assigned. An
+override that introduces a key is a typo, and a typo written in blind either
+raises deep inside a tensor operation many calls later or, worse, silently does
+nothing. The membership check is made twice on purpose: once by the runner at
+its own boundary, which is what protects a caller, and once statically in
+`tests/test_engine_smoke.py`, which needs no GPU, no weights and no media and
+so fails in milliseconds on any machine.
+
+**Two of the plan's key names were wrong and this is how it was found.** The
+plan's override list said `ThreadsSlider` and `TextMaskingEnableToggle`. The
+fixture — and upstream's settings layout — call them `nThreadsSlider` and
+`ClipEnableToggle`. The static check was run against the wrong names on purpose
+to confirm it reports them rather than passing quietly.
+
+### The evidence, and why it is gitignored
+
+`--smoke` writes `tests/artifacts/smoke_source_frame.png` (the decoded frame)
+and `tests/artifacts/smoke_swapped_frame.png` (the same frame after the swap).
+They exist so a human can look at them: the automated test can only prove that
+*some* pixels changed, and a garbled face, a whole-frame alteration and a face
+pasted back onto itself would each satisfy that.
+
+`tests/artifacts/` is in `.gitignore`, added in the same change that created
+the directory. These are decoded frames of personal media and swapped faces
+made from them; committing one is an information-disclosure bug, not an untidy
+repository. Nothing about the images is logged either — the run's one output
+line carries counts and shapes only.
+
+### What the run reports
+
+```
+CLEAN:smoke:faces=2 frames=24 fps=23.976 provider=CUDA input_shape=1080x1920x3
+output_shape=1080x1920x3 diff_pixels=110932 elapsed=7.0s
+artifacts=smoke_source_frame.png+smoke_swapped_frame.png reachable_before_seal=...
+```
+
+`provider=CUDA` is read back off the models processor rather than echoed from
+the settings, so it says what the engine actually selected. `diff_pixels`
+counts pixels, not channel values, so a pixel counts once however many of its
+channels moved.
