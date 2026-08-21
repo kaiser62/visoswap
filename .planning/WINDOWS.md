@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 1
-waived_count: 0
+open_count: 0
+waived_count: 1
 fixed_count: 0
 total_count: 1
-last_updated: 2026-08-21T04:21:56.815Z
+last_updated: 2026-08-21T19:49:07.823Z
 ---
 
 # Broken Windows Ledger
@@ -15,7 +15,7 @@ last_updated: 2026-08-21T04:21:56.815Z
 
 | id | phase | kind | file | line | description | status | reason | recorded_at | resolved_at |
 |----|-------|------|------|------|-------------|--------|--------|-------------|-------------|
-| 1 | 1 | unrun-verify | visoswap/processors/external/clipseg.py |  | CLIPseg, DFM and LivePortrait paths are import-proven only; nothing in Phase 1 executes them. Phase 2 exercises all three. | open |  | 2026-08-21T04:21:56.815Z |  |
+| 1 | 1 | unrun-verify | visoswap/processors/external/clipseg.py |  | CLIPseg, DFM and LivePortrait paths are import-proven only; nothing in Phase 1 executes them. Phase 2 exercises all three. | waived | Waived, not fixed: this item's own claim that 'Phase 2 exercises all three' is false as of 02-DECISION-deferred-paths.md. Phase 2 exercises LivePortrait only (plan 02-03). The CLIPseg text-masking path is deferred because rd64-uni-refined.pth exists nowhere on this machine and is absent from upstream VisoMaster's own 62-entry model manifest; the DFM path is deferred because no .dfm files exist anywhere and EngineContext.dfm_models_data has no populator. Both paths stay vendored and import-proven, not ripped out. Phase 4's model bootstrap is the owning phase for re-enabling either. Recorded in docs/engine-path-coverage.md and docs/engine-extra-assets.md, pinned by tests/test_engine_deferred_paths.py. | 2026-08-21T04:21:56.815Z | 2026-08-21T19:49:07.823Z |
 
 ````json
 [
@@ -26,10 +26,10 @@ last_updated: 2026-08-21T04:21:56.815Z
     "file": "visoswap/processors/external/clipseg.py",
     "line": null,
     "description": "CLIPseg, DFM and LivePortrait paths are import-proven only; nothing in Phase 1 executes them. Phase 2 exercises all three.",
-    "status": "open",
-    "reason": "",
+    "status": "waived",
+    "reason": "Waived, not fixed: this item's own claim that 'Phase 2 exercises all three' is false as of 02-DECISION-deferred-paths.md. Phase 2 exercises LivePortrait only (plan 02-03). The CLIPseg text-masking path is deferred because rd64-uni-refined.pth exists nowhere on this machine and is absent from upstream VisoMaster's own 62-entry model manifest; the DFM path is deferred because no .dfm files exist anywhere and EngineContext.dfm_models_data has no populator. Both paths stay vendored and import-proven, not ripped out. Phase 4's model bootstrap is the owning phase for re-enabling either. Recorded in docs/engine-path-coverage.md and docs/engine-extra-assets.md, pinned by tests/test_engine_deferred_paths.py.",
     "recorded_at": "2026-08-21T04:21:56.815Z",
-    "resolved_at": null
+    "resolved_at": "2026-08-21T19:49:07.823Z"
   }
 ]
 ````
