@@ -121,7 +121,7 @@ correct.
 
   5. No hardcoded `SwapModelSelection` / `SwapperResSelection` reassignment remains anywhere in
      the codebase (the two overrides `web_ui.py` re-applied on every load are gone)
-**Plans**: TBD
+**Plans**: 3
 
 ### Phase 4: Backend Integration & Model Bootstrap
 
@@ -224,7 +224,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Vendor the Engine & Strip Qt | 4/4 | Complete | 2026-08-21 |
 | 2. Engine API & First Swap | 1/4 | In Progress|  |
-| 3. Settings Schema & Three-Tier Resolution | 0/TBD | Not started | - |
+| 3. Settings Schema & Three-Tier Resolution | 0/3 | Not started | - |
 | 4. Backend Integration & Model Bootstrap | 0/TBD | Not started | - |
 | 5. Frontend Schema Rendering | 0/TBD | Not started | - |
 | 6. End-to-End Verification | 0/TBD | Not started | - |
