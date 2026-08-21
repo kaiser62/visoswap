@@ -8,1006 +8,3829 @@
   "widgets": {
     "AudioMuxingToggle": {
       "default": true,
+      "gate": null,
+      "group": "Export",
+      "help": "When enabled, audio from the original video is preserved in the exported video. Disable to skip audio muxing if it causes the engine to hang.",
+      "label": "Enable Audio",
+      "level": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "toggle"
     },
     "AutoColorBlendAmountSlider": {
       "default": 80,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "AutoColorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Color Correction",
+      "help": "Adjust the blend value.",
+      "label": "Blend Amount",
+      "level": 1,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 5,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "AutoColorEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Color Correction",
+      "help": "Enable AutoColor Transfer: 1. Hans Test without mask, 2. Hans Test with mask, 3. DFL Method without mask, 4. DFL Original Method.",
+      "label": "AutoColor Transfer",
+      "level": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "AutoColorTransferTypeSelection": {
       "default": "Test",
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "AutoColorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Color Correction",
+      "help": "Select the AutoColor transfer method type. Hans Method could have some artefacts sometimes.",
+      "label": "Transfer Type",
+      "level": 2,
+      "options": [
+        "Test",
+        "Test_Mask",
+        "DFL_Test",
+        "DFL_Orig"
+      ],
+      "tab": "swapper",
       "tier": "project",
       "type": "selection"
     },
     "AutoRotationToggle": {
       "default": false,
+      "gate": null,
+      "group": "Detectors",
+      "help": "Automatically rotate the input to detect faces in various orientations.",
+      "label": "Auto Rotation",
+      "level": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "toggle"
     },
     "AutoSwapToggle": {
       "default": false,
+      "gate": null,
+      "group": "Auto Swap",
+      "help": "Automatically Swap all faces using selected Source Faces/Embeddings when loading an video/image file",
+      "label": "Auto Swap",
+      "level": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "toggle"
     },
     "BackgroundBlurParserSlider": {
       "default": 5,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Blend the value for Background Parser",
+      "label": "Background Blur",
+      "level": 2,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "BackgroundParserSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Negative/Positive values shrink and grow the mask.",
+      "label": "Background",
+      "level": 2,
+      "maximum": 50,
+      "minimum": -50,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "BorderBlurSlider": {
       "default": 10,
+      "gate": null,
+      "group": "Face Mask",
+      "help": "Border mask blending distance.",
+      "label": "Border Blur",
+      "level": 1,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "BorderBottomSlider": {
       "default": 10,
+      "gate": null,
+      "group": "Face Mask",
+      "help": "A rectangle with adjustable bottom, left, right, top, and sides that masks the swapped face result back into the original image.",
+      "label": "Bottom Border",
+      "level": 1,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "BorderLeftSlider": {
       "default": 10,
+      "gate": null,
+      "group": "Face Mask",
+      "help": "A rectangle with adjustable bottom, left, right, top, and sides that masks the swapped face result back into the original image.",
+      "label": "Left Border",
+      "level": 1,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "BorderRightSlider": {
       "default": 10,
+      "gate": null,
+      "group": "Face Mask",
+      "help": "A rectangle with adjustable bottom, left, right, top, and sides that masks the swapped face result back into the original image.",
+      "label": "Right Border",
+      "level": 1,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "BorderTopSlider": {
       "default": 10,
+      "gate": null,
+      "group": "Face Mask",
+      "help": "A rectangle with adjustable bottom, left, right, top, and sides that masks the swapped face result back into the original image.",
+      "label": "Top Border",
+      "level": 1,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "ClipAmountSlider": {
       "default": 50,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "ClipEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Increase to strengthen the effect.",
+      "label": "Amount",
+      "level": 2,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "ClipEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Mask",
+      "help": "Use descriptions to identify objects that will be present in the final swapped image.",
+      "label": "Text Masking",
+      "level": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "ClipText": {
       "default": "",
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "ClipEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "To use, type a word(s) in the box separated by commas and press <enter>.",
+      "label": "Text Masking Entry",
+      "level": 2,
+      "max_length": 1000,
+      "min_length": 0,
+      "tab": "swapper",
       "tier": "project",
       "type": "text"
     },
     "ColorBlueSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "ColorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Color Correction",
+      "help": "Blue color adjustments",
+      "label": "Blue",
+      "level": 1,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "ColorBrightnessDecimalSlider": {
+      "decimals": 2,
       "default": 1.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "ColorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Color Correction",
+      "help": "Changes the Brightness.",
+      "label": "Brightness",
+      "level": 1,
+      "maximum": 2.0,
+      "minimum": 0.0,
+      "step": 0.01,
+      "tab": "swapper",
       "tier": "project",
       "type": "float"
     },
     "ColorContrastDecimalSlider": {
+      "decimals": 2,
       "default": 1.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "ColorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Color Correction",
+      "help": "Changes the Contrast.",
+      "label": "Contrast",
+      "level": 1,
+      "maximum": 2.0,
+      "minimum": 0.0,
+      "step": 0.01,
+      "tab": "swapper",
       "tier": "project",
       "type": "float"
     },
     "ColorEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Color Correction",
+      "help": "Fine-tune the RGB color values of the swap.",
+      "label": "Color Adjustments",
+      "level": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "ColorGammaDecimalSlider": {
+      "decimals": 2,
       "default": 1.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "ColorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Color Correction",
+      "help": "Changes the Gamma.",
+      "label": "Gamma",
+      "level": 1,
+      "maximum": 2.0,
+      "minimum": 0.0,
+      "step": 0.01,
+      "tab": "swapper",
       "tier": "project",
       "type": "float"
     },
     "ColorGreenSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "ColorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Color Correction",
+      "help": "Green color adjustments",
+      "label": "Green",
+      "level": 1,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "ColorHueDecimalSlider": {
+      "decimals": 2,
       "default": 0.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "ColorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Color Correction",
+      "help": "Changes the Hue.",
+      "label": "Hue",
+      "level": 1,
+      "maximum": 0.5,
+      "minimum": -0.5,
+      "step": 0.01,
+      "tab": "swapper",
       "tier": "project",
       "type": "float"
     },
     "ColorNoiseDecimalSlider": {
+      "decimals": 1,
       "default": 0.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "ColorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Color Correction",
+      "help": "Add noise to swapped face.",
+      "label": "Noise",
+      "level": 1,
+      "maximum": 20.0,
+      "minimum": 0.0,
+      "step": 0.5,
+      "tab": "swapper",
       "tier": "project",
       "type": "float"
     },
     "ColorRedSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "ColorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Color Correction",
+      "help": "Red color adjustments",
+      "label": "Red",
+      "level": 1,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "ColorSaturationDecimalSlider": {
+      "decimals": 2,
       "default": 1.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "ColorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Color Correction",
+      "help": "Changes the Saturation.",
+      "label": "Saturation",
+      "level": 1,
+      "maximum": 2.0,
+      "minimum": 0.0,
+      "step": 0.01,
+      "tab": "swapper",
       "tier": "project",
       "type": "float"
     },
     "ColorSharpnessDecimalSlider": {
+      "decimals": 1,
       "default": 1.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "ColorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Color Correction",
+      "help": "Changes the Sharpness.",
+      "label": "Sharpness",
+      "level": 1,
+      "maximum": 2.0,
+      "minimum": 0.0,
+      "step": 0.1,
+      "tab": "swapper",
       "tier": "project",
       "type": "float"
     },
     "DFLXSegEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Mask",
+      "help": "Allow objects occluding the face to show up in the swapped image.",
+      "label": "DFL XSeg Mask",
+      "level": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "DFLXSegSizeSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "DFLXSegEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Grows or shrinks the occluded region.",
+      "label": "Size",
+      "level": 2,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "DFMAmpMorphSlider": {
       "default": 50,
+      "gate": {
+        "mechanism": "selection",
+        "parents": [
+          "SwapModelSelection"
+        ],
+        "required_value": "DeepFaceLive (DFM)",
+        "rule": "single"
+      },
+      "group": "Swapper",
+      "help": "AMP Morph Factor for DFM AMP Models",
+      "label": "AMP Morph Factor",
+      "level": 2,
+      "maximum": 100,
+      "minimum": 1,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "DFMModelSelection": {
       "default": null,
+      "default_from": "app.helpers.miscellaneous.get_dfm_models_default_value",
+      "gate": {
+        "mechanism": "selection",
+        "parents": [
+          "SwapModelSelection"
+        ],
+        "required_value": "DeepFaceLive (DFM)",
+        "rule": "single"
+      },
+      "group": "Swapper",
+      "help": "Select which pretrained DeepFaceLive (DFM) Model to use for swapping.",
+      "label": "DFM Model",
+      "level": 2,
+      "options": null,
+      "options_from": "app.helpers.miscellaneous.get_dfm_models_selection_values",
+      "tab": "swapper",
       "tier": "project",
       "type": "selection"
     },
     "DFMRCTColorToggle": {
       "default": false,
+      "gate": {
+        "mechanism": "selection",
+        "parents": [
+          "SwapModelSelection"
+        ],
+        "required_value": "DeepFaceLive (DFM)",
+        "rule": "single"
+      },
+      "group": "Swapper",
+      "help": "RCT Color Transfer for DFM Models",
+      "label": "RCT Color Transfer",
+      "level": 2,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "DetectFromPointsToggle": {
       "default": false,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LandmarkDetectToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Detectors",
+      "help": "Enable detection of faces from specified landmark points.",
+      "label": "Detect From Points",
+      "level": 2,
+      "tab": "settings",
       "tier": "global",
       "type": "toggle"
     },
     "DetectorModelSelection": {
       "default": "RetinaFace",
+      "gate": null,
+      "group": "Detectors",
+      "help": "Select the face detection model to use for detecting faces in the input image or video.",
+      "label": "Face Detect Model",
+      "level": 1,
+      "options": [
+        "RetinaFace",
+        "Yolov8",
+        "SCRFD",
+        "Yunet"
+      ],
+      "tab": "settings",
       "tier": "global",
       "type": "selection"
     },
     "DetectorScoreSlider": {
       "default": 50,
+      "gate": null,
+      "group": "Detectors",
+      "help": "Set the confidence score threshold for face detection. Higher values ensure more confident detections but may miss some faces.",
+      "label": "Detect Score",
+      "level": 1,
+      "maximum": 100,
+      "minimum": 1,
+      "step": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "int"
     },
     "DifferencingAmountSlider": {
       "default": 4,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "DifferencingEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Similarity",
+      "help": "Higher values relaxes the similarity constraint.",
+      "label": "Amount",
+      "level": 2,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "DifferencingBlendAmountSlider": {
       "default": 5,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "DifferencingEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Similarity",
+      "help": "Blend differecing value.",
+      "label": "Blend Amount",
+      "level": 2,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "DifferencingEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Similarity",
+      "help": "Allow some of the original face to show in the swapped result when the difference between the two images is small. Can help bring back some texture to the swapped face.",
+      "label": "Differencing",
+      "level": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "EmbMergeMethodSelection": {
       "default": "Mean",
+      "gate": null,
+      "group": "Embedding Merge Method",
+      "help": "Select the method to merge facial embeddings. \"Mean\" averages the embeddings, while \"Median\" selects the middle value, providing more robustness to outliers.",
+      "label": "Embedding Merge Method",
+      "level": 1,
+      "options": [
+        "Mean",
+        "Median"
+      ],
+      "tab": "settings",
       "tier": "global",
       "type": "selection"
     },
     "EyeBrowsDirectionDecimalSlider": {
+      "decimals": 2,
       "default": 0.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Changes the eyebrows direction.",
+      "label": "EyeBrows Direction",
+      "level": 2,
+      "maximum": 30.0,
+      "minimum": -30.0,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "EyeBrowsMakeupBlendAmountDecimalSlider": {
+      "decimals": 2,
       "default": 0.05,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "EyeBrowsMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Blend the value: 0.00 represents the original color, 1.00 represents the full target color.",
+      "label": "Blend Amount",
+      "level": 2,
+      "maximum": 1.0,
+      "minimum": 0.01,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "EyeBrowsMakeupBlueSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "EyeBrowsMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Blue color adjustments.",
+      "label": "Blue",
+      "level": 2,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "EyeBrowsMakeupEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "",
+      "help": "Enable eyebrows makeup.",
+      "label": "EyeBrows Makeup",
+      "level": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "toggle"
     },
     "EyeBrowsMakeupGreenSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "EyeBrowsMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Green color adjustments.",
+      "label": "Green",
+      "level": 2,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 3,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "EyeBrowsMakeupRedSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "EyeBrowsMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Red color adjustments.",
+      "label": "Red",
+      "level": 2,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "EyeGazeHorizontalDecimalSlider": {
+      "decimals": 2,
       "default": 0.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Changes the horizontal eyegaze direction.",
+      "label": "EyeGaze Horizontal",
+      "level": 2,
+      "maximum": 30.0,
+      "minimum": -30.0,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "EyeGazeVerticalDecimalSlider": {
+      "decimals": 2,
       "default": 0.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Changes the vertical eyegaze direction.",
+      "label": "EyeGaze Vertical",
+      "level": 2,
+      "maximum": 63.0,
+      "minimum": -63.0,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "EyeGlassesParserSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Adjust the size of the Mask. Mast the eyeglasses.",
+      "label": "EyeGlasses",
+      "level": 2,
+      "maximum": 30,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "EyeLeftXAmountSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LandmarksPositionAdjEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Landmarks Correction",
+      "help": "Shifts the eye left detection point left and right.",
+      "label": "Left Eye:   X",
+      "level": 2,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "EyeLeftYAmountSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LandmarksPositionAdjEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Landmarks Correction",
+      "help": "Shifts the eye left detection point up and down.",
+      "label": "Left Eye:   Y",
+      "level": 2,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "EyeRightXAmountSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LandmarksPositionAdjEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Landmarks Correction",
+      "help": "Shifts the eye right detection point left and right.",
+      "label": "Right Eye:   X",
+      "level": 2,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "EyeRightYAmountSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LandmarksPositionAdjEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Landmarks Correction",
+      "help": "Shifts the eye right detection point up and down.",
+      "label": "Right Eye:   Y",
+      "level": 2,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "EyeWinkDecimalSlider": {
+      "decimals": 2,
       "default": 0.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Winking eye.",
+      "label": "Eye Wink",
+      "level": 2,
+      "maximum": 39.0,
+      "minimum": 0.0,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "EyesOpenRatioDecimalSlider": {
+      "decimals": 2,
       "default": 0.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Changes the opening of the eyes.",
+      "label": "Eyes Close <--> Open Ratio",
+      "level": 2,
+      "maximum": 0.8,
+      "minimum": -0.8,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "FaceAdjEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Landmarks Correction",
+      "help": "This is an experimental feature to perform direct adjustments to the face landmarks found by the detector. There is also an option to adjust the scale of the swapped face.",
+      "label": "Face Adjustments",
+      "level": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "FaceBlurParserSlider": {
       "default": 5,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Blend the value for Face Parser",
+      "label": "Face Blur",
+      "level": 2,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "FaceEditorBlurAmountSlider": {
       "default": 5,
+      "gate": null,
+      "group": "",
+      "help": "Blur amount.",
+      "label": "Blur Amount",
+      "level": 1,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "FaceEditorCropScaleDecimalSlider": {
+      "decimals": 2,
       "default": 2.5,
+      "gate": null,
+      "group": "",
+      "help": "Changes source crop scale. Increase the value to capture the face more distantly. 2.2 scale factor for cropping driving video.",
+      "label": "Crop Scale",
+      "level": 1,
+      "maximum": 4.0,
+      "minimum": 1.5,
+      "step": 0.05,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "FaceEditorEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "",
+      "help": "Enable Face Pose/Epression Editor.",
+      "label": "Enable Face Pose/Epression Editor",
+      "level": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "toggle"
     },
     "FaceEditorTypeSelection": {
       "default": "Human-Face",
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Select the target type to be edited in Face Editor.",
+      "label": "Face Editor Type",
+      "level": 2,
+      "options": [
+        "Human-Face"
+      ],
+      "tab": "face_editor",
       "tier": "project",
       "type": "selection"
     },
     "FaceEditorVYRatioDecimalSlider": {
+      "decimals": 3,
       "default": -0.125,
+      "gate": null,
+      "group": "",
+      "help": "Changes the vy ratio for crop scale. Increase the value to capture the face more distantly. -0.1 factor for cropping driving video.",
+      "label": "VY Ratio",
+      "level": 1,
+      "maximum": 0.2,
+      "minimum": -0.2,
+      "step": 0.001,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "FaceExpressionAnimationRegionSelection": {
       "default": "all",
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceExpressionEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Restorer",
+      "help": "The facial region involved in the restoration process.",
+      "label": "Animation Region",
+      "level": 2,
+      "options": [
+        "all",
+        "eyes",
+        "lips"
+      ],
+      "tab": "common",
       "tier": "project",
       "type": "selection"
     },
     "FaceExpressionCropScaleDecimalSlider": {
+      "decimals": 2,
       "default": 2.3,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceExpressionEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Restorer",
+      "help": "Changes swap crop scale. Increase the value to capture the face more distantly.",
+      "label": "Crop Scale",
+      "level": 2,
+      "maximum": 3.0,
+      "minimum": 1.8,
+      "step": 0.05,
+      "tab": "common",
       "tier": "project",
       "type": "float"
     },
     "FaceExpressionEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Restorer",
+      "help": "Enabled the use of the LivePortrait face expression model to restore facial expressions after swapping.",
+      "label": "Enable Face Expression Restorer",
+      "level": 1,
+      "tab": "common",
       "tier": "project",
       "type": "toggle"
     },
     "FaceExpressionFriendlyFactorDecimalSlider": {
+      "decimals": 1,
       "default": 1.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceExpressionEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Restorer",
+      "help": "Control the expression similarity between the driving face and the swapped face.",
+      "label": "Expression Friendly Factor",
+      "level": 2,
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "step": 0.1,
+      "tab": "common",
       "tier": "project",
       "type": "float"
     },
     "FaceExpressionNormalizeLipsEnableToggle": {
       "default": true,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceExpressionEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Restorer",
+      "help": "Normalize the lips during the facial restoration process.",
+      "label": "Normalize Lips",
+      "level": 2,
+      "tab": "common",
       "tier": "project",
       "type": "toggle"
     },
     "FaceExpressionNormalizeLipsThresholdDecimalSlider": {
+      "decimals": 2,
       "default": 0.03,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceExpressionNormalizeLipsEnableToggle",
+          "FaceExpressionEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "all"
+      },
+      "group": "Face Restorer",
+      "help": "Threshold value for Normalize Lips.",
+      "label": "Normalize Lips Threshold",
+      "level": 3,
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "step": 0.01,
+      "tab": "common",
       "tier": "project",
       "type": "float"
     },
     "FaceExpressionRetargetingEyesEnableToggle": {
       "default": false,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceExpressionEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Restorer",
+      "help": "Adjusting or redirecting the gaze or movement of the eyes during the facial restoration process. It overrides the Animation Region settings, meaning that the Animation Region will be ignored.",
+      "label": "Retargeting Eyes",
+      "level": 2,
+      "tab": "common",
       "tier": "project",
       "type": "toggle"
     },
     "FaceExpressionRetargetingEyesMultiplierDecimalSlider": {
+      "decimals": 2,
       "default": 1.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceExpressionRetargetingEyesEnableToggle",
+          "FaceExpressionEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "all"
+      },
+      "group": "Face Restorer",
+      "help": "Multiplier value for Retargeting Eyes.",
+      "label": "Retargeting Eyes Multiplier",
+      "level": 3,
+      "maximum": 2.0,
+      "minimum": 0.0,
+      "step": 0.01,
+      "tab": "common",
       "tier": "project",
       "type": "float"
     },
     "FaceExpressionRetargetingLipsEnableToggle": {
       "default": false,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceExpressionEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Restorer",
+      "help": "Adjusting or modifying the position, shape, or movement of the lips during the facial restoration process. It overrides the Animation Region settings, meaning that the Animation Region will be ignored.",
+      "label": "Retargeting Lips",
+      "level": 2,
+      "tab": "common",
       "tier": "project",
       "type": "toggle"
     },
     "FaceExpressionRetargetingLipsMultiplierDecimalSlider": {
+      "decimals": 2,
       "default": 1.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceExpressionRetargetingLipsEnableToggle",
+          "FaceExpressionEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "all"
+      },
+      "group": "Face Restorer",
+      "help": "Multiplier value for Retargeting Lips.",
+      "label": "Retargeting Lips Multiplier",
+      "level": 3,
+      "maximum": 2.0,
+      "minimum": 0.0,
+      "step": 0.01,
+      "tab": "common",
       "tier": "project",
       "type": "float"
     },
     "FaceExpressionVYRatioDecimalSlider": {
+      "decimals": 3,
       "default": -0.125,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceExpressionEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Restorer",
+      "help": "Changes the vy ratio for crop scale. Increase the value to capture the face more distantly.",
+      "label": "VY Ratio",
+      "level": 2,
+      "maximum": -0.1,
+      "minimum": -0.125,
+      "step": 0.001,
+      "tab": "common",
       "tier": "project",
       "type": "float"
     },
     "FaceFidelityWeight2DecimalSlider": {
+      "decimals": 1,
       "default": 0.9,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceRestorerEnable2Toggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Restorer",
+      "help": "Adjust the fidelity weight to control how closely the restoration preserves the original face details.",
+      "label": "Fidelity Weight",
+      "level": 2,
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "step": 0.1,
+      "tab": "common",
       "tier": "project",
       "type": "float"
     },
     "FaceFidelityWeightDecimalSlider": {
+      "decimals": 1,
       "default": 0.9,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceRestorerEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Restorer",
+      "help": "Adjust the fidelity weight to control how closely the restoration preserves the original face details.",
+      "label": "Fidelity Weight",
+      "level": 2,
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "step": 0.1,
+      "tab": "common",
       "tier": "project",
       "type": "float"
     },
     "FaceLikenessEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Similarity",
+      "help": "This is a feature to perform direct adjustments to likeness of faces.",
+      "label": "Face Likeness",
+      "level": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "FaceLikenessFactorDecimalSlider": {
+      "decimals": 2,
       "default": 0.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceLikenessEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Similarity",
+      "help": "Determines the factor of likeness between the source and assigned faces.",
+      "label": "Amount",
+      "level": 2,
+      "maximum": 1.0,
+      "minimum": -1.0,
+      "step": 0.05,
+      "tab": "swapper",
       "tier": "project",
       "type": "float"
     },
     "FaceMakeupBlendAmountDecimalSlider": {
+      "decimals": 2,
       "default": 0.05,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Blend the value: 0.00 represents the original color, 1.00 represents the full target color.",
+      "label": "Blend Amount",
+      "level": 2,
+      "maximum": 1.0,
+      "minimum": 0.01,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "FaceMakeupBlueSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Blue color adjustments.",
+      "label": "Blue",
+      "level": 2,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "FaceMakeupEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "",
+      "help": "Enable face makeup. Except for hair, eyebrows, eyes and lips.",
+      "label": "Face Makeup",
+      "level": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "toggle"
     },
     "FaceMakeupGreenSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Green color adjustments.",
+      "label": "Green",
+      "level": 2,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 3,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "FaceMakeupRedSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Red color adjustments.",
+      "label": "Red",
+      "level": 2,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "FaceParserEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Mask",
+      "help": "Allow the unprocessed background from the orginal image to show in the final swap.",
+      "label": "Face Parser Mask",
+      "level": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "FaceParserHairMakeupBlendAmountDecimalSlider": {
+      "decimals": 1,
       "default": 0.2,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserHairMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Blend the value: 0.0 represents the original color, 1.0 represents the full target color.",
+      "label": "Blend Amount",
+      "level": 3,
+      "maximum": 1.0,
+      "minimum": 0.1,
+      "step": 0.1,
+      "tab": "swapper",
       "tier": "project",
       "type": "float"
     },
     "FaceParserHairMakeupBlueSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserHairMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Blue color adjustments",
+      "label": "Blue",
+      "level": 3,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "FaceParserHairMakeupEnableToggle": {
       "default": false,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Enable hair makeup",
+      "label": "Hair Makeup",
+      "level": 2,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "FaceParserHairMakeupGreenSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserHairMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Green color adjustments",
+      "label": "Green",
+      "level": 3,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 3,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "FaceParserHairMakeupRedSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserHairMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Red color adjustments",
+      "label": "Red",
+      "level": 3,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "FaceParserLipsMakeupBlendAmountDecimalSlider": {
+      "decimals": 1,
       "default": 0.2,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserLipsMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Blend the value: 0.0 represents the original color, 1.0 represents the full target color.",
+      "label": "Blend Amount",
+      "level": 3,
+      "maximum": 1.0,
+      "minimum": 0.1,
+      "step": 0.1,
+      "tab": "swapper",
       "tier": "project",
       "type": "float"
     },
     "FaceParserLipsMakeupBlueSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserLipsMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Blue color adjustments",
+      "label": "Blue",
+      "level": 3,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "FaceParserLipsMakeupEnableToggle": {
       "default": false,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Enable lips makeup",
+      "label": "Lips Makeup",
+      "level": 2,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "FaceParserLipsMakeupGreenSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserLipsMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Green color adjustments",
+      "label": "Green",
+      "level": 3,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 3,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "FaceParserLipsMakeupRedSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserLipsMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Red color adjustments",
+      "label": "Red",
+      "level": 3,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "FaceParserSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Adjust the size of the Mask. Mast the entire face.",
+      "label": "Face",
+      "level": 2,
+      "maximum": 30,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "FaceRestorerBlend2Slider": {
       "default": 100,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceRestorerEnable2Toggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Restorer",
+      "help": "Control the blend ratio between the restored face and the swapped face.",
+      "label": "Blend",
+      "level": 2,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "common",
       "tier": "project",
       "type": "int"
     },
     "FaceRestorerBlendSlider": {
       "default": 100,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceRestorerEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Restorer",
+      "help": "Control the blend ratio between the restored face and the swapped face.",
+      "label": "Blend",
+      "level": 2,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "common",
       "tier": "project",
       "type": "int"
     },
     "FaceRestorerDetType2Selection": {
       "default": "Original",
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceRestorerEnable2Toggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Restorer",
+      "help": "Select the alignment method for restoring the face to its original or blended position.",
+      "label": "Alignment",
+      "level": 2,
+      "options": [
+        "Original",
+        "Blend",
+        "Reference"
+      ],
+      "tab": "common",
       "tier": "project",
       "type": "selection"
     },
     "FaceRestorerDetTypeSelection": {
       "default": "Reference",
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceRestorerEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Restorer",
+      "help": "Select the alignment method for restoring the face to its original or blended position.",
+      "label": "Alignment",
+      "level": 2,
+      "options": [
+        "Original",
+        "Blend",
+        "Reference"
+      ],
+      "tab": "common",
       "tier": "project",
       "type": "selection"
     },
     "FaceRestorerEnable2Toggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Restorer",
+      "help": "Enable the use of a face restoration model to improve the quality of the face after swapping.",
+      "label": "Enable Face Restorer 2",
+      "level": 1,
+      "tab": "common",
       "tier": "project",
       "type": "toggle"
     },
     "FaceRestorerEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Restorer",
+      "help": "Enable the use of a face restoration model to improve the quality of the face after swapping.",
+      "label": "Enable Face Restorer",
+      "level": 1,
+      "tab": "common",
       "tier": "project",
       "type": "toggle"
     },
     "FaceRestorerType2Selection": {
       "default": "GFPGAN-v1.4",
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceRestorerEnable2Toggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Restorer",
+      "help": "Select the model type for face restoration.",
+      "label": "Restorer Type",
+      "level": 2,
+      "options": [
+        "GFPGAN-v1.4",
+        "CodeFormer",
+        "GPEN-256",
+        "GPEN-512",
+        "GPEN-1024",
+        "GPEN-2048",
+        "RestoreFormer++",
+        "VQFR-v2"
+      ],
+      "tab": "common",
       "tier": "project",
       "type": "selection"
     },
     "FaceRestorerTypeSelection": {
       "default": "GFPGAN-v1.4",
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceRestorerEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Restorer",
+      "help": "Select the model type for face restoration.",
+      "label": "Restorer Type",
+      "level": 2,
+      "options": [
+        "GFPGAN-v1.4",
+        "CodeFormer",
+        "GPEN-256",
+        "GPEN-512",
+        "GPEN-1024",
+        "GPEN-2048",
+        "RestoreFormer++",
+        "VQFR-v2"
+      ],
+      "tab": "common",
       "tier": "project",
       "type": "selection"
     },
     "FaceScaleAmountSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceAdjEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Landmarks Correction",
+      "help": "Grows and shrinks the entire face.",
+      "label": "Face Scale Amount",
+      "level": 2,
+      "maximum": 20,
+      "minimum": -20,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "FinalBlendAdjEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Blend Adjustments",
+      "help": "Blend at the end of pipeline.",
+      "label": "Final Blend",
+      "level": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "FinalBlendAmountSlider": {
       "default": 1,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FinalBlendAdjEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Blend Adjustments",
+      "help": "Adjust the final blend value.",
+      "label": "Final Blend Amount",
+      "level": 2,
+      "maximum": 50,
+      "minimum": 1,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "FrameEnhancerBlendSlider": {
       "default": 100,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FrameEnhancerEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Frame Enhancer",
+      "help": "Blends the enhanced results back into the original frame.",
+      "label": "Blend",
+      "level": 2,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "int"
     },
     "FrameEnhancerEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Frame Enhancer",
+      "help": "Enable frame enhancement for video inputs to improve visual quality.",
+      "label": "Enable Frame Enhancer",
+      "level": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "toggle"
     },
     "FrameEnhancerTypeSelection": {
       "default": "RealEsrgan-x2-Plus",
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FrameEnhancerEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Frame Enhancer",
+      "help": "Select the type of frame enhancement to apply, based on the content and resolution requirements.",
+      "label": "Frame Enhancer Type",
+      "level": 2,
+      "options": [
+        "RealEsrgan-x2-Plus",
+        "RealEsrgan-x4-Plus",
+        "RealEsr-General-x4v3",
+        "BSRGan-x2",
+        "BSRGan-x4",
+        "UltraSharp-x4",
+        "UltraMix-x4",
+        "DDColor-Artistic",
+        "DDColor",
+        "DeOldify-Artistic",
+        "DeOldify-Stable",
+        "DeOldify-Video"
+      ],
+      "tab": "settings",
       "tier": "global",
       "type": "selection"
     },
     "HairMakeupBlendAmountDecimalSlider": {
+      "decimals": 2,
       "default": 0.05,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "HairMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Blend the value: 0.00 represents the original color, 1.00 represents the full target color.",
+      "label": "Blend Amount",
+      "level": 2,
+      "maximum": 1.0,
+      "minimum": 0.01,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "HairMakeupBlueSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "HairMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Blue color adjustments.",
+      "label": "Blue",
+      "level": 2,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "HairMakeupEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "",
+      "help": "Enable hair makeup.",
+      "label": "Hair Makeup",
+      "level": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "toggle"
     },
     "HairMakeupGreenSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "HairMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Green color adjustments.",
+      "label": "Green",
+      "level": 2,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 3,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "HairMakeupRedSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "HairMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Red color adjustments.",
+      "label": "Red",
+      "level": 2,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "HairParserSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Adjust the size of the Mask. Mast the hair.",
+      "label": "Hair",
+      "level": 2,
+      "maximum": 30,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "HeadPitchSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Changes the opening of the lips.",
+      "label": "Head Pitch",
+      "level": 2,
+      "maximum": 15,
+      "minimum": -15,
+      "step": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "HeadRollSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Changes the head roll.",
+      "label": "Head Roll",
+      "level": 2,
+      "maximum": 15,
+      "minimum": -15,
+      "step": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "HeadYawSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Changes the head yaw.",
+      "label": "Head Yaw",
+      "level": 2,
+      "maximum": 15,
+      "minimum": -15,
+      "step": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "InputFacesFolderRecursiveToggle": {
       "default": false,
+      "gate": null,
+      "group": "Media Selection",
+      "help": "Include all files from Subfolders when choosing Input Faces Folder",
+      "label": "Input Faces Include Subfolders",
+      "level": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "toggle"
     },
     "KpsScaleSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceAdjEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Landmarks Correction",
+      "help": "Grows and shrinks the detection point distances.",
+      "label": "Keypoints Scale",
+      "level": 2,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "KpsXSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceAdjEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Landmarks Correction",
+      "help": "Shifts the detection points left and right.",
+      "label": "Keypoints X-Axis",
+      "level": 2,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "KpsYSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceAdjEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Landmarks Correction",
+      "help": "Shifts the detection points up and down.",
+      "label": "Keypoints Y-Axis",
+      "level": 2,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "LandmarkDetectModelSelection": {
       "default": "203",
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LandmarkDetectToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Detectors",
+      "help": "Select the landmark detection model, where different models detect varying numbers of facial landmarks.",
+      "label": "Landmark Detect Model",
+      "level": 2,
+      "options": [
+        "5",
+        "68",
+        "3d68",
+        "98",
+        "106",
+        "203",
+        "478"
+      ],
+      "tab": "settings",
       "tier": "global",
       "type": "selection"
     },
     "LandmarkDetectScoreSlider": {
       "default": 50,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LandmarkDetectToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Detectors",
+      "help": "Set the confidence score threshold for facial landmark detection.",
+      "label": "Landmark Detect Score",
+      "level": 2,
+      "maximum": 100,
+      "minimum": 1,
+      "step": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "int"
     },
     "LandmarkDetectToggle": {
       "default": false,
+      "gate": null,
+      "group": "Detectors",
+      "help": "Enable or disable facial landmark detection, which is used to refine face alignment.",
+      "label": "Enable Landmark Detection",
+      "level": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "toggle"
     },
     "LandmarksPositionAdjEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Landmarks Correction",
+      "help": "This is an experimental feature to perform direct adjustments to the position of face landmarks found by the detector.",
+      "label": "5 - Keypoints Adjustments",
+      "level": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "LeftEyeParserSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Adjust the size of the Mask. Mast the left eye.",
+      "label": "Left Eye",
+      "level": 2,
+      "maximum": 30,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "LeftEyebrowParserSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Adjust the size of the Mask. Mast the left eyebrow.",
+      "label": "Left Eyebrow",
+      "level": 2,
+      "maximum": 30,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "LipsCloseOpenSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Changes the closing or opening of the lips.",
+      "label": "Lips Close <--> Open Value",
+      "level": 2,
+      "maximum": 120,
+      "minimum": -90,
+      "step": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "LipsMakeupBlendAmountDecimalSlider": {
+      "decimals": 2,
       "default": 0.05,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LipsMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Blend the value: 0.0 represents the original color, 1.0 represents the full target color.",
+      "label": "Blend Amount",
+      "level": 2,
+      "maximum": 1.0,
+      "minimum": 0.01,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "LipsMakeupBlueSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LipsMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Blue color adjustments.",
+      "label": "Blue",
+      "level": 2,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "LipsMakeupEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "",
+      "help": "Enable lips makeup.",
+      "label": "Lips Makeup",
+      "level": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "toggle"
     },
     "LipsMakeupGreenSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LipsMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Green color adjustments.",
+      "label": "Green",
+      "level": 2,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 3,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "LipsMakeupRedSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LipsMakeupEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Red color adjustments.",
+      "label": "Red",
+      "level": 2,
+      "maximum": 255,
+      "minimum": 0,
+      "step": 1,
+      "tab": "face_editor",
       "tier": "project",
       "type": "int"
     },
     "LipsOpenRatioDecimalSlider": {
+      "decimals": 2,
       "default": 0.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Changes the opening of the lips.",
+      "label": "Lips Close <--> Open Ratio",
+      "level": 2,
+      "maximum": 0.8,
+      "minimum": -0.8,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "LowerLipParserSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Adjust the size of the Mask. Mast the lower lip.",
+      "label": "Lower Lip",
+      "level": 2,
+      "maximum": 30,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "ManualRotationAngleSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "ManualRotationEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Detectors",
+      "help": "Set this to the angle of the input face angle to help with laying down/upside down/etc. Angles are read clockwise.",
+      "label": "Rotation Angle",
+      "level": 2,
+      "maximum": 270,
+      "minimum": 0,
+      "step": 90,
+      "tab": "settings",
       "tier": "global",
       "type": "int"
     },
     "ManualRotationEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Detectors",
+      "help": "Rotate the face detector to better detect faces at different angles.",
+      "label": "Manual Rotation",
+      "level": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "toggle"
     },
     "MaxDFMModelsSlider": {
       "default": 1,
+      "gate": null,
+      "group": "DFM Settings",
+      "help": "Set the maximum number of DFM Models to keep in memory at a time. Set this based on your GPU's VRAM",
+      "label": "Maximum DFM Models to use",
+      "level": 1,
+      "maximum": 5,
+      "minimum": 1,
+      "step": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "int"
     },
     "MaxFacesToDetectSlider": {
       "default": 20,
+      "gate": null,
+      "group": "Detectors",
+      "help": "Set the maximum number of faces to detect in a frame",
+      "label": "Max No of Faces to Detect",
+      "level": 1,
+      "maximum": 50,
+      "minimum": 1,
+      "step": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "int"
     },
     "MouthGrinDecimalSlider": {
+      "decimals": 2,
       "default": 0.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Changes the mouth grin.",
+      "label": "Mouth Grin",
+      "level": 2,
+      "maximum": 15.0,
+      "minimum": 0.0,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "MouthLeftXAmountSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LandmarksPositionAdjEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Landmarks Correction",
+      "help": "Shifts the mouth left detection point left and right.",
+      "label": "Left Mouth:   X",
+      "level": 2,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "MouthLeftYAmountSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LandmarksPositionAdjEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Landmarks Correction",
+      "help": "Shifts the mouth left detection point up and down.",
+      "label": "Left Mouth:   Y",
+      "level": 2,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "MouthParserSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Adjust the size of the Mask. Mast the inside of the mouth, including the tongue.",
+      "label": "Mouth",
+      "level": 2,
+      "maximum": 30,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "MouthPoutingDecimalSlider": {
+      "decimals": 2,
       "default": 0.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Pouting the mouth.",
+      "label": "Mouth Pouting",
+      "level": 2,
+      "maximum": 0.09,
+      "minimum": -0.09,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "MouthPursingDecimalSlider": {
+      "decimals": 2,
       "default": 0.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Pursing the mouth.",
+      "label": "Mouth Pursing",
+      "level": 2,
+      "maximum": 15.0,
+      "minimum": -20.0,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "MouthRightXAmountSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LandmarksPositionAdjEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Landmarks Correction",
+      "help": "Shifts the mouth Right detection point left and right.",
+      "label": "Right Mouth:   X",
+      "level": 2,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "MouthRightYAmountSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LandmarksPositionAdjEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Landmarks Correction",
+      "help": "Shifts the mouth Right detection point up and down.",
+      "label": "Right Mouth:   Y",
+      "level": 2,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "MouthSmileDecimalSlider": {
+      "decimals": 2,
       "default": 0.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Changes the mouth smile.",
+      "label": "Mouth Smile",
+      "level": 2,
+      "maximum": 1.3,
+      "minimum": -0.3,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "NeckParserSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Adjust the size of the Mask. Mast the neck.",
+      "label": "Neck",
+      "level": 2,
+      "maximum": 30,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "NoseParserSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Adjust the size of the Mask. Mast the nose.",
+      "label": "Nose",
+      "level": 2,
+      "maximum": 30,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "NoseXAmountSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LandmarksPositionAdjEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Landmarks Correction",
+      "help": "Shifts the nose detection point left and right.",
+      "label": "Nose:   X",
+      "level": 2,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "NoseYAmountSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "LandmarksPositionAdjEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Landmarks Correction",
+      "help": "Shifts the nose detection point up and down.",
+      "label": "Nose:   Y",
+      "level": 2,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "OccluderEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Mask",
+      "help": "Allow objects occluding the face to show up in the swapped image.",
+      "label": "Occlusion Mask",
+      "level": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "OccluderSizeSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "OccluderEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Grows or shrinks the occluded region",
+      "label": "Size",
+      "level": 2,
+      "maximum": 100,
+      "minimum": -100,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "OccluderXSegBlurSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "OccluderEnableToggle",
+          "DFLXSegEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "last"
+      },
+      "group": "Face Mask",
+      "help": "Blend value for Occluder and XSeg.",
+      "label": "Occluder/DFL XSeg Blur",
+      "level": 1,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "OverallMaskBlendAmountSlider": {
       "default": 0,
+      "gate": null,
+      "group": "Blend Adjustments",
+      "help": "Combined masks blending distance. It is not applied to the border masks.",
+      "label": "Overall Mask Blend Amount",
+      "level": 1,
+      "maximum": 100,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "ProvidersPrioritySelection": {
       "default": "CUDA",
+      "exec_function": "app.ui.widgets.actions.control_actions.change_execution_provider",
+      "gate": null,
+      "group": "General",
+      "help": "Select the theme to be used",
+      "label": "Providers Priority",
+      "level": 1,
+      "options": [
+        "CUDA",
+        "TensorRT",
+        "TensorRT-Engine",
+        "CPU"
+      ],
+      "tab": "settings",
       "tier": "global",
       "type": "selection"
     },
     "RecognitionModelSelection": {
       "default": "Inswapper128ArcFace",
+      "gate": null,
+      "group": "Face Recognition",
+      "help": "Choose the ArcFace model to be used for comparing the similarity of faces.",
+      "label": "Recognition Model",
+      "level": 1,
+      "options": [
+        "Inswapper128ArcFace",
+        "SimSwapArcFace",
+        "GhostArcFace",
+        "CSCSArcFace"
+      ],
+      "tab": "settings",
       "tier": "global",
       "type": "selection"
     },
     "RestoreEyesBlendAmountSlider": {
       "default": 50,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreEyesEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Increase this to show more of the swapped eyes. Decrease it to show more of the original eyes.",
+      "label": "Eyes Blend Amount",
+      "level": 2,
+      "maximum": 100,
+      "minimum": 1,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "RestoreEyesEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Mask",
+      "help": "Restore eyes from the original face.",
+      "label": "Restore Eyes",
+      "level": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "RestoreEyesFeatherBlendSlider": {
       "default": 10,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreEyesEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Adjust the blending of eyes border. Increase this to show more of the original eyes. Decrease this to show more of the swapped eyes.",
+      "label": "Eyes Feather Blend",
+      "level": 2,
+      "maximum": 100,
+      "minimum": 1,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "RestoreEyesMouthBlurSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreEyesEnableToggle",
+          "RestoreMouthEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "last"
+      },
+      "group": "Face Mask",
+      "help": "Adjust the blur of mask border.",
+      "label": "Eyes/Mouth Blur",
+      "level": 1,
+      "maximum": 50,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "RestoreEyesSizeFactorDecimalSlider": {
+      "decimals": 1,
       "default": 3.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreEyesEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Reduce this when swapping faces zoomed out of the frame.",
+      "label": "Eyes Size Factor",
+      "level": 2,
+      "maximum": 4.0,
+      "minimum": 2.0,
+      "step": 0.5,
+      "tab": "swapper",
       "tier": "project",
       "type": "float"
     },
     "RestoreEyesSpacingOffsetSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreEyesEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Change the Eyes Spacing distance.",
+      "label": "Eyes Spacing Offset",
+      "level": 2,
+      "maximum": 200,
+      "minimum": -200,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "RestoreMouthBlendAmountSlider": {
       "default": 50,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreMouthEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Increase this to show more of the swapped Mouth. Decrease it to show more of the original Mouth.",
+      "label": "Mouth Blend Amount",
+      "level": 2,
+      "maximum": 100,
+      "minimum": 1,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "RestoreMouthEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Mask",
+      "help": "Restore mouth from the original face.",
+      "label": "Restore Mouth",
+      "level": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "RestoreMouthFeatherBlendSlider": {
       "default": 10,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreMouthEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Adjust the border of Mouth blending. Increase this to show more of the original Mouth. Decrease this to show more of the swapped Mouth.",
+      "label": "Mouth Feather Blend",
+      "level": 2,
+      "maximum": 100,
+      "minimum": 1,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "RestoreMouthSizeFactorSlider": {
       "default": 25,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreMouthEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Increase this when swapping faces zoomed out of the frame.",
+      "label": "Mouth Size Factor",
+      "level": 2,
+      "maximum": 60,
+      "minimum": 5,
+      "step": 5,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "RestoreXEyesOffsetSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreEyesEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Moves the Eyes Mask on the X Axis.",
+      "label": "X Eyes Offset",
+      "level": 2,
+      "maximum": 300,
+      "minimum": -300,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "RestoreXEyesRadiusFactorDecimalSlider": {
+      "decimals": 1,
       "default": 1.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreEyesEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "These parameters determine the shape of the mask. If both are equal to 1.0, the mask will be circular. If either one is greater or less than 1.0, the mask will become oval, stretching or shrinking along the corresponding direction.",
+      "label": "X Eyes Radius Factor",
+      "level": 2,
+      "maximum": 3.0,
+      "minimum": 0.3,
+      "step": 0.1,
+      "tab": "swapper",
       "tier": "project",
       "type": "float"
     },
     "RestoreXMouthOffsetSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreMouthEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Moves the Mouth Mask on the X Axis.",
+      "label": "X Mouth Offset",
+      "level": 2,
+      "maximum": 300,
+      "minimum": -300,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "RestoreXMouthRadiusFactorDecimalSlider": {
+      "decimals": 1,
       "default": 1.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreMouthEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "These parameters determine the shape of the mask. If both are equal to 1.0, the mask will be circular. If either one is greater or less than 1.0, the mask will become oval, stretching or shrinking along the corresponding direction.",
+      "label": "X Mouth Radius Factor",
+      "level": 2,
+      "maximum": 3.0,
+      "minimum": 0.3,
+      "step": 0.1,
+      "tab": "swapper",
       "tier": "project",
       "type": "float"
     },
     "RestoreYEyesOffsetSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreEyesEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Moves the Eyes Mask on the Y Axis.",
+      "label": "Y Eyes Offset",
+      "level": 2,
+      "maximum": 300,
+      "minimum": -300,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "RestoreYEyesRadiusFactorDecimalSlider": {
+      "decimals": 1,
       "default": 1.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreEyesEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "These parameters determine the shape of the mask. If both are equal to 1.0, the mask will be circular. If either one is greater or less than 1.0, the mask will become oval, stretching or shrinking along the corresponding direction.",
+      "label": "Y Eyes Radius Factor",
+      "level": 2,
+      "maximum": 3.0,
+      "minimum": 0.3,
+      "step": 0.1,
+      "tab": "swapper",
       "tier": "project",
       "type": "float"
     },
     "RestoreYMouthOffsetSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreMouthEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Moves the Mouth Mask on the Y Axis.",
+      "label": "Y Mouth Offset",
+      "level": 2,
+      "maximum": 300,
+      "minimum": -300,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "RestoreYMouthRadiusFactorDecimalSlider": {
+      "decimals": 1,
       "default": 1.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "RestoreMouthEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "These parameters determine the shape of the mask. If both are equal to 1.0, the mask will be circular. If either one is greater or less than 1.0, the mask will become oval, stretching or shrinking along the corresponding direction.",
+      "label": "Y Mouth Radius Factor",
+      "level": 2,
+      "maximum": 3.0,
+      "minimum": 0.3,
+      "step": 0.1,
+      "tab": "swapper",
       "tier": "project",
       "type": "float"
     },
     "RightEyeParserSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Adjust the size of the Mask. Mast the right eye.",
+      "label": "Right Eye",
+      "level": 2,
+      "maximum": 30,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "RightEyebrowParserSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Adjust the size of the Mask. Mast the right eyebrow.",
+      "label": "Right Eyebrow",
+      "level": 2,
+      "maximum": 30,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "ShowAllDetectedFacesBBoxToggle": {
       "default": false,
+      "gate": null,
+      "group": "Detectors",
+      "help": "Draw bounding boxes to all detected faces in the frame",
+      "label": "Show Bounding Boxes",
+      "level": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "toggle"
     },
     "ShowLandmarksEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Detectors",
+      "help": "Show Landmarks in realtime.",
+      "label": "Show Landmarks",
+      "level": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "toggle"
     },
     "SimilarityThresholdSlider": {
       "default": 60,
+      "gate": null,
+      "group": "Face Similarity",
+      "help": "Set the similarity threshold to control how similar the detected face should be to the reference (target) face.",
+      "label": "Similarity Threshold",
+      "level": 1,
+      "maximum": 100,
+      "minimum": 1,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "SimilarityTypeSelection": {
       "default": "Opal",
+      "gate": null,
+      "group": "Face Recognition",
+      "help": "Choose the type of similarity calculation for face detection and matching during the face swapping process.",
+      "label": "Swapping Similarity Type",
+      "level": 1,
+      "options": [
+        "Opal",
+        "Pearl",
+        "Optimal"
+      ],
+      "tab": "settings",
       "tier": "global",
       "type": "selection"
     },
     "StrengthAmountSlider": {
       "default": 100,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "StrengthEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Similarity",
+      "help": "Increase up to 5x additional swaps (500%). 200% is generally a good result. Set to 0 to turn off swapping but allow the rest of the pipeline to apply to the original image.",
+      "label": "Amount",
+      "level": 2,
+      "maximum": 500,
+      "minimum": 0,
+      "step": 25,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "StrengthEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Face Similarity",
+      "help": "Apply additional swapping iterations to increase the strength of the result, which may increase likeness.",
+      "label": "Strength",
+      "level": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "toggle"
     },
     "SwapModelSelection": {
       "default": "Inswapper128",
+      "gate": null,
+      "group": "Swapper",
+      "help": "Choose which swapper model to use for face swapping.",
+      "label": "Swapper Model",
+      "level": 1,
+      "options": [
+        "Inswapper128",
+        "InStyleSwapper256 Version A",
+        "InStyleSwapper256 Version B",
+        "InStyleSwapper256 Version C",
+        "DeepFaceLive (DFM)",
+        "SimSwap512",
+        "GhostFace-v1",
+        "GhostFace-v2",
+        "GhostFace-v3",
+        "CSCS"
+      ],
+      "tab": "swapper",
       "tier": "project",
       "type": "selection"
     },
     "SwapperResSelection": {
       "default": "128",
+      "gate": {
+        "mechanism": "selection",
+        "parents": [
+          "SwapModelSelection"
+        ],
+        "required_value": "Inswapper128",
+        "rule": "single"
+      },
+      "group": "Swapper",
+      "help": "Select the resolution for the swapped face in pixels. Higher values offer better quality but are slower to process.",
+      "label": "Swapper Resolution",
+      "level": 2,
+      "options": [
+        "128",
+        "256",
+        "384",
+        "512"
+      ],
+      "tab": "swapper",
       "tier": "project",
       "type": "selection"
     },
     "TargetMediaFolderRecursiveToggle": {
       "default": false,
+      "gate": null,
+      "group": "Media Selection",
+      "help": "Include all files from Subfolders when choosing Target Media Folder",
+      "label": "Target Media Include Subfolders",
+      "level": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "toggle"
     },
     "ThemeSelection": {
       "default": "Dark",
+      "exec_function": "app.ui.widgets.actions.control_actions.change_theme",
+      "gate": null,
+      "group": "Appearance",
+      "help": "Select the providers priority to be used with the system.",
+      "label": "Theme",
+      "level": 1,
+      "options": [
+        "Dark",
+        "Dark-Blue",
+        "Light"
+      ],
+      "tab": "settings",
       "tier": "global",
       "type": "selection"
     },
     "UpperLipParserSlider": {
       "default": 0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceParserEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Face Mask",
+      "help": "Adjust the size of the Mask. Mast the upper lip.",
+      "label": "Upper Lip",
+      "level": 2,
+      "maximum": 30,
+      "minimum": 0,
+      "step": 1,
+      "tab": "swapper",
       "tier": "project",
       "type": "int"
     },
     "VideoPlaybackCustomFpsSlider": {
       "default": 30,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "VideoPlaybackCustomFpsToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Video Settings",
+      "help": "Set the maximum FPS of the video when playing",
+      "label": "Video Playback FPS",
+      "level": 2,
+      "maximum": 120,
+      "minimum": 1,
+      "step": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "int"
     },
     "VideoPlaybackCustomFpsToggle": {
       "default": false,
+      "exec_function": "app.ui.widgets.actions.control_actions.set_video_playback_fps",
+      "gate": null,
+      "group": "Video Settings",
+      "help": "Manually set the FPS to be used when playing the video",
+      "label": "Set Custom Video Playback FPS",
+      "level": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "toggle"
     },
     "ViewFaceCompareEnableToggle": {
       "default": false,
+      "exec_function": "app.ui.widgets.actions.layout_actions.fit_image_to_view_onchange",
+      "gate": null,
+      "group": "Face Compare",
+      "help": "Show Face Compare",
+      "label": "View Face Compare",
+      "level": 1,
+      "tab": "common",
       "tier": "project",
       "type": "toggle"
     },
     "ViewFaceMaskEnableToggle": {
       "default": false,
+      "exec_function": "app.ui.widgets.actions.layout_actions.fit_image_to_view_onchange",
+      "gate": null,
+      "group": "Face Compare",
+      "help": "Show Face Mask",
+      "label": "View Face Mask",
+      "level": 1,
+      "tab": "common",
       "tier": "project",
       "type": "toggle"
     },
     "WebCamMaxFPSSelection": {
       "default": "30",
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "WebcamEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Webcam Settings",
+      "help": "Set the maximum frames per second (FPS) for webcam input.",
+      "label": "Webcam FPS",
+      "level": 2,
+      "options": [
+        "23",
+        "30",
+        "60"
+      ],
+      "tab": "settings",
       "tier": "global",
       "type": "selection"
     },
     "WebcamBackendSelection": {
       "default": "Default",
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "WebcamEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Webcam Settings",
+      "help": "Choose the backend for accessing webcam input.",
+      "label": "Webcam Backend",
+      "level": 2,
+      "options": [
+        "Default",
+        "DirectShow",
+        "MSMF",
+        "V4L",
+        "V4L2",
+        "GSTREAMER"
+      ],
+      "tab": "settings",
       "tier": "global",
       "type": "selection"
     },
     "WebcamEnableToggle": {
       "default": false,
+      "gate": null,
+      "group": "Webcam Settings",
+      "help": "Enable the use of the webcam as the input source for face swapping.",
+      "label": "Enable Webcam",
+      "level": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "toggle"
     },
     "WebcamMaxNoSelection": {
       "default": "1",
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "WebcamEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Webcam Settings",
+      "help": "Select the maximum number of webcam streams to allow for face swapping.",
+      "label": "Webcam Max No",
+      "level": 2,
+      "options": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6"
+      ],
+      "tab": "settings",
       "tier": "global",
       "type": "selection"
     },
     "WebcamMaxResSelection": {
       "default": "1280x720",
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "WebcamEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "Webcam Settings",
+      "help": "Select the maximum resolution for webcam input.",
+      "label": "Webcam Resolution",
+      "level": 2,
+      "options": [
+        "480x360",
+        "640x480",
+        "1280x720",
+        "1920x1080",
+        "2560x1440",
+        "3840x2160"
+      ],
+      "tab": "settings",
       "tier": "global",
       "type": "selection"
     },
     "XAxisMovementDecimalSlider": {
+      "decimals": 2,
       "default": 0.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Changes the head direction x-axis.",
+      "label": "X-Axis Movement",
+      "level": 2,
+      "maximum": 0.19,
+      "minimum": -0.19,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "YAxisMovementDecimalSlider": {
+      "decimals": 2,
       "default": 0.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Changes the head direction y-axis.",
+      "label": "Y-Axis Movement",
+      "level": 2,
+      "maximum": 0.19,
+      "minimum": -0.19,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "ZAxisMovementDecimalSlider": {
+      "decimals": 2,
       "default": 1.0,
+      "gate": {
+        "mechanism": "toggle",
+        "parents": [
+          "FaceEditorEnableToggle"
+        ],
+        "required_value": true,
+        "rule": "single"
+      },
+      "group": "",
+      "help": "Changes the head direction z-axis.",
+      "label": "Z-Axis Movement",
+      "level": 2,
+      "maximum": 1.2,
+      "minimum": -0.9,
+      "step": 0.01,
+      "tab": "face_editor",
       "tier": "project",
       "type": "float"
     },
     "nThreadsSlider": {
       "default": 2,
+      "exec_function": "app.ui.widgets.actions.control_actions.change_threads_number",
+      "gate": null,
+      "group": "General",
+      "help": "Set number of execution threads while playing and recording. Depends strongly on GPU VRAM.",
+      "label": "Number of Threads",
+      "level": 1,
+      "maximum": 30,
+      "minimum": 1,
+      "step": 1,
+      "tab": "settings",
       "tier": "global",
       "type": "int"
     }

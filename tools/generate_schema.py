@@ -23,6 +23,31 @@ inside inference, a long way from the file that caused it.
 ``tests/test_schema_fixture_agreement.py`` is what proves the import is really
 shared.
 
+**Gating, and what the two compound spellings actually do.** Upstream gates a
+control with either ``parentToggle`` (140 keys) or ``parentSelection`` (4 keys),
+and this generator normalises both into one ``gate`` object per entry. A bare
+``parentToggle`` names one parent. Two undocumented compound spellings exist, and
+their rules were read out of upstream's evaluator -- the ``'Toggle' in
+parent_widget_name`` branch of ``app/ui/widgets/actions/common_actions.py`` --
+rather than inferred from the punctuation, because the punctuation is misleading:
+
+  - ``'A|B'`` -> rule ``all``. The evaluator starts at True and clears it if
+    **any** parent is unchecked. The pipe reads like OR; the code is an AND.
+    3 keys, all ``FaceExpression...`` sliders.
+  - ``'A, B'`` -> rule ``last``. The evaluator *assigns* rather than combines on
+    each pass of its loop, so only the last parent has any effect whatsoever.
+    That is a bug upstream. It is recorded as measured rather than quietly
+    improved into the ``all`` a reader would expect: a renderer that hides a
+    control upstream shows is a behaviour change nobody asked for, and it would
+    be invisible in a diff of this file. 2 keys.
+  - a selection gate is always one parent and an equality against a string. All
+    4 name ``SwapModelSelection``.
+
+The gate is **presentational**. It belongs here so a renderer can hide a control,
+and ``visoswap/settings/store.py`` never consults it: the engine reads
+``parameters[key]`` unconditionally and reads the parent toggle separately, so
+filtering values by gate state would change engine behaviour.
+
 Usage:
     "D:/Visomaster/dependencies/Python/python.exe" -B tools/generate_schema.py
 """
@@ -95,17 +120,105 @@ def typed_default(name, spec, shape):
     return fixture_generator.coerce(name, spec, shape, [])
 
 
+def qualified_name(function):
+    return "{}.{}".format(function.__module__, function.__qualname__)
+
+
+def number(shape, raw):
+    """One bound, coerced by the same shape rule that types the default.
+
+    ``min_value`` and ``max_value`` are strings upstream while ``step`` is
+    already numeric, so a single spec routinely disagrees with itself about the
+    type of its own bounds.
+    """
+    return float(raw) if shape == "float" else int(float(raw))
+
+
+def build_gate(spec):
+    """The one uniform gate object, or ``None`` for an ungated key."""
+    if "parentSelection" in spec:
+        return {
+            "mechanism": "selection",
+            "parents": [spec["parentSelection"].strip()],
+            "rule": "single",
+            "required_value": spec.get("requiredSelectionValue"),
+        }
+    if "parentToggle" not in spec:
+        return None
+
+    raw = spec["parentToggle"]
+    if "," in raw:
+        # See the module docstring: upstream assigns rather than combines, so
+        # only the last parent decides. Recorded as measured, not improved.
+        parents, rule = [p.strip() for p in raw.split(",")], "last"
+    elif "|" in raw:
+        # The pipe reads like OR. Upstream's loop is an AND.
+        parents, rule = [p.strip() for p in raw.split("|")], "all"
+    else:
+        parents, rule = [raw.strip()], "single"
+    return {
+        "mechanism": "toggle",
+        "parents": parents,
+        "rule": rule,
+        "required_value": spec.get("requiredToggleValue"),
+    }
+
+
 def build_entry(name, spec, tab, group, tier):
     shape = fixture_generator.shape_of(spec)
-    return {
+    entry = {
         # `type` is the shape name, verbatim. Never a substring of the key name:
         # the current web UI picks a control by testing the key for `Toggle` /
         # `Selection` / `Decimal`, which is why `ClipText` renders today as a
         # slider from 0 to 1000 over a text field.
         "type": shape,
         "tier": tier,
+        "tab": tab,
+        "group": group,
+        "label": spec["label"],
+        "help": spec["help"],
+        # `level` is the string '1'/'2'/'3' upstream. Emitted as an int so a
+        # renderer showing "advanced settings only" can compare rather than parse.
+        "level": int(spec["level"]),
         "default": typed_default(name, spec, shape),
+        "gate": build_gate(spec),
     }
+
+    if shape in ("int", "float"):
+        entry["minimum"] = number(shape, spec["min_value"])
+        entry["maximum"] = number(shape, spec["max_value"])
+        entry["step"] = number(shape, spec["step"])
+    if shape == "float":
+        entry["decimals"] = int(spec["decimals"])
+    if shape == "text":
+        # Character-count bounds on a line edit, NOT slider bounds. Emitting
+        # these as `minimum`/`maximum` is exactly the confusion that makes the
+        # current renderer draw a slider from 0 to 1000 over a text field.
+        entry["min_length"] = int(spec["min_value"])
+        entry["max_length"] = int(spec["max_value"])
+    if shape == "selection":
+        options = spec["options"]
+        if callable(options):
+            # The one directory listing. Freezing it would stale the file the
+            # moment a model file is added or removed, so the resolver is named
+            # and `visoswap/schema` runs the scan itself at load time.
+            entry["options"] = None
+            entry["options_from"] = qualified_name(options)
+        else:
+            entry["options"] = list(options)
+    if callable(spec.get("default")):
+        entry["default_from"] = qualified_name(spec["default"])
+
+    if "exec_function" in spec:
+        # Upstream attached a side effect to six keys, and the current
+        # serializer drops every key starting with `exec_` -- which is how they
+        # went missing without anyone noticing. Naming the dropped function is
+        # what makes the gap visible and typed. `exec_function_args` is `[]` for
+        # all six, so it is not emitted: an empty list on every entry is noise
+        # that reads like a feature.
+        entry["exec_function"] = qualified_name(spec["exec_function"])
+
+    return entry
 
 
 def build_widgets(rows):
