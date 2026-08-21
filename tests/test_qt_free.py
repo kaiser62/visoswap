@@ -4,13 +4,22 @@ Phase 1's entire success criterion is an import proof: vendored engine code must
 not be able to reach a Qt binding. Nothing in this file may ``skip``. A skip here
 is a false green on the one thing this phase exists to demonstrate -- the suite
 would report success while proving nothing at all.
+
+The module list is *discovered*, not written down. A hardcoded list silently
+under-covers the moment a file is added: the new module is not probed, nothing
+fails, and the gate reports green over code it never looked at. Discovery plus an
+explicit, commented ``PENDING_QT_STRIP`` inverts that -- coverage is the default
+and every exception is a line someone had to write on purpose.
 """
 
 import subprocess
 
-from tests.conftest import ENGINE_PYTHON_ENV_VAR, run_probe
-
-VENDORED_MODULE = "visoswap.processors.utils.faceutil"
+from tests.conftest import (
+    ENGINE_PYTHON_ENV_VAR,
+    PENDING_QT_STRIP,
+    run_probe,
+    vendored_modules,
+)
 
 
 def _interpreter_hint(engine_python) -> str:
@@ -43,23 +52,49 @@ def test_engine_python_has_runtime_deps(engine_python):
     )
 
 
-def test_vendored_module_imports_without_qt(engine_python):
-    """The vendored module imports with every Qt binding root blocked."""
-    code, out = run_probe(engine_python, [VENDORED_MODULE])
+def test_gate_discovers_the_vendored_tree():
+    """Guard against the gate passing because discovery found nothing.
+
+    ``assert code == 0`` on an empty argv list is not a pass, it is a probe that
+    was asked to import nothing. This test is the thing that should say so.
+    """
+    modules = vendored_modules()
+    assert modules, (
+        "no vendored modules discovered under visoswap/ -- the Qt gate would "
+        "pass vacuously."
+    )
+    for pending in PENDING_QT_STRIP:
+        assert pending not in modules, (
+            "{} is in PENDING_QT_STRIP but was still handed to the probe".format(
+                pending
+            )
+        )
+
+
+def test_every_vendored_module_imports_without_qt(engine_python):
+    """Every vendored module imports with all seven Qt binding roots blocked."""
+    modules = vendored_modules()
+    assert modules, "no vendored modules discovered under visoswap/"
+
+    code, out = run_probe(engine_python, modules)
+
+    covered = "{} modules probed in one run:\n  {}".format(
+        len(modules), "\n  ".join(modules)
+    )
 
     assert code != 2, (
-        "the probe could not import {} because an *engine* dependency is missing, "
-        "not because of Qt. This is not a Qt-cleanliness result.\n"
-        "probe output: {}\n".format(VENDORED_MODULE, out)
+        "the probe could not import a vendored module because an *engine* "
+        "dependency is missing, not because of Qt. This is not a Qt-cleanliness "
+        "result.\nprobe output: {}\n{}\n".format(out, covered)
         + _interpreter_hint(engine_python)
     )
     assert code != 1, (
-        "{} reached a Qt binding with the Qt roots blocked.\n"
-        "probe output: {}".format(VENDORED_MODULE, out)
+        "a vendored module reached a Qt binding with the Qt roots blocked.\n"
+        "probe output: {}\n{}".format(out, covered)
     )
     assert code == 0, (
-        "the probe failed to import {} for a non-Qt reason.\n"
-        "exit code: {}\nprobe output: {}\n".format(VENDORED_MODULE, code, out)
+        "the probe failed to import a vendored module for a non-Qt reason.\n"
+        "exit code: {}\nprobe output: {}\n{}\n".format(code, out, covered)
         + _interpreter_hint(engine_python)
     )
     assert out.splitlines()[-1] == "CLEAN", (
