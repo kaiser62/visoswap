@@ -57,11 +57,15 @@ Vendor `app/processors/` (10,635 LOC). Measured Qt coupling is small:
   scheduler already owns playback.
 - `models_processor.py` subclasses `QtCore.QObject` and declares two Signals
   that nothing on our path consumes. Drop the base class and the signals.
-- `workers/frame_worker.py` (1306 LOC, the actual swap pipeline) has **no Qt
-  imports at all**. It touches Qt only as `swapfacesButton.isChecked()` and
-  `editFacesButton.isChecked()` (lines 48, 137, 163, 170), used purely as
-  booleans, plus signal emission and frame-queue plumbing confined to lines
-  60-78 — the display path, which we drop.
+- `workers/frame_worker.py` (1306 LOC, the actual swap pipeline) imports no Qt
+  directly, but does import two `app/ui` action modules (lines 16-17) that pull
+  in PySide6 transitively. It calls exactly two functions from them:
+  `get_pixmap_from_frame` (line 57, the display path) and
+  `update_parameters_and_control_from_marker` (line 43, timeline markers). Both
+  are on paths we drop, so both imports go. It also touches Qt as
+  `swapfacesButton.isChecked()` and `editFacesButton.isChecked()` (lines 48,
+  137, 163, 170), used purely as booleans, plus signal emission and frame-queue
+  plumbing confined to lines 60-78 — again the display path.
 
 `main_window` is replaced by an explicit context object carrying `control`,
 `parameters`, `target_faces`, `models_processor`, and the two former button
@@ -81,9 +85,12 @@ widget, no `face_id` tied to a UI element.
 ## Settings
 
 The web UI already derives its schema rather than hand-listing it: `web_ui.py`
-imports four `*_layout_data` dicts (swapper 103 widgets, face_editor 42, common
-23, settings 33) and flattens them to JSON, and the frontend generates every
-control from that. Keep the approach; fix what it gets wrong.
+imports four `*_layout_data` dicts and flattens them to JSON, and the frontend
+generates every control from that. Keep the approach; fix what it gets wrong.
+
+Counted by importing the dicts: swapper 103, face_editor 42, common 23, settings
+33. The first three are the project tier (168 keys), `settings` is the global
+tier (33 keys), and the two sets do not overlap.
 
 A checked-in generator dumps `schema.json` once, offline. This is the only step
 that needs Qt — `settings_layout_data.py` transitively imports PySide6 through
@@ -105,8 +112,8 @@ Three tiers, all persisted:
 
 | Tier | Keys | Storage |
 |---|---|---|
-| global | 33 control keys | app config |
-| project | 201 parameter keys | new `project_settings` table |
+| global | 33 control keys, from `settings_layout_data` | app config |
+| project | 168 parameter keys, from `common` + `swapper` + `face_editor` | new `project_settings` table |
 | face | sparse overrides | new `face_settings` table |
 
 Resolution is global, then project, then face; each tier stores only overrides.
