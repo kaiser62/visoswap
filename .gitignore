@@ -11,3 +11,4 @@ tensorrt-engines/
 output/
 .ruff_cache/
 .pytest_cache/
+.venv-clean/
