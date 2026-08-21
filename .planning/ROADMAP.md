@@ -75,14 +75,16 @@ separate from settings/backend/frontend work so a failure here is cheap to isola
   3. `grep -rn "from backend\|import backend" visoswap/` returns no matches — the engine has no
      dependency on the backend package
 
-  4. The smoke test additionally exercises, at least once each: the DFM swap-model path, the
-     LivePortrait editor path, and the CLIPseg-based masking path — each completes without a Qt
-     import error or `AttributeError` on a missing Qt attribute (this directly retires the design's
-     named risk that these paths carry coupling static inspection did not find)
+  4. The smoke test exercises the LivePortrait editor path, which completes without a Qt import
+     error or `AttributeError` on a missing Qt attribute. The DFM and CLIPseg paths are
+     **import-proven only, by decision** — neither has weights on any reachable machine, so
+     neither can be exercised; see `phases/02-engine-api-first-swap/02-DECISION-deferred-paths.md`.
+     This retires the design's named coupling risk for LivePortrait and defers it, recorded, for
+     the other two.
 
   5. `FaceCard` holds only the embedding store and crop — no Qt widget reference, no `face_id`
      tied to a UI element
-**Plans**: TBD
+**Plans**: 4
 
 ### Phase 3: Settings Schema & Three-Tier Resolution
 
@@ -134,8 +136,11 @@ the frontend/E2E phases that assume a working backend.
      `test_recorder.py::test_a_cancelled_run_leaves_a_playable_partial` completes (does not hang)
      and passes — fixed, not skipped or deselected
 
-  2. Starting the backend with `MODELS_DIR` pointed at a directory missing one or more of the 54
-     tracked files exits non-zero with a clear error before any generation request is served
+  2. Starting the backend with `MODELS_DIR` pointed at a directory missing one or more tracked
+     model files exits non-zero with a clear error before any generation request is served. The
+     tracked set is `models_list` (**56** entries) plus `models_trt_list`, which is **6** entries
+     when `tensorrt` imports and **0** when it does not — the criterion is derived from the
+     manifest at runtime, never a hardcoded count
 
   3. Starting the backend with `MODELS_DIR` pointed at a complete set (verified by hash) starts
      normally and `GET /api/health` returns 200
@@ -213,7 +218,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Vendor the Engine & Strip Qt | 3/4 | In Progress|  |
-| 2. Engine API & First Swap | 0/TBD | Not started | - |
+| 2. Engine API & First Swap | 0/4 | Not started | - |
 | 3. Settings Schema & Three-Tier Resolution | 0/TBD | Not started | - |
 | 4. Backend Integration & Model Bootstrap | 0/TBD | Not started | - |
 | 5. Frontend Schema Rendering | 0/TBD | Not started | - |
