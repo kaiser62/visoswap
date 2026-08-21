@@ -25,6 +25,45 @@ ATTRIBUTION_HEADER = (
 )
 
 
+#: Files under ``visoswap/`` that are project-authored rather than vendored, and
+#: therefore carry no VisoMaster attribution. Each entry is a repo-relative POSIX
+#: path and needs a stated reason -- this list is the one way vendored code could
+#: be smuggled past the attribution gate, so it stays short and explicit rather
+#: than becoming a pattern.
+#:
+#: ``processors/context.py`` -- the Qt-free ``EngineContext`` that replaces
+#: VisoMaster's ``main_window``. Written for VisoSwap; nothing is copied from
+#: upstream. Only the attribute *surface* it has to cover was derived from
+#: upstream, and a measured list of attribute names is not copyrightable
+#: expression.
+PROJECT_AUTHORED = frozenset(
+    {
+        "processors/context.py",
+    }
+)
+
+
+def _is_project_authored(path: Path) -> bool:
+    return path.relative_to(VISOSWAP_ROOT).as_posix() in PROJECT_AUTHORED
+
+
+def test_project_authored_exemptions_all_exist():
+    """An exemption for a file that no longer exists is a hole waiting to open.
+
+    Rename ``context.py`` and the stale entry sits there until some future file
+    lands on the same path and is silently exempted. Fail while the mismatch is
+    still cheap to fix.
+    """
+    stale = sorted(
+        name for name in PROJECT_AUTHORED if not (VISOSWAP_ROOT / name).is_file()
+    )
+    assert not stale, (
+        "PROJECT_AUTHORED names files that do not exist: {}. Remove the entry "
+        "or fix the path -- a stale exemption silently un-gates whatever lands "
+        "there next.".format(stale)
+    )
+
+
 def _is_package_scaffolding(path: Path) -> bool:
     """True for an ``__init__.py`` that contains no vendored code.
 
@@ -64,7 +103,7 @@ def _vendored_files() -> list[Path]:
     return sorted(
         path
         for path in VISOSWAP_ROOT.rglob("*.py")
-        if not _is_package_scaffolding(path)
+        if not _is_package_scaffolding(path) and not _is_project_authored(path)
     )
 
 
