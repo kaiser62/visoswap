@@ -1,0 +1,77 @@
+NOTICE
+======
+
+VisoSwap
+Copyright (C) 2026 the VisoSwap contributors.
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. The full text is in LICENSE.
+
+
+Vendored code: VisoMaster
+-------------------------
+
+Everything under `visoswap/` is derived from VisoMaster:
+
+    https://github.com/visomaster/VisoMaster
+
+VisoMaster is licensed under the GNU General Public License version 3. VisoSwap
+vendors VisoMaster's inference code, so that license attaches to this project as
+a whole -- GPLv3 here is forced, not chosen.
+
+Every vendored file carries a four-line attribution header naming VisoMaster as
+its origin. `tests/test_vendor_headers.py` fails the build if any vendored file
+loses it.
+
+
+Provenance of the vendored copy
+-------------------------------
+
+Vendored from : D:/Visomaster  (local working copy)
+Source path   : D:/Visomaster/app/processors/
+Vendored on   : 2026-08-21
+
+Upstream revision: COULD NOT BE DETERMINED.
+
+The source tree's git metadata is unreadable. Every `git -C D:/Visomaster ...`
+invocation fails with:
+
+    fatal: bad config line 1 in file .git/config
+
+This is a pre-existing condition of that working copy, not something VisoSwap
+caused; the tree is treated as read-only source material and was deliberately
+not repaired. No commit SHA could therefore be recorded.
+
+This is stated explicitly rather than left blank. An unrecorded provenance is
+what makes a later GPL audit expensive; an explicitly-unknown one at least tells
+an auditor exactly where to look and why the answer is missing. Anyone needing
+the exact upstream revision should diff `visoswap/` against a freshly cloned
+VisoMaster checkout -- vendoring is a byte copy plus a mechanical import rewrite,
+so such a diff stays meaningful.
+
+
+Model weights: insightface -- NON-COMMERCIAL USE ONLY
+-----------------------------------------------------
+
+This is a separate obligation from the GPL and is not covered by it.
+
+The insightface model weights this project depends on are licensed for
+non-commercial research purposes only. That includes `genderage.onnx`, which
+VisoSwap's face selection relies on to identify a confident female face before
+falling back to the most prominent one.
+
+VisoSwap may therefore not be used commercially while it depends on those
+weights. This restriction blocks nothing about running, modifying, or
+redistributing the source under the GPL; it blocks any commercial deployment.
+
+    https://github.com/deepinsight/insightface
+
+
+Third-party runtime dependencies
+--------------------------------
+
+VisoSwap runs on PyTorch, ONNX Runtime, TensorRT, OpenCV, scikit-image, kornia
+and others, each under its own license. They are dependencies, not vendored
+code; see `requirements-engine.txt` for the set and each project for its terms.
