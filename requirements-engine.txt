@@ -1,0 +1,33 @@
+# VisoSwap engine runtime dependencies.
+#
+# Derived from VisoMaster's pinned set (D:/Visomaster/requirements_cu124.txt),
+# with the Qt and Qt-theming entries removed -- PySide6, pyqt-toast-notification,
+# qdarkstyle, pyqtdarktheme -- and pyvirtualcam removed (webcam capture is not on
+# this project's path). Upstream pins and --extra-index-url lines are kept intact;
+# no package appears here that VisoMaster did not already pin.
+#
+# Nothing in Phase 1 installs from this file. It is the recipe for the clean-room
+# Qt-free verification in plan 01-04.
+
+--extra-index-url https://download.pytorch.org/whl/cu124
+
+numpy==1.26.4
+opencv-python==4.10.0.84
+scikit-image==0.21.0
+pillow==9.5.0
+onnx==1.16.1
+protobuf==4.23.2
+psutil==6.0.0
+onnxruntime-gpu==1.20.0
+packaging==24.1
+kornia
+torch==2.4.1+cu124
+torchvision==0.19.1+cu124
+torchaudio==2.4.1+cu124
+tensorrt==10.6.0 --extra-index-url https://pypi.nvidia.com
+tqdm
+ftfy
+regex
+numexpr
+onnxsim
+requests

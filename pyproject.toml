@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "visoswap"
+version = "0.1.0"
+description = "Standalone video face-swap: real-time playback with asynchronous predictive frame generation, on a Qt-free vendored inference engine."
+requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE", "NOTICE"]
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "Private :: Do Not Upload",
+]
+
+# Deliberately empty. The engine's runtime dependencies (torch, torchvision,
+# kornia, onnxruntime-gpu, tensorrt, ...) are environment-provided and
+# platform-specific -- pinning them here would make `pip install visoswap`
+# try to resolve a CUDA stack it cannot know anything about. The engine's
+# dependency set is recorded as a recipe in requirements-engine.txt instead.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+include = ["visoswap*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
