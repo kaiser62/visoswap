@@ -489,3 +489,164 @@ def test_no_entry_carries_empty_side_effect_arguments(widgets):
     """``exec_function_args`` is ``[]`` for all six upstream. An empty list on
     every entry is noise that reads like a feature."""
     assert not [k for k, e in widgets.items() if "exec_function_args" in e]
+
+
+# --------------------------------------------------------------------------
+# the dynamic option list, resolved at load rather than at freeze
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def clean_schema_cache(monkeypatch):
+    """A loader with no cached listing and no ambient ``MODELS_DIR``."""
+    from visoswap import schema
+
+    monkeypatch.delenv(schema.MODELS_DIR_ENV, raising=False)
+    schema.clear_dfm_cache()
+    yield schema
+    schema.clear_dfm_cache()
+
+
+def test_a_populated_models_directory_yields_sorted_options(clean_schema_cache, tmp_path):
+    """Two accepted extensions in, one rejected extension ignored, sorted.
+
+    Sorted is a deliberate improvement on upstream, which returns whatever order
+    ``os.listdir`` yields -- not stable across filesystems, so two machines with
+    the same files would render the dropdown differently.
+    """
+    schema = clean_schema_cache
+    models = tmp_path / "model_assets" / schema.DFM_SUBDIR
+    models.mkdir(parents=True)
+    (models / "zeta.dfm").write_bytes(b"")
+    (models / "alpha.onnx").write_bytes(b"")
+    (models / "notes.txt").write_bytes(b"")
+
+    entry = schema.resolved_entry(DYNAMIC_KEY, tmp_path / "model_assets")
+
+    assert entry["options"] == ["alpha.onnx", "zeta.dfm"]
+    assert entry["default"] == "alpha.onnx"
+    assert schema.dfm_models(tmp_path / "model_assets") == {
+        "alpha.onnx": str(models / "alpha.onnx"),
+        "zeta.dfm": str(models / "zeta.dfm"),
+    }
+
+
+def test_an_absent_models_directory_is_empty_and_does_not_raise(
+    clean_schema_cache, tmp_path, caplog
+):
+    """Upstream swallows the exception and substitutes ``[]``, so a missing
+    directory today produces an empty dropdown and no error anywhere. The list is
+    still empty here -- that is the only thing a caller can do -- but the
+    directory that was tried is surfaced, because "has no models" and "does not
+    exist" are different facts and only one is the user's to fix.
+    """
+    schema = clean_schema_cache
+    missing = tmp_path / "nowhere"
+
+    with caplog.at_level("WARNING", logger="visoswap.schema"):
+        entry = schema.resolved_entry(DYNAMIC_KEY, missing)
+
+    assert entry["options"] == []
+    assert entry["default"] == ""
+    assert type(entry["default"]) is str
+    assert str(missing / schema.DFM_SUBDIR) in caplog.text, caplog.text
+
+
+def test_an_empty_models_directory_is_not_reported_as_missing(
+    clean_schema_cache, tmp_path, caplog
+):
+    schema = clean_schema_cache
+    models = tmp_path / "model_assets" / schema.DFM_SUBDIR
+    models.mkdir(parents=True)
+
+    with caplog.at_level("WARNING", logger="visoswap.schema"):
+        entry = schema.resolved_entry(DYNAMIC_KEY, tmp_path / "model_assets")
+
+    assert entry["options"] == []
+    assert entry["default"] == ""
+    assert not caplog.records, (
+        "an existing but empty directory is a normal state, not a warning: "
+        "{}".format(caplog.text)
+    )
+
+
+def test_the_models_directory_comes_from_the_argument_then_the_environment(
+    clean_schema_cache, tmp_path, monkeypatch
+):
+    """Never from a request field (T-03-06)."""
+    schema = clean_schema_cache
+    from_env = tmp_path / "from-env"
+    (from_env / schema.DFM_SUBDIR).mkdir(parents=True)
+    (from_env / schema.DFM_SUBDIR / "env.dfm").write_bytes(b"")
+
+    from_arg = tmp_path / "from-arg"
+    (from_arg / schema.DFM_SUBDIR).mkdir(parents=True)
+    (from_arg / schema.DFM_SUBDIR / "arg.dfm").write_bytes(b"")
+
+    monkeypatch.setenv(schema.MODELS_DIR_ENV, str(from_env))
+    assert schema.resolved_entry(DYNAMIC_KEY)["options"] == ["env.dfm"]
+    assert schema.resolved_entry(DYNAMIC_KEY, from_arg)["options"] == ["arg.dfm"]
+
+    monkeypatch.delenv(schema.MODELS_DIR_ENV)
+    assert schema.resolve_models_dir() == schema.DEFAULT_MODELS_DIR.resolve()
+
+
+def test_load_resolves_the_dynamic_key_and_leaves_the_other_two_hundred_alone(
+    clean_schema_cache, tmp_path, widgets
+):
+    schema = clean_schema_cache
+    models = tmp_path / "model_assets" / schema.DFM_SUBDIR
+    models.mkdir(parents=True)
+    (models / "only.dfm").write_bytes(b"")
+
+    loaded = schema.load(tmp_path / "model_assets")
+
+    assert len(loaded) == len(widgets)
+    assert loaded[DYNAMIC_KEY]["options"] == ["only.dfm"]
+    assert loaded[DYNAMIC_KEY]["default"] == "only.dfm"
+    for key in widgets:
+        if key != DYNAMIC_KEY:
+            assert loaded[key] == widgets[key], key
+
+    assert schema.WIDGETS[DYNAMIC_KEY]["options"] is None, (
+        "load() must not mutate the frozen document -- the next caller with a "
+        "different models directory would silently get this one's listing"
+    )
+
+
+def test_resolution_ends_at_the_resolved_default_not_the_frozen_null(
+    clean_schema_cache, tmp_path
+):
+    """The dynamic key must not be the one key that resolves to ``None``."""
+    import sqlite3
+
+    from visoswap.settings import db, store
+
+    schema = clean_schema_cache
+    models = tmp_path / "model_assets" / schema.DFM_SUBDIR
+    models.mkdir(parents=True)
+    (models / "only.dfm").write_bytes(b"")
+
+    connection = sqlite3.connect(tmp_path / "project.db")
+    db.apply_settings_schema(connection)
+    try:
+        value = store.resolve(
+            connection,
+            DYNAMIC_KEY,
+            "project-a",
+            models_dir=tmp_path / "model_assets",
+        )
+        assert value == "only.dfm"
+
+        store.set_project(connection, "project-a", DYNAMIC_KEY, "chosen.dfm")
+        assert (
+            store.resolve(
+                connection,
+                DYNAMIC_KEY,
+                "project-a",
+                models_dir=tmp_path / "model_assets",
+            )
+            == "chosen.dfm"
+        )
+    finally:
+        connection.close()

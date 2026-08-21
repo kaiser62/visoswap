@@ -3,8 +3,14 @@
 ``schema.json`` is generated offline by ``tools/generate_schema.py`` on an
 interpreter that has Qt, and committed. This loader reads it and nothing else.
 
-**Standard library only, forever.** ``json`` and ``pathlib``, no third party and
-nothing from the rest of this package. Two gates enforce it automatically:
+One key is **not** frozen. ``DFMModelSelection``'s option list is a directory
+listing, so baking it in would stale the file the moment a model file is added or
+removed. The generator emits ``null`` for its options and default plus the name of
+the upstream function that would have produced them, and this module runs the scan
+itself -- see ``dfm_models`` below.
+
+**Standard library only, forever.** ``json``, ``pathlib``, ``logging`` and ``os``;
+no third party and nothing from the rest of this package. Two gates enforce it:
 ``tests/test_qt_free.py`` imports every module under ``visoswap/`` with the seven
 Qt binding roots and the backend package made unimportable, and
 ``tests/test_no_qt_source.py`` scans the source text. Both discover this file by
@@ -18,9 +24,32 @@ what it becomes instead.
 """
 
 import json
+import logging
+import os
 from pathlib import Path
 
+LOGGER = logging.getLogger(__name__)
+
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.json"
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+#: Where the weights live. The vendored engine still uses the relative string
+#: ``'./model_assets'`` until Phase 4 makes it env-driven, so this default is
+#: anchored to the repository root rather than to the process working directory
+#: -- resolving it from the CWD is how a scan silently finds nothing.
+DEFAULT_MODELS_DIR = REPO_ROOT / "model_assets"
+
+MODELS_DIR_ENV = "MODELS_DIR"
+
+#: Upstream's ``DFM_MODELS_PATH`` is ``./model_assets/dfm_models``.
+DFM_SUBDIR = "dfm_models"
+
+#: The two extensions upstream keeps.
+DFM_EXTENSIONS = (".dfm", ".onnx")
+
+#: The one key whose options are a directory listing.
+DYNAMIC_KEY = "DFMModelSelection"
 
 #: The two tiers, in resolution order from most specific to least. The face tier
 #: has no schema presence -- any project-tier key may be overridden per face --
@@ -102,3 +131,126 @@ def defaults():
     deciding a precedence.
     """
     return defaults_for_tier("project"), defaults_for_tier("global")
+
+
+# --------------------------------------------------------------------------
+# the one dynamic option list
+# --------------------------------------------------------------------------
+
+#: ``{resolved directory: {filename: path}}``. The scan runs once per directory
+#: rather than once per read (T-03-05): the schema is read on every resolution
+#: and a per-read listing of a large models directory would be paid 201 times for
+#: one answer.
+_DFM_CACHE = {}
+
+
+def clear_dfm_cache():
+    """Forget every cached listing. For tests, and for a deliberate rescan."""
+    _DFM_CACHE.clear()
+
+
+def resolve_models_dir(models_dir=None):
+    """The models directory, normalised: argument, then ``MODELS_DIR``, then the
+    repository-relative default the vendored engine already uses.
+
+    Never a request field (T-03-06). The path is normalised here and only its
+    direct entries are ever listed; nothing from the listing is opened.
+    """
+    chosen = models_dir or os.environ.get(MODELS_DIR_ENV) or DEFAULT_MODELS_DIR
+    return Path(chosen).expanduser().resolve()
+
+
+def dfm_models(models_dir=None):
+    """``{filename: path}`` for every DFM model on disk. Empty when there are none.
+
+    This is the same listing that populates the engine context's DFM model
+    metadata -- the field Phase 1's context surface flagged as unpopulated and
+    plan 02-02 assigned to Phase 4's model bootstrap. **Phase 4 wires this
+    mapping into the engine context rather than writing a second scan.** That is
+    why this returns the whole mapping and not just the option list.
+
+    Two deliberate differences from upstream's ``get_dfm_models_data``:
+
+    * The result is **sorted**. Upstream returns entries in whatever order the
+      filesystem yields, which is not stable across machines, and an option list
+      whose order depends on the filesystem makes two identical installs render
+      differently. The sort is an improvement, made on purpose.
+    * A missing directory is **reported**, not swallowed. Upstream's serializer
+      catches the exception and substitutes an empty list, which is why a
+      missing models directory today produces an empty dropdown and no error
+      anywhere. "The directory has no models" and "the directory does not exist"
+      are different facts and only one of them is the user's to fix, so the
+      directory that was tried is logged at warning level.
+    """
+    directory = resolve_models_dir(models_dir) / DFM_SUBDIR
+    cached = _DFM_CACHE.get(directory)
+    if cached is not None:
+        return dict(cached)
+
+    if not directory.is_dir():
+        LOGGER.warning(
+            "no DFM models directory at %s -- the DFM model list will be empty. "
+            "Set %s to the directory holding model_assets, or pass models_dir.",
+            directory,
+            MODELS_DIR_ENV,
+        )
+        found = {}
+    else:
+        found = {
+            child.name: str(child)
+            for child in sorted(directory.iterdir(), key=lambda p: p.name)
+            if child.name.lower().endswith(DFM_EXTENSIONS) and child.is_file()
+        }
+        if not found:
+            LOGGER.info("DFM models directory %s holds no models", directory)
+
+    _DFM_CACHE[directory] = found
+    return dict(found)
+
+
+def _resolved_dynamic(models_dir=None):
+    """``(options, default)`` for the dynamic key.
+
+    The default is the first option, or ``''`` when there are none. That is
+    upstream's behaviour, and the empty string is a real, meaningful value here
+    -- "no DFM model selected" -- rather than a failure marker.
+    """
+    options = sorted(dfm_models(models_dir))
+    return options, (options[0] if options else "")
+
+
+def resolved_entry(key, models_dir=None):
+    """The schema entry for ``key`` with any dynamic parts filled in.
+
+    Identical to ``entry(key)`` for 200 of the 201 keys.
+    """
+    found = entry(key)
+    if key != DYNAMIC_KEY:
+        return found
+    options, default = _resolved_dynamic(models_dir)
+    resolved = dict(found)
+    resolved["options"] = options
+    resolved["default"] = default
+    return resolved
+
+
+def effective_default(key, models_dir=None):
+    """The default a caller should actually use, dynamic key included.
+
+    ``visoswap/settings/store.py`` ends its resolution chain here rather than at
+    the raw ``default`` field, so the one key whose default is a directory
+    listing is not the one key that resolves to ``None``.
+    """
+    return resolved_entry(key, models_dir)["default"]
+
+
+def load(models_dir=None):
+    """``{key: entry}`` with every dynamic option list resolved.
+
+    Callers that render controls want this; callers that only need a type can
+    read ``WIDGETS`` directly and skip the directory scan. The scan is not done
+    at import: every module under ``visoswap/`` is imported by the Phase 1 gate,
+    and an import that touches the filesystem is an import that can fail for a
+    reason that has nothing to do with what the gate is measuring.
+    """
+    return {key: resolved_entry(key, models_dir) for key in WIDGETS}

@@ -188,7 +188,7 @@ def get_override(connection, key, project_id=None, face_key=None, tier="project"
     return None if row is None else _decode(row[0])
 
 
-def resolve(connection, key, project_id=None, face_key=None):
+def resolve(connection, key, project_id=None, face_key=None, models_dir=None):
     """The effective value of ``key``: face, then project, then global, then default.
 
     ``project_id`` and ``face_key`` narrow the search. Omitting ``face_key`` skips
@@ -199,7 +199,7 @@ def resolve(connection, key, project_id=None, face_key=None):
     contract: a caller never has to know whether the value came from an override
     or from the default to know what type it is.
     """
-    entry = schema.entry(key)
+    schema.entry(key)
 
     if project_id is not None and face_key is not None:
         stored = get_override(
@@ -217,10 +217,13 @@ def resolve(connection, key, project_id=None, face_key=None):
     if stored is not None:
         return stored
 
-    return entry["default"]
+    # `effective_default` rather than the raw `default` field: one key's default
+    # is a directory listing, and ending the chain at the frozen field would
+    # make that the one key resolution returns None for.
+    return schema.effective_default(key, models_dir)
 
 
-def resolve_all(connection, project_id=None, face_key=None):
+def resolve_all(connection, project_id=None, face_key=None, models_dir=None):
     """``{key: effective value}`` for every key in the schema.
 
     Three queries rather than 201 round trips: each tier is read whole and the
@@ -228,7 +231,7 @@ def resolve_all(connection, project_id=None, face_key=None):
     are a small fraction of that, so this stays trivially cheap while a per-key
     loop would not.
     """
-    values = {k: e["default"] for k, e in schema.WIDGETS.items()}
+    values = {k: schema.effective_default(k, models_dir) for k in schema.WIDGETS}
 
     for row in connection.execute("SELECT key, value FROM global_settings"):
         if row[0] in values:
