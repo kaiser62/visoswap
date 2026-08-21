@@ -110,6 +110,7 @@ DEFAULT_TEST_SOURCE = os.path.join(
 ARTIFACTS_DIR = os.path.join(_REPO_ROOT, "tests", "artifacts")
 SOURCE_FRAME_ARTIFACT = "smoke_source_frame.png"
 SWAPPED_FRAME_ARTIFACT = "smoke_swapped_frame.png"
+FACE_EDIT_FRAME_ARTIFACT = "liveportrait_frame.png"
 
 #: The smoke run's settings, applied over the fixture.
 #:
@@ -147,6 +148,53 @@ SMOKE_PROJECT_OVERRIDES = {
     # leaving it on would fail inside a model load rather than swap a face.
     "ClipEnableToggle": False,
     "FaceEditorEnableToggle": False,
+}
+
+#: The one editor control moved off its default, and the value it moves to.
+#:
+#: Named as constants rather than buried in the override dict because the run
+#: prints them: a face-editor result nobody can reproduce is a face-editor result
+#: nobody can argue with.
+#:
+#: ``MouthSmileDecimalSlider`` runs -0.30 to 1.30 in upstream's face-editor
+#: layout, so 0.60 is a firmly in-range, unmistakable smile. It is chosen over
+#: the crop scale because it drives ``update_delta_new_smile`` into the
+#: expression delta -- it changes the *face*, where a crop-scale change mostly
+#: changes how much of it the warp sees.
+FACE_EDIT_CONTROL_KEY = "MouthSmileDecimalSlider"
+FACE_EDIT_CONTROL_VALUE = 0.60
+
+#: The face-editor run's project tier: the smoke run's, plus both editor gates.
+#:
+#: Derived from ``SMOKE_PROJECT_OVERRIDES`` rather than restated, so the two runs
+#: cannot drift apart on a setting neither is about. The swap stays **on**: the
+#: editor running on top of a swapped face is the combination the application
+#: will actually run, and an interaction between the two would surface nowhere
+#: else.
+FACE_EDIT_PROJECT_OVERRIDES = dict(SMOKE_PROJECT_OVERRIDES)
+FACE_EDIT_PROJECT_OVERRIDES.update(
+    {
+        # Gate one of two. The other is ``EngineContext.edit_faces_enabled``,
+        # which is not a settings key -- it is one of the two fields that
+        # replaced a Qt toggle button, and it is set on the context object in
+        # :func:`mode_faceedit`.
+        "FaceEditorEnableToggle": True,
+        FACE_EDIT_CONTROL_KEY: FACE_EDIT_CONTROL_VALUE,
+    }
+)
+
+#: Exit code -> the label that goes on its report line.
+#:
+#: Needed because the face-editor mode may shell out to this file's own smoke
+#: mode to rebuild its baseline, and a child's exit code is propagated rather
+#: than flattened: a seal breach in the child is a seal breach, not an
+#: "asset problem in the parent".
+EXIT_LABELS = {
+    EXIT_CLEAN: "CLEAN",
+    EXIT_SEAL_BREACHED: "SEAL_BREACHED",
+    EXIT_DEPS_MISSING: "DEPS_MISSING",
+    EXIT_ASSET_MISSING: "ASSET_MISSING",
+    EXIT_ENGINE_ERROR: "ENGINE_ERROR",
 }
 
 
@@ -621,7 +669,364 @@ def mode_smoke():
     )
 
 
-USAGE = "usage: _engine_runner.py (--selftest | --import DOTTED_NAME | --smoke)"
+def swap_only_baseline_path():
+    return os.path.join(ARTIFACTS_DIR, SWAPPED_FRAME_ARTIFACT)
+
+
+def regenerate_swap_only_baseline():
+    """Rebuild the swap-only frame by running this file's own smoke mode.
+
+    Returns ``(exit_code, output)`` from the child.
+
+    A fresh subprocess rather than an in-process call to :func:`mode_smoke`. The
+    two are equivalent on paper -- same fixture resolution, same settings, same
+    seal -- but calling it in-process would arm the seal twice, load both model
+    sets into one CUDA context and leave the smoke run's engine holding a decoder
+    handle while the editor run opened its own. Seven seconds is a cheap price
+    for a baseline built by exactly the command that produced the original.
+    """
+    import subprocess
+
+    proc = subprocess.run(
+        [sys.executable, "-B", os.path.abspath(__file__), "--smoke"],
+        capture_output=True,
+        text=True,
+        cwd=_REPO_ROOT,
+    )
+    output = " ".join((proc.stdout or "").split() + (proc.stderr or "").split())
+    return proc.returncode, output
+
+
+def ensure_swap_only_baseline(mode):
+    """Guarantee a non-empty swap-only frame on disk. -> ``(state, failure)``.
+
+    ``state`` is ``'reused'`` or ``'regenerated'``; ``failure`` is ``None`` or an
+    already-formatted report to return.
+
+    ``tests/artifacts/`` is gitignored by plan 02-02, so in the worktree that
+    produced it the baseline is sitting there and in a clean checkout it is not.
+    Neither case may be guessed at. **Zero bytes is treated as missing**, and
+    that is the sharper half: an empty file passes ``isfile``, and ``cv2.imread``
+    answers a zero-byte PNG with ``None`` rather than an error, so a naive
+    existence check turns a truncated baseline into a comparison against
+    nothing.
+    """
+    path = swap_only_baseline_path()
+    try:
+        present = os.path.getsize(path) > 0
+    except OSError:
+        present = False
+    if present:
+        return "reused", None
+
+    code, output = regenerate_swap_only_baseline()
+    if code != EXIT_CLEAN:
+        return None, report(
+            code,
+            EXIT_LABELS.get(code, "ENGINE_ERROR"),
+            mode,
+            "the swap-only baseline {} is absent or empty and regenerating it "
+            "with --smoke exited {}: {}".format(path, code, output),
+        )
+    try:
+        rebuilt = os.path.getsize(path) > 0
+    except OSError:
+        rebuilt = False
+    if not rebuilt:
+        return None, report(
+            EXIT_ASSET_MISSING,
+            "ASSET_MISSING",
+            mode,
+            "--smoke exited CLEAN but did not leave a non-empty {}: {}".format(
+                path, output
+            ),
+        )
+    return "regenerated", None
+
+
+def mode_faceedit():
+    """Swap a face, then run LivePortrait over it, and prove the frame moved.
+
+    The first execution of the face-editor path in this project. Roadmap
+    criterion 4, as amended by ``02-DECISION-deferred-paths.md``: LivePortrait is
+    exercised for real; DFM and CLIPseg stay import-proven by decision, because
+    neither one's weights exist on this machine.
+
+    Two gates have to be open, and they are deliberately different in kind. The
+    per-face ``FaceEditorEnableToggle`` is a settings key and rides in with the
+    project tier. ``EngineContext.edit_faces_enabled`` is **not** a setting -- it
+    is one of the two plain fields that replaced a Qt toggle button in Phase 1,
+    read at three sites in ``frame_worker``. Setting it here is what proves that
+    substitution was faithful rather than merely type-correct.
+    """
+    mode = "faceedit"
+
+    preloaded = leaked_roots()
+    if preloaded:
+        return report(
+            EXIT_SEAL_BREACHED,
+            "SEAL_BREACHED",
+            mode,
+            "sealed roots already in sys.modules before the seal armed: "
+            + ", ".join(preloaded),
+        )
+
+    visomaster_dir = resolve_visomaster_dir()
+    if os.path.isdir(visomaster_dir) and visomaster_dir not in sys.path:
+        sys.path.append(visomaster_dir)
+
+    reachable = reachability_before_sealing()
+
+    fixture_path = resolve_settings_fixture()
+    settings = load_settings(fixture_path)
+    if settings is None:
+        return report(
+            EXIT_ASSET_MISSING,
+            "ASSET_MISSING",
+            mode,
+            "settings fixture not found at {} -- regenerate with "
+            "tools/dump_engine_settings.py".format(fixture_path),
+        )
+
+    video_path = resolve_media(VIDEO_ENV_VAR, DEFAULT_TEST_VIDEO)
+    source_path = resolve_media(SOURCE_ENV_VAR, DEFAULT_TEST_SOURCE)
+    for label, path, env_var in (
+        ("target video", video_path, VIDEO_ENV_VAR),
+        ("source face", source_path, SOURCE_ENV_VAR),
+    ):
+        if not os.path.isfile(path):
+            return report(
+                EXIT_ASSET_MISSING,
+                "ASSET_MISSING",
+                mode,
+                "{} not found at {} -- point {} at one, or see "
+                "docs/engine-test-assets.md".format(label, path, env_var),
+            )
+
+    models_dir = os.path.join(_REPO_ROOT, "model_assets")
+    if not os.path.isdir(models_dir):
+        return report(
+            EXIT_ASSET_MISSING,
+            "ASSET_MISSING",
+            mode,
+            "model_assets not reachable at {} -- run tools/link_model_assets.py. "
+            "Without it ModelsProcessor constructs a silently degraded "
+            "processor rather than raising.".format(models_dir),
+        )
+
+    # The lip array is opened by ``FaceEditors.__init__``, which swallows
+    # FileNotFoundError and leaves the array as None. Checking the file here as
+    # well means a missing one is reported as the asset problem it is, before a
+    # model load, rather than as a null dereference nine hundred lines into the
+    # frame worker.
+    lip_array_path = os.path.join(models_dir, "liveportrait_onnx", "lip_array.pkl")
+    if not os.path.isfile(lip_array_path):
+        return report(
+            EXIT_ASSET_MISSING,
+            "ASSET_MISSING",
+            mode,
+            "{} not readable (cwd={}). FaceEditors.__init__ swallows this and "
+            "leaves lp_lip_array as None, so without this check the engine "
+            "constructs successfully with the lip retarget silently "
+            "disabled.".format(lip_array_path, os.getcwd()),
+        )
+
+    # Before anything expensive, and before the seal: the comparison this mode
+    # exists to make is meaningless against an absent or truncated baseline.
+    baseline_state, failure = ensure_swap_only_baseline(mode)
+    if failure is not None:
+        return failure
+    baseline_path = swap_only_baseline_path()
+
+    arm_seal()
+
+    import time
+
+    started = time.monotonic()
+
+    try:
+        import cv2
+        import numpy as np
+    except ImportError as exc:
+        return report(EXIT_DEPS_MISSING, "DEPS_MISSING", mode, exc)
+
+    try:
+        from visoswap.engine import Engine
+    except SealBroken as exc:
+        return report(EXIT_SEAL_BREACHED, "SEAL_BREACHED", mode, exc)
+    except ModuleNotFoundError as exc:
+        if root_of(getattr(exc, "name", None)) in ALL_SEALED_ROOTS:
+            return report(EXIT_SEAL_BREACHED, "SEAL_BREACHED", mode, exc)
+        return report(EXIT_DEPS_MISSING, "DEPS_MISSING", mode, exc)
+    except BaseException as exc:  # noqa: BLE001 - the runner reports, never raises
+        return report(
+            EXIT_ENGINE_ERROR,
+            "ENGINE_ERROR",
+            mode,
+            "importing visoswap.engine raised {}: {}".format(type(exc).__name__, exc),
+        )
+
+    try:
+        baseline = cv2.imread(baseline_path)
+        if baseline is None:
+            return report(
+                EXIT_ASSET_MISSING,
+                "ASSET_MISSING",
+                mode,
+                "the swap-only baseline {} ({}) did not decode".format(
+                    baseline_path, baseline_state
+                ),
+            )
+
+        control = apply_overrides(
+            dict(settings.get("global", {})), SMOKE_GLOBAL_OVERRIDES, "global"
+        )
+        parameters = apply_overrides(
+            dict(settings.get("project", {})), FACE_EDIT_PROJECT_OVERRIDES, "project"
+        )
+
+        engine = Engine(
+            device="cuda", global_settings=control, project_settings=parameters
+        )
+        # Gate two: the field that replaced the Qt toggle button.
+        engine.context.edit_faces_enabled = True
+
+        lip_array = engine.context.models_processor.lp_lip_array
+        if lip_array is None:
+            return report(
+                EXIT_ASSET_MISSING,
+                "ASSET_MISSING",
+                mode,
+                "lp_lip_array is None after constructing the engine, though {} "
+                "exists (cwd={}). models_dir is relative until Phase 4, so this "
+                "means the processor resolved it somewhere else.".format(
+                    lip_array_path, os.getcwd()
+                ),
+            )
+        lip_array_shape = "x".join(str(n) for n in getattr(lip_array, "shape", ()))
+        if not getattr(lip_array, "size", 0):
+            return report(
+                EXIT_ASSET_MISSING,
+                "ASSET_MISSING",
+                mode,
+                "lp_lip_array loaded from {} but is empty (shape={})".format(
+                    lip_array_path, lip_array_shape or "?"
+                ),
+            )
+
+        media = engine.load(video_path)
+        cards = engine.detect_faces(0)
+        if not cards:
+            return report(
+                EXIT_ENGINE_ERROR,
+                "ENGINE_ERROR",
+                mode,
+                "no faces detected in any sampled frame of {}".format(
+                    os.path.basename(video_path)
+                ),
+            )
+
+        frame_number = 0
+        source_frame = engine._read_frame(frame_number)  # noqa: SLF001
+        edited = engine.swap(frame_number, source_path)
+
+        if source_frame.shape != edited.shape:
+            return report(
+                EXIT_ENGINE_ERROR,
+                "ENGINE_ERROR",
+                mode,
+                "edited frame shape {} does not match the decoded frame's "
+                "{}".format(edited.shape, source_frame.shape),
+            )
+        if baseline.shape != edited.shape:
+            return report(
+                EXIT_ENGINE_ERROR,
+                "ENGINE_ERROR",
+                mode,
+                "the swap-only baseline {} is {} but the edited frame is {} -- "
+                "the two runs did not see the same frame".format(
+                    baseline_path,
+                    "x".join(str(n) for n in baseline.shape),
+                    "x".join(str(n) for n in edited.shape),
+                ),
+            )
+
+        diff_vs_swap_only = int(
+            np.count_nonzero(np.any(baseline != edited, axis=-1))
+        )
+        diff_vs_source = int(
+            np.count_nonzero(np.any(source_frame != edited, axis=-1))
+        )
+
+        os.makedirs(ARTIFACTS_DIR, exist_ok=True)
+        frame_path = os.path.join(ARTIFACTS_DIR, FACE_EDIT_FRAME_ARTIFACT)
+        if not cv2.imwrite(frame_path, edited):
+            return report(
+                EXIT_ENGINE_ERROR, "ENGINE_ERROR", mode, "could not write {}".format(frame_path)
+            )
+
+        provider = engine.context.models_processor.provider_name
+        editor_model = parameters["FaceEditorTypeSelection"]
+        engine._release()  # noqa: SLF001 - the decoder holds an OS handle
+    except SealBroken as exc:
+        return report(EXIT_SEAL_BREACHED, "SEAL_BREACHED", mode, exc)
+    except FileNotFoundError as exc:
+        return report(EXIT_ASSET_MISSING, "ASSET_MISSING", mode, exc)
+    except BaseException as exc:  # noqa: BLE001 - the runner reports, never raises
+        import traceback
+
+        return report(
+            EXIT_ENGINE_ERROR,
+            "ENGINE_ERROR",
+            mode,
+            "{}: {} | {}".format(
+                type(exc).__name__, exc, traceback.format_exc().replace("\n", " ~ ")
+            ),
+        )
+
+    leaked = leaked_roots()
+    if leaked:
+        return report(
+            EXIT_SEAL_BREACHED,
+            "SEAL_BREACHED",
+            mode,
+            "sealed roots in sys.modules after editing: " + ", ".join(leaked),
+        )
+
+    return report(
+        EXIT_CLEAN,
+        "CLEAN",
+        mode,
+        "faces={} frames={} provider={} editor_model={} lip_array=populated "
+        "lip_array_shape={} control={}={} baseline={} input_shape={} "
+        "output_shape={} diff_vs_swap_only={} diff_vs_source={} elapsed={:.1f}s "
+        "artifacts={} reachable_before_seal={}".format(
+            len(cards),
+            media["frame_count"],
+            provider,
+            editor_model,
+            lip_array_shape or "?",
+            FACE_EDIT_CONTROL_KEY,
+            FACE_EDIT_CONTROL_VALUE,
+            baseline_state,
+            "x".join(str(n) for n in source_frame.shape),
+            "x".join(str(n) for n in edited.shape),
+            diff_vs_swap_only,
+            diff_vs_source,
+            time.monotonic() - started,
+            FACE_EDIT_FRAME_ARTIFACT,
+            ",".join(
+                "{}={}".format(root, "yes" if ok else "no")
+                for root, ok in sorted(reachable.items())
+            ),
+        ),
+    )
+
+
+USAGE = (
+    "usage: _engine_runner.py "
+    "(--selftest | --import DOTTED_NAME | --smoke | --faceedit)"
+)
 
 
 def main(argv):
@@ -629,6 +1034,8 @@ def main(argv):
         return mode_selftest()
     if argv == ["--smoke"]:
         return mode_smoke()
+    if argv == ["--faceedit"]:
+        return mode_faceedit()
     if len(argv) == 2 and argv[0] == "--import":
         return mode_import(argv[1])
     return report(EXIT_ENGINE_ERROR, "ENGINE_ERROR", "-", USAGE)
