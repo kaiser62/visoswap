@@ -27,5 +27,12 @@ dev = ["pytest>=7"]
 [tool.setuptools.packages.find]
 include = ["visoswap*"]
 
+# CLIPseg's tokenizer resolves its BPE vocabulary relative to __file__, so the
+# .txt.gz has to ship inside the package directory. Without this, a wheel build
+# drops it silently and CLIPseg dies at model-load time with a path error that
+# looks nothing like a missing-asset error.
+[tool.setuptools.package-data]
+"visoswap.processors.external.cliplib" = ["*.txt.gz"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
