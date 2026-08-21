@@ -39,7 +39,7 @@ downstream phase has invested in an API around it. Nothing before this phase exi
   1. `python -c "import visoswap.processors"` exits 0 in a virtualenv where `pip list` / `pip show PySide6` confirms PySide6 is not installed
   2. `visoswap/processors/` contains no `video_processor.py` — it is dropped whole, not stubbed
   3. `models_processor.py` no longer subclasses `QtCore.QObject` and declares no `Signal`
-  4. `frame_worker.py`'s former Qt boolean reads (`swapfacesButton.isChecked()`, `editFacesButton.isChecked()`) and the display-path signal/frame-queue plumbing (former lines 60-78) are gone, replaced by reads on the new context object
+  4. `frame_worker.py`'s two `app/ui` action-module imports that pulled in PySide6 transitively (`get_pixmap_from_frame`, `update_parameters_and_control_from_marker`) are removed, along with the Qt boolean reads (`swapfacesButton.isChecked()`, `editFacesButton.isChecked()`) and the display-path signal/frame-queue plumbing (former lines 60-78) — all replaced by reads on the new context object where still needed
   5. A `LICENSE` file (GPLv3 full text) exists at the repo root, vendored files carry a VisoMaster attribution header, and `grep -ril "pyside\|qtcore\|qtwidgets" visoswap/processors/` returns no matches outside of removal-note comments
 **Plans**: TBD
 
