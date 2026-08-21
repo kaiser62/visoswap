@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 2
 current_phase_name: Engine API & First Swap
 status: in-progress
-stopped_at: Completed Phase 1
-last_updated: "2026-08-21T00:00:00.000Z"
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-08-21T14:45:50.291Z"
 last_activity: 2026-08-21
-last_activity_desc: "Completed 01-04 and closed Phase 1: frame_worker.py de-Qt'd, PENDING_QT_STRIP emptied, and all 30 vendored modules import on an interpreter with no Qt installed"
+last_activity_desc: "Completed 02-01: the Phase 2 harness -- 12GB of weights reached by link, 201 settings typed by widget shape into a checked-in fixture, and a runner sealed against Qt, VisoMaster and the backend and proven non-inert"
 progress:
-  total_phases: 1
+  total_phases: 3
   completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 11
+  completed_plans: 5
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-21)
 ## Current Position
 
 Phase: 2 of 6 (Engine API & First Swap)
-Plan: 0 of 4 in current phase
-Status: Plans written and checked; 02-01 ready to execute
-Last activity: 2026-08-21 — Closed Phase 1: all 30 vendored modules import on an interpreter where Qt is genuinely absent, confirmed at the human checkpoint
+Plan: 1 of 4 in current phase
+Status: 02-01 complete (harness built and verified); 02-02 next
+Last activity: 2026-08-21 — 02-01: model_assets linked, engine_settings.json pinned at 168+33 typed keys, the sealed engine runner armed and shown capable of exit 1
 
-Progress: [██████████] 100% (Phase 1 complete, 4/4 plans)
+Progress: [█████░░░░░] 45% (Phase 1 complete 4/4; Phase 2 at 1/4)
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [██████████] 100% (Phase 1 complete, 4/4 plans)
 | Phase 01 P02 | 30 min | 3 tasks | 27 files |
 | Phase 01 P03 | ~25 min | 2 tasks | 6 files |
 | Phase 01 P04 | ~40 min | 3 tasks | 6 files |
+| Phase 02 P01 | 55 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,8 @@ Recent decisions affecting current work:
 - [Phase 1]: The clean-room check imports with NO blocker armed, not just with the probe. Where Qt is genuinely absent the meta_path blocker is inert, so `CLEAN` alone would be weaker there than on the Qt-bearing interpreter; a module swallowing an ImportError passes both gates and runs degraded.
 - [Phase 2]: DFM and CLIPseg are descoped -- vendored and import-proven, never exercised. No weights exist on any reachable machine. See 02-DECISION-deferred-paths.md.
 - [Phase 2]: Phase 4's model-file criterion is derived from the manifest at runtime, never a hardcoded count: models_list is 56 entries and models_trt_list is 6 or 0 depending on whether `import tensorrt` succeeds.
+- [Phase 2]: Five widget shapes exist in the layout dicts, not four: ClipText carries min/max with no step (character bounds on a line edit) and types as an empty string, so there are 93 int keys, not 94
+- [Phase 2]: The seal block lists live in tests/_blocked_roots.py (import-free) and are re-exported by conftest.py, because both subprocess consumers run on the engine interpreter, which has no pytest
 
 ### Pending Todos
 
@@ -106,6 +109,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-21
-Stopped at: Completed Phase 1; Phase 2 plans revised after plan-check
+Last session: 2026-08-21T14:45:38.107Z
+Stopped at: Completed 02-01-PLAN.md
 Resume file: None

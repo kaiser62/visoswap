@@ -84,7 +84,12 @@ separate from settings/backend/frontend work so a failure here is cheap to isola
 
   5. `FaceCard` holds only the embedding store and crop — no Qt widget reference, no `face_id`
      tied to a UI element
-**Plans**: 4
+**Plans**: 1/4 plans executed
+
+- [x] 02-01-PLAN.md
+- [ ] 02-02-PLAN.md
+- [ ] 02-03-PLAN.md
+- [ ] 02-04-PLAN.md
 
 ### Phase 3: Settings Schema & Three-Tier Resolution
 
@@ -218,7 +223,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Vendor the Engine & Strip Qt | 4/4 | Complete | 2026-08-21 |
-| 2. Engine API & First Swap | 0/4 | Not started | - |
+| 2. Engine API & First Swap | 1/4 | In Progress|  |
 | 3. Settings Schema & Three-Tier Resolution | 0/TBD | Not started | - |
 | 4. Backend Integration & Model Bootstrap | 0/TBD | Not started | - |
 | 5. Frontend Schema Rendering | 0/TBD | Not started | - |
