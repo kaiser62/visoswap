@@ -19,6 +19,7 @@ from tests.conftest import (
     PENDING_QT_STRIP,
     run_probe,
     vendored_modules,
+    vendored_packages,
 )
 
 
@@ -69,6 +70,55 @@ def test_gate_discovers_the_vendored_tree():
                 pending
             )
         )
+
+
+def test_nothing_is_excluded_from_the_gate():
+    """``PENDING_QT_STRIP`` is empty, and Phase 1's pass condition is that it stays so.
+
+    Plan 01-04 closed it. Every module under ``visoswap/`` is now covered by both
+    gates, and this is the assertion that says so out loud rather than leaving it
+    implied by an absence. If a future plan needs to re-open the set while a newly
+    vendored file is mid-strip, this test is the thing it has to argue with -- and
+    that argument belongs in a review, not in a quiet edit to a frozenset.
+    """
+    assert PENDING_QT_STRIP == frozenset(), (
+        "PENDING_QT_STRIP is not empty: {}. Every entry is a vendored module that "
+        "neither the import gate nor the static Qt scan looked at, so a green "
+        "suite proves less than it appears to.".format(sorted(PENDING_QT_STRIP))
+    )
+
+
+def test_the_gate_covers_the_package_names_not_only_the_modules():
+    """``import visoswap.processors`` alone would pass over an empty file.
+
+    The roadmap's criterion is written as that literal import. With an
+    import-free ``__init__.py`` -- which is the right design, see
+    ``conftest.vendored_modules`` -- it succeeds having loaded nothing. This
+    asserts the probe is handed both halves: the package names, so the roadmap's
+    literal command is genuinely covered, and the submodules, so the coverage
+    means something. Threat T-01-13.
+    """
+    modules = vendored_modules()
+    packages = vendored_packages()
+
+    assert packages, "no packages discovered under visoswap/"
+    assert "visoswap.processors" in packages, (
+        "visoswap.processors is not among the discovered packages: {}".format(packages)
+    )
+
+    missing = sorted(name for name in packages if name not in modules)
+    assert not missing, (
+        "package names missing from the probe's argv: {}. The roadmap's literal "
+        "success criterion would then be untested.".format(missing)
+    )
+
+    submodules = sorted(name for name in modules if name not in set(packages))
+    assert len(submodules) > len(packages), (
+        "the probe is being handed packages but barely any submodules ({} vs {}). "
+        "Package names alone are the hollow pass this test exists to catch.".format(
+            len(submodules), len(packages)
+        )
+    )
 
 
 def test_every_vendored_module_imports_without_qt(engine_python):
