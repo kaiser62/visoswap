@@ -28,7 +28,7 @@ Scoped directly from PROJECT.md's Active section. Each maps to exactly one roadm
 
 ### Licensing
 
-- [ ] **LICENSE-01**: GPLv3 licensing with VisoMaster attribution, non-commercial weights documented
+- [x] **LICENSE-01**: GPLv3 licensing with VisoMaster attribution, non-commercial weights documented
 
 ## v2 Requirements
 
@@ -53,7 +53,7 @@ Carried directly from PROJECT.md.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | ENGINE-01 | Phase 2 | Pending |
-| LICENSE-01 | Phase 1 | Pending |
+| LICENSE-01 | Phase 1 | Complete |
 | SCHEMA-01 | Phase 3 | Pending |
 | SCHEMA-02 | Phase 3 | Pending |
 | SCHEMA-03 | Phase 3 | Pending |
@@ -68,6 +68,7 @@ is end-to-end regression coverage over capabilities already in PROJECT.md's Vali
 new scope.
 
 **Coverage:**
+
 - v1 requirements: 8 total
 - Mapped to phases: 8
 - Unmapped: 0 ✓
