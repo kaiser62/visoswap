@@ -512,6 +512,50 @@ def test_a_stored_row_that_fails_validation_names_the_tier_it_sits_in(
         store.resolve_all(connection, "project-a", "face-1")
 
 
+def test_a_stored_selection_whose_model_file_vanished_is_not_corruption(
+    connection, models_dir, empty_models_dir
+):
+    """Membership is enforced on the way in and not on the way out.
+
+    The one dynamic key's option list is a directory listing, so it changes
+    without anyone editing a setting. If a deleted model file made the stored
+    value fail validation on read, and resolution reads the whole tier at once,
+    one removed file would take all 201 settings down with it -- and the message
+    would say the database was corrupt, which it would not be.
+
+    "The file this names is gone" and "this value was never allowed" are
+    different facts. Only the second is corruption, and the first is diagnosable
+    where a model is loaded rather than where a slider is read.
+    """
+    store.set_project(connection, "project-a", DYNAMIC_KEY, "somebody.dfm", models_dir)
+
+    # Same value, read back against a directory that no longer holds the file.
+    assert (
+        store.resolve(connection, DYNAMIC_KEY, "project-a", models_dir=empty_models_dir)
+        == "somebody.dfm"
+    )
+    resolved = store.resolve_all(connection, "project-a", models_dir=empty_models_dir)
+    assert resolved[DYNAMIC_KEY] == "somebody.dfm"
+
+    # The type is still enforced in both directions; only membership relaxes.
+    connection.execute(
+        "UPDATE project_settings SET value = ? WHERE key = ?",
+        (json.dumps(7), DYNAMIC_KEY),
+    )
+    with pytest.raises(store.CorruptStoredSetting):
+        store.resolve(connection, DYNAMIC_KEY, "project-a", models_dir=empty_models_dir)
+
+
+def test_a_value_that_was_never_a_model_is_still_refused_on_the_way_in(
+    connection, models_dir
+):
+    """The relaxation above is on the read side only, and this is the proof."""
+    with pytest.raises(validate.InvalidSettingValue):
+        store.set_project(
+            connection, "project-a", DYNAMIC_KEY, "nobody.dfm", models_dir
+        )
+
+
 def test_a_corrupt_row_is_still_an_invalid_setting_value(connection):
     """The read-side error subclasses the write-side one, so a caller that only
     knows about invalid values still catches it."""

@@ -638,7 +638,22 @@ def test_resolution_ends_at_the_resolved_default_not_the_frozen_null(
         )
         assert value == "only.dfm"
 
-        store.set_project(connection, "project-a", DYNAMIC_KEY, "chosen.dfm")
+        # A second model on disk, so the override names an option that actually
+        # exists in the same directory the read resolves against. Plan 03-02
+        # made the write side check membership, and the previous spelling wrote
+        # a name nothing answered to while validating it against the ambient
+        # repository models directory rather than this one -- which passed only
+        # for as long as that directory stayed empty.
+        (models / "zzz-chosen.dfm").write_bytes(b"")
+        schema.clear_dfm_cache()
+
+        store.set_project(
+            connection,
+            "project-a",
+            DYNAMIC_KEY,
+            "zzz-chosen.dfm",
+            models_dir=tmp_path / "model_assets",
+        )
         assert (
             store.resolve(
                 connection,
@@ -646,7 +661,7 @@ def test_resolution_ends_at_the_resolved_default_not_the_frozen_null(
                 "project-a",
                 models_dir=tmp_path / "model_assets",
             )
-            == "chosen.dfm"
+            == "zzz-chosen.dfm"
         )
     finally:
         connection.close()

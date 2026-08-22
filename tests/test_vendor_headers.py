@@ -84,6 +84,10 @@ PROJECT_AUTHORED = frozenset(
         "settings/db.py",
         "settings/faces.py",
         "settings/store.py",
+        # Written for this project. Unlike ``faces.py`` it transcribes nothing:
+        # every rule it applies is read out of the generated schema at run time,
+        # and a test pins that no settings key name appears in it as a literal.
+        "settings/validate.py",
     }
 )
 

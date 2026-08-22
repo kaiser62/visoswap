@@ -25,6 +25,13 @@ and reads the parent toggle separately; the gate in the schema tells a renderer
 what to hide and nothing more. Filtering values by gate state here would change
 engine behaviour.
 
+**Every write and every read passes through ``validate``** -- the global tier,
+the project tier and the face tier alike, and one unguarded path is the whole
+hole. On a write a rejection means nothing was stored. On a read it means the
+row was already wrong before this process started, which since writes are
+guarded can only mean a migration or a hand edit; ``CorruptStoredSetting`` names
+the tier so the two are distinguishable.
+
 Every statement binds its parameters. None interpolates a project id, a face key
 or a settings key into SQL text (T-03-01).
 """
@@ -33,6 +40,7 @@ import json
 import sqlite3
 
 from visoswap import schema
+from visoswap.settings import validate
 
 __all__ = [
     "resolve",
@@ -44,11 +52,28 @@ __all__ = [
     "clear_global",
     "clear_project",
     "clear_face",
+    "CorruptStoredSetting",
     "UnknownSettingsKey",
     "WrongTier",
 ]
 
 UnknownSettingsKey = schema.UnknownSettingsKey
+
+
+class CorruptStoredSetting(validate.InvalidSettingValue):
+    """Raised when a value already in the database fails validation on read.
+
+    Distinct from the write-side rejection because the two mean opposite things.
+    A rejection on write is the boundary working: the caller offered something
+    wrong and nothing was stored. A rejection on **read** means the wrong value
+    is already on disk -- and since every write path validates, it can only have
+    arrived through a migration or a hand edit of the database. The message
+    names the tier the offending row sits in, because the value itself says
+    nothing about where it came from and the tier is the whole diagnosis.
+
+    It subclasses the write-side error so a caller that only knows about invalid
+    values still catches it.
+    """
 
 
 class WrongTier(ValueError):
@@ -67,6 +92,26 @@ def _encode(value):
 
 def _decode(raw):
     return json.loads(raw)
+
+
+def _decode_checked(raw, key, tier, models_dir=None):
+    """Decode one stored row and hold it to the same rules a write is held to.
+
+    Reads validate as well as writes because the check was not always here: a
+    row written by plan 03-03's migration, by an older build, or by hand has
+    never passed the write-side gate, and a value that is wrong on disk is
+    exactly as damaging as one that is wrong in flight -- more so, because it is
+    persistent.
+    """
+    value = _decode(raw)
+    try:
+        return validate.validate_stored(key, value, models_dir)
+    except validate.InvalidSettingValue as error:
+        raise CorruptStoredSetting(
+            "the {} tier holds a value for {} that the schema refuses: {}".format(
+                tier, key, error
+            )
+        ) from None
 
 
 def _check_key(key, required_tier=None):
@@ -91,9 +136,10 @@ def _scalar(connection: sqlite3.Connection, sql, params):
 # --------------------------------------------------------------------------
 
 
-def set_global(connection: sqlite3.Connection, key, value) -> None:
+def set_global(connection: sqlite3.Connection, key, value, models_dir=None) -> None:
     """Store a global-tier override."""
     _check_key(key, "global")
+    value = validate.validate(key, value, models_dir)
     connection.execute(
         "INSERT INTO global_settings (key, value, updated_at) "
         "VALUES (?, ?, datetime('now')) "
@@ -103,9 +149,12 @@ def set_global(connection: sqlite3.Connection, key, value) -> None:
     )
 
 
-def set_project(connection: sqlite3.Connection, project_id, key, value) -> None:
+def set_project(
+    connection: sqlite3.Connection, project_id, key, value, models_dir=None
+) -> None:
     """Store a project-tier override."""
     _check_key(key, "project")
+    value = validate.validate(key, value, models_dir)
     connection.execute(
         "INSERT INTO project_settings (project_id, key, value, updated_at) "
         "VALUES (?, ?, ?, datetime('now')) "
@@ -115,9 +164,12 @@ def set_project(connection: sqlite3.Connection, project_id, key, value) -> None:
     )
 
 
-def set_face(connection: sqlite3.Connection, project_id, face_key, key, value) -> None:
+def set_face(
+    connection: sqlite3.Connection, project_id, face_key, key, value, models_dir=None
+) -> None:
     """Store a face-tier override -- the most specific tier there is."""
     _check_key(key, "project")
+    value = validate.validate(key, value, models_dir)
     connection.execute(
         "INSERT INTO face_settings (project_id, face_key, key, value, updated_at) "
         "VALUES (?, ?, ?, ?, datetime('now')) "
@@ -159,11 +211,15 @@ def clear_face(connection: sqlite3.Connection, project_id, face_key, key) -> boo
 # --------------------------------------------------------------------------
 
 
-def get_override(connection, key, project_id=None, face_key=None, tier="project"):
-    """One tier's stored value, decoded, or ``None`` when no row exists.
+def get_override(
+    connection, key, project_id=None, face_key=None, tier="project", models_dir=None
+):
+    """One tier's stored value, decoded and validated, or ``None`` when no row exists.
 
     ``None`` here means "no override", not "an override whose value is null" --
     no schema default is null except the dynamic key's, and nothing writes null.
+
+    A row that fails validation raises ``CorruptStoredSetting`` naming ``tier``.
     """
     _check_key(key)
     if tier == "global":
@@ -185,7 +241,9 @@ def get_override(connection, key, project_id=None, face_key=None, tier="project"
         )
     else:
         raise ValueError("unknown tier: {!r}".format(tier))
-    return None if row is None else _decode(row[0])
+    if row is None:
+        return None
+    return _decode_checked(row[0], key, tier, models_dir)
 
 
 def resolve(connection, key, project_id=None, face_key=None, models_dir=None):
@@ -203,17 +261,19 @@ def resolve(connection, key, project_id=None, face_key=None, models_dir=None):
 
     if project_id is not None and face_key is not None:
         stored = get_override(
-            connection, key, project_id, face_key, tier="face"
+            connection, key, project_id, face_key, tier="face", models_dir=models_dir
         )
         if stored is not None:
             return stored
 
     if project_id is not None:
-        stored = get_override(connection, key, project_id, tier="project")
+        stored = get_override(
+            connection, key, project_id, tier="project", models_dir=models_dir
+        )
         if stored is not None:
             return stored
 
-    stored = get_override(connection, key, tier="global")
+    stored = get_override(connection, key, tier="global", models_dir=models_dir)
     if stored is not None:
         return stored
 
@@ -235,7 +295,7 @@ def resolve_all(connection, project_id=None, face_key=None, models_dir=None):
 
     for row in connection.execute("SELECT key, value FROM global_settings"):
         if row[0] in values:
-            values[row[0]] = _decode(row[1])
+            values[row[0]] = _decode_checked(row[1], row[0], "global", models_dir)
 
     if project_id is not None:
         for row in connection.execute(
@@ -243,7 +303,7 @@ def resolve_all(connection, project_id=None, face_key=None, models_dir=None):
             (project_id,),
         ):
             if row[0] in values:
-                values[row[0]] = _decode(row[1])
+                values[row[0]] = _decode_checked(row[1], row[0], "project", models_dir)
 
     if project_id is not None and face_key is not None:
         for row in connection.execute(
@@ -252,6 +312,6 @@ def resolve_all(connection, project_id=None, face_key=None, models_dir=None):
             (project_id, face_key),
         ):
             if row[0] in values:
-                values[row[0]] = _decode(row[1])
+                values[row[0]] = _decode_checked(row[1], row[0], "face", models_dir)
 
     return values
