@@ -1,0 +1,10 @@
+# Ported from config-parallel-setup/requirements.txt; Pillow is relaxed to the engine pin.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+aiosqlite==0.20.0
+httpx==0.28.1
+python-multipart==0.0.20
+yt-dlp==2024.12.13
+pillow==9.5.0
