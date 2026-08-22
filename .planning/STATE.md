@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 3
-current_phase_name: Settings Schema & Three-Tier Resolution
+current_phase: 4
+current_phase_name: Backend Integration & Model Bootstrap
 status: in-progress
-stopped_at: Completed Phase 2
+stopped_at: Completed Phase 3
 last_updated: "2026-08-21T14:45:50.291Z"
 last_activity: 2026-08-21
-last_activity_desc: "Completed Phase 2: a real face swapped onto a real frame with no Qt in the process (111k pixels changed), LivePortrait exercised, and a live torch.load hole closed at cliplib/clip.py:141"
+last_activity_desc: "Completed Phase 3: schema.json generated with 201 shape-derived typed entries, three-tier resolution over all of them, face tier keyed by embedding, and both profiles migrated into a committed typed seed"
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 11
-  completed_plans: 8
+  completed_plans: 11
 ---
 
 # Project State
@@ -23,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-21)
 
 **Core value:** Playback never blocks on generation — a missing generated frame shows the original video frame rather than pausing the video.
-**Current focus:** Phase 3 — Settings Schema & Three-Tier Resolution
+**Current focus:** Phase 4 — Backend Integration & Model Bootstrap
 
 ## Current Position
 
-Phase: 3 of 6 (Settings Schema & Three-Tier Resolution)
-Plan: 0 of 3 in current phase
-Status: Plans written; 03-01 ready to execute
-Last activity: 2026-08-22 — Closed Phase 2. Engine.load/detect_faces/swap published, first real swap produced, 114 tests passing.
+Phase: 4 of 6 (Backend Integration & Model Bootstrap)
+Plan: 0 of TBD in current phase
+Status: Phase 4 not yet planned
+Last activity: 2026-08-22 — Closed Phase 3. 286 tests passing.
 
-Progress: [██████████] 100% (Phase 2 complete, 4/4 plans)
+Progress: [██████████] 100% (Phase 3 complete, 3/3 plans)
 
 ## Performance Metrics
 
@@ -89,6 +89,12 @@ Recent decisions affecting current work:
 - [Phase 2]: FaceCard derives face_id by digesting its own recognition embedding, so no identifier originates in a widget and the same face keys identically across runs.
 - [Phase 2]: A THIRD torch.load existed at cliplib/clip.py:141, reached BEFORE the missing rd64-uni-refined.pth and operating on a URL-downloaded file. Descoping CLIPseg did NOT make it safe. Hardened with weights_only=True. What keeps the path inert is ClipEnableToggle=false, not the absent weights file.
 - [Phase 2]: ENGINE-01 stays Pending. Clause 1 (no PySide6) is proven; clause 2 (no VisoMaster install) is false while ./model_assets is a junction into D:/Visomaster. Phase 4 closes it.
+- [Phase 3]: Settings type comes from WIDGET SHAPE, never the key name; the rule has five branches and `step` is the slider signal. ClipText has min/max but no step and default '' -- a four-branch rule crashes on int(float('')).
+- [Phase 3]: Upstream gate semantics preserved exactly, counterintuitive as they are: 'A|B' is AND (starts True, clears on any unchecked parent), 'A, B' is LAST-PARENT-WINS (plain assignment in the loop), and the parent lookup is a substring test. Recorded as all/last; never "fixed".
+- [Phase 3]: Option-membership is enforced on WRITE only. Enforcing it on read meant one deleted model file would take all 201 settings down as corruption, because resolution reads a whole tier at once.
+- [Phase 3]: profiles.json values are NOT all strings -- 30 bools per profile and 2 ints in one. coerce types by shape, which is why it survives the wrong premise.
+- [Phase 3]: Both presets are ~99% schema defaults; preset A differs in exactly ONE setting. Preset tests need an explicit non-vacuity guard or they assert nothing.
+- [Phase 4]: ruff is not installed on any interpreter here and the repo carries no ruff config, so `ruff check` in the stated workflow has never run. Settle this in Phase 4.
 - [Phase 2]: Five widget shapes exist in the layout dicts, not four: ClipText carries min/max with no step (character bounds on a line edit) and types as an empty string, so there are 93 int keys, not 94
 - [Phase 2]: The seal block lists live in tests/_blocked_roots.py (import-free) and are re-exported by conftest.py, because both subprocess consumers run on the engine interpreter, which has no pytest
 
