@@ -13,10 +13,10 @@ Scoped directly from PROJECT.md's Active section. Each maps to exactly one roadm
 
 ### Schema & Settings
 
-- [ ] **SCHEMA-01**: Generated settings schema with explicit types and typed defaults
-- [ ] **SCHEMA-02**: Three-tier settings resolution: global, project, per-face
-- [ ] **SCHEMA-03**: Per-face settings persisted, keyed by recognition embedding
-- [ ] **SCHEMA-04**: Both existing profiles migrated as seeded presets
+- [x] **SCHEMA-01**: Generated settings schema with explicit types and typed defaults
+- [x] **SCHEMA-02**: Three-tier settings resolution: global, project, per-face
+- [x] **SCHEMA-03**: Per-face settings persisted, keyed by recognition embedding
+- [x] **SCHEMA-04**: Both existing profiles migrated as seeded presets
 
 ### Backend
 
@@ -54,10 +54,10 @@ Carried directly from PROJECT.md.
 |-------------|-------|--------|
 | ENGINE-01 | Phase 2 | Pending |
 | LICENSE-01 | Phase 1 | Complete |
-| SCHEMA-01 | Phase 3 | Pending |
-| SCHEMA-02 | Phase 3 | Pending |
-| SCHEMA-03 | Phase 3 | Pending |
-| SCHEMA-04 | Phase 3 | Pending |
+| SCHEMA-01 | Phase 3 | Complete |
+| SCHEMA-02 | Phase 3 | Complete |
+| SCHEMA-03 | Phase 3 | Complete |
+| SCHEMA-04 | Phase 3 | Complete |
 | BACKEND-01 | Phase 4 | Pending |
 | FRONTEND-01 | Phase 5 | Pending |
 
