@@ -83,6 +83,11 @@ PROJECT_AUTHORED = frozenset(
         "settings/__init__.py",
         "settings/db.py",
         "settings/faces.py",
+        # Written for this project. It reads the *normalised* gate the schema
+        # generator emitted rather than upstream's punctuation, so it transcribes
+        # no upstream source -- only the two combining rules that plan 03-01
+        # measured, which are facts about behaviour rather than copied text.
+        "settings/gates.py",
         "settings/store.py",
         # Written for this project. Unlike ``faces.py`` it transcribes nothing:
         # every rule it applies is read out of the generated schema at run time,

@@ -252,3 +252,205 @@ def test_the_ddl_is_idempotent(connection):
         )
     }
     assert set(db.SETTINGS_TABLES) <= tables
+
+
+# --------------------------------------------------------------------------
+# the whole key set, not the one key the tracer used
+# --------------------------------------------------------------------------
+#
+# Roadmap criterion 3 is a claim about *every* key, and one key proving it is a
+# coincidence. The sweep below sets a value at each tier in turn for all 201 and
+# asserts both the value and its declared type at every step, in both
+# directions.
+
+
+def alternates(entry):
+    """Values distinct from this key's default that its own entry accepts.
+
+    Derived from the schema entry, never hand-listed: a hand-listed table would
+    have to be re-measured every time upstream retypes a control, and the day it
+    was not is the day this sweep starts proving something else.
+
+    Numeric keys step off the default toward whichever bound has room. Toggles
+    invert -- and a toggle has exactly one other value, which is why the face
+    tier below sometimes has to reuse the default. Selections take another
+    member. The one text key takes short literals.
+    """
+    kind, default = entry["type"], entry["default"]
+    if kind == "toggle":
+        return [not default]
+    if kind == "text":
+        return ["a word, another", "something else entirely"]
+    if kind == "selection":
+        return [option for option in (entry["options"] or []) if option != default]
+
+    step = entry["step"]
+    found = []
+    for raw in (
+        default + step,
+        default - step,
+        default + 2 * step,
+        default - 2 * step,
+        entry["maximum"],
+        entry["minimum"],
+    ):
+        candidate = float(raw) if kind == "float" else int(raw)
+        if candidate == default:
+            continue
+        if not entry["minimum"] <= candidate <= entry["maximum"]:
+            continue
+        if candidate not in found:
+            found.append(candidate)
+    return found
+
+
+#: The two keys for which no second value exists at all, and why. Named rather
+#: than silently skipped: a *third* key joining them is a change worth failing
+#: over, and the plan for this phase anticipated only the first of the two.
+NO_ALTERNATE = {
+    # Its options are a directory listing, and a bare checkout has none.
+    schema.DYNAMIC_KEY: "dynamic option list, empty without a models directory",
+    # Upstream ships this selection with exactly one option.
+    "FaceEditorTypeSelection": "a selection with a single option",
+}
+
+
+def test_exactly_two_keys_have_no_second_value_and_they_are_the_named_ones():
+    """The sweep's own exclusion list, pinned so it cannot quietly grow."""
+    without = {
+        key: schema.type_of(key)
+        for key in schema.WIDGETS
+        if not alternates(schema.resolved_entry(key))
+    }
+    assert set(without) == set(NO_ALTERNATE), without
+
+
+def test_the_two_excluded_keys_still_resolve_and_still_carry_their_type(connection):
+    """Excluded from the *sweep*, not from the guarantee.
+
+    Neither key can demonstrate one tier beating another, because neither has a
+    second value for the winning tier to hold. Both must still resolve, and both
+    must still come back typed.
+    """
+    for key in NO_ALTERNATE:
+        entry = schema.resolved_entry(key)
+        value = store.resolve(connection, key, "project-a", "face-1")
+        assert value == entry["default"], key
+        assert type(value) is type(entry["default"]), key
+
+
+def test_every_project_key_resolves_through_all_three_tiers(connection):
+    """168 keys, five steps each, value and declared type asserted at every one.
+
+    The face value is a *third* distinct value where one exists. For the 43
+    toggles and the one two-option selection it cannot be, and there the face
+    tier is given the schema default instead. That is still a real test of the
+    face tier: at the step where the face override is in place the project tier
+    holds something different, so a face row that was ignored would return the
+    project value rather than the default it actually returns.
+    """
+    project_id = "project-a"
+    face_key = "face-1"
+    checked = 0
+
+    for key in schema.keys_in_tier("project"):
+        if key in NO_ALTERNATE:
+            continue
+        entry = schema.resolved_entry(key)
+        default = entry["default"]
+        options = alternates(entry)
+        project_value = options[0]
+        face_value = options[1] if len(options) != 1 else default
+        assert face_value != project_value, key
+        declared = type(default)
+
+        def current():
+            return store.resolve(connection, key, project_id, face_key)
+
+        assert current() == default, key
+        assert type(current()) is declared, key
+
+        store.set_project(connection, project_id, key, project_value)
+        assert current() == project_value, key
+        assert type(current()) is declared, key
+
+        store.set_face(connection, project_id, face_key, key, face_value)
+        assert current() == face_value, key
+        assert type(current()) is declared, key
+
+        assert store.clear_face(connection, project_id, face_key, key) is True
+        assert current() == project_value, key
+        assert type(current()) is declared, key
+
+        assert store.clear_project(connection, project_id, key) is True
+        assert current() == default, key
+        assert type(current()) is declared, key
+        checked += 1
+
+    covered = [k for k in schema.keys_in_tier("project") if k not in NO_ALTERNATE]
+    assert checked == len(covered), checked
+    assert checked == 166, (
+        "168 project keys less the two that have no second value at all -- both "
+        "of them are project-tier keys. If this number moved, the exclusion list "
+        "moved with it and that is the thing to look at"
+    )
+
+
+def test_every_global_key_resolves_from_default_to_override(connection):
+    """33 keys. The global tier has no face half to prove, only the two ends."""
+    checked = 0
+    for key in schema.keys_in_tier("global"):
+        if key in NO_ALTERNATE:
+            continue
+        entry = schema.resolved_entry(key)
+        default = entry["default"]
+        override = alternates(entry)[0]
+        declared = type(default)
+
+        assert store.resolve(connection, key) == default, key
+        assert type(store.resolve(connection, key)) is declared, key
+
+        store.set_global(connection, key, override)
+        assert store.resolve(connection, key) == override, key
+        assert type(store.resolve(connection, key)) is declared, key
+
+        assert store.clear_global(connection, key) is True
+        assert store.resolve(connection, key) == default, key
+        checked += 1
+
+    assert checked == len(schema.keys_in_tier("global")), checked
+
+
+def test_the_two_tiers_do_not_intersect_which_is_why_the_chain_is_unambiguous():
+    """Stated in ``store.py``'s docstring as the reason the order is safe.
+
+    If a key were in both tiers, a project override and a global override could
+    both exist for it and the winner would depend on the order the store happens
+    to read them in -- a precedence nobody chose. The schema generator already
+    pins the disjointness; this asserts the *consequence* at the layer that
+    depends on it.
+    """
+    project = set(schema.keys_in_tier("project"))
+    global_keys = set(schema.keys_in_tier("global"))
+    assert not project & global_keys
+    assert len(project) + len(global_keys) == len(schema.WIDGETS)
+    assert (len(project), len(global_keys)) == (168, 33)
+
+
+def test_whole_tier_resolution_returns_every_key_always(connection):
+    """A sparse result is a KeyError in the swap loop, not a graceful default."""
+    parameters = store.resolve_parameters(connection, "project-a", "face-1")
+    control = store.resolve_control(connection)
+
+    assert set(parameters) == set(schema.keys_in_tier("project"))
+    assert set(control) == set(schema.keys_in_tier("global"))
+    assert len(parameters) == 168
+    assert len(control) == 33
+    assert not set(parameters) & set(control)
+
+    store.set_project(connection, "project-a", KEY, 20)
+    store.set_face(connection, "project-a", "face-1", KEY, 35)
+    assert store.resolve_parameters(connection, "project-a", "face-1")[KEY] == 35
+    assert store.resolve_parameters(connection, "project-a")[KEY] == 20
+    assert store.resolve_parameters(connection, "project-b")[KEY] == 60
+    assert len(store.resolve_parameters(connection, "project-a", "face-1")) == 168

@@ -45,6 +45,8 @@ from visoswap.settings import validate
 __all__ = [
     "resolve",
     "resolve_all",
+    "resolve_parameters",
+    "resolve_control",
     "get_override",
     "set_global",
     "set_project",
@@ -315,3 +317,39 @@ def resolve_all(connection, project_id=None, face_key=None, models_dir=None):
                 values[row[0]] = _decode_checked(row[1], row[0], "face", models_dir)
 
     return values
+
+
+def _tier_slice(connection, tier, project_id=None, face_key=None, models_dir=None):
+    resolved = resolve_all(connection, project_id, face_key, models_dir)
+    return {k: resolved[k] for k in schema.keys_in_tier(tier)}
+
+
+def resolve_parameters(connection, project_id, face_key=None, models_dir=None):
+    """The project tier as one flat mapping of **all 168 keys**, for one face.
+
+    This is not an abstraction Phase 4 has to adapt. It is literally the value
+    that goes into the engine context's per-face parameters mapping under that
+    face's own key: ``frame_worker.py:147`` reads
+    ``self.parameters[target_face.face_id]`` and three further sites index it
+    the same way. The caller stores this dict under the face's key.
+
+    **Every key is present, always.** The engine reads its keys
+    unconditionally, so a sparse result is not a graceful fallback to a
+    default -- it is a ``KeyError`` raised inside the swap loop, several
+    hundred frames after the setting that was missing stopped being on screen.
+
+    Gating is not consulted. See ``visoswap/settings/gates.py`` for why a
+    closed gate must not remove a key from this mapping.
+    """
+    return _tier_slice(connection, "project", project_id, face_key, models_dir)
+
+
+def resolve_control(connection, models_dir=None):
+    """The global tier as one flat mapping of **all 33 keys**.
+
+    The engine context's control mapping: ``frame_worker.py:139`` reads the
+    recognition model and similarity type out of it. It is not per project and
+    not per face, which is exactly why it is a separate call rather than a
+    filter applied to the same dict.
+    """
+    return _tier_slice(connection, "global", None, None, models_dir)

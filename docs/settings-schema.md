@@ -245,3 +245,147 @@ for all six and is not emitted.
 | `ThemeSelection` | `control_actions.change_theme` | none — a stylesheet concern with no engine meaning |
 | `ViewFaceMaskEnableToggle` | `layout_actions.fit_image_to_view_onchange` | none — a Qt view refit |
 | `ViewFaceCompareEnableToggle` | `layout_actions.fit_image_to_view_onchange` | none — a Qt view refit |
+
+## The face tier, and the identity behind its key
+
+Plan 03-02 made the face tier real. Its key is not a name a human typed and not a
+detection index: it is derived from the recognition embedding, which is what lets
+it survive a reload. Close the project, reopen it, detect again, and the face that
+comes back is not byte-identical to the one that went in — the crop moved, the
+frame was a different frame — so anything keyed on exact bytes or on detection
+order has already lost the association. The reference web UI keys this tier by the
+target index and clears the whole mapping on project load (`webui2/app.js:102`,
+`:258`, `:283`, `:748`, `:778`); there was no per-face persistence upstream to
+lift, only a model to borrow.
+
+`project_faces` stores, per project, the face key, the **name of the recognition
+model** that produced the embedding, and the embedding itself as raw
+little-endian float32 bytes. The model name is not decoration. Upstream chooses
+the recognition model at the **global** tier (`frame_worker.py:139` reads
+`RecognitionModelSelection` and `SimilarityTypeSelection` from `control`), and the
+four models produce embeddings in unrelated spaces, so an identity is only
+comparable against another embedding produced under the same model. Matching
+filters by model in SQL, and a mismatch is a *miss*, not an error: a project whose
+recognition model was changed has no stored identities under the new one, and that
+is a normal state.
+
+**The embeddings are biometric-derived data and they are written to disk.** They
+are of media the single local user supplied, they live in that user's own project
+database on that user's own machine, they are never logged and they never leave
+the machine (T-03-13). Stated here so it is a known fact rather than a discovery.
+
+### One threshold, deliberately shared
+
+Identity matching uses the **project-tier similarity threshold key**, not a new
+constant of its own. The same key, at the same tier, compared the same way that
+`frame_worker.py:151`, `:230` and `:284` compare it. A user who loosens matching
+for swapping therefore loosens it for settings identity too.
+
+That coupling is a decision, not an omission. One notion of "same face" in the
+application is better than two that can disagree — if they disagreed, the engine
+would swap face A while the settings layer served face B's overrides, and every
+symptom would point at the settings being wrong rather than at the metric.
+
+The metric itself is `ModelsProcessor.findCosineDistance`, and it is not what its
+name suggests: it returns `100 - (1 - cos) * 50`, a **similarity on a 0-to-100
+scale** — identical vectors score 100, orthogonal 50, opposite 0 — compared with
+`>=` against an integer threshold whose range is 1 to 100 and whose default is 60.
+Reimplementing it as a 0-to-1 cosine and comparing against a 0-to-1 threshold
+would appear to work and would match at a completely different tightness.
+`visoswap/settings/faces.py` carries a pure-Python restatement so that importing
+settings does not require torch, an injection point so Phase 4 can pass the
+engine's own bound method in and delete the duplicate, and an agreement test that
+runs the engine's unbound method on the engine interpreter and compares. That
+test **fails rather than skips** when the engine interpreter is absent.
+
+## Validation
+
+`visoswap/settings/validate.py` has two entry points and they are deliberately not
+one.
+
+**Strict** (`validate`) is for everything that arrives from a caller — in Phase 4
+an HTTP handler, in Phase 5 a control the user moved. It accepts a value only if
+it already carries the type the schema declares, then checks bounds, option
+membership and text length. A string offered for a number is a rejection, not an
+input to be repaired.
+
+**Lenient** (`coerce`) exists for **migration** and has exactly one intended
+caller in the project: plan 03-03's preset seeding. It applies the same
+shape-derived conversion the schema generator applies and then runs the strict
+validator on the result. A test scans `visoswap/` and `backend/` and fails if
+anything else calls it, because a second caller is not a style problem — it is the
+string round-tripping this phase exists to end, re-established one convenience at
+a time.
+
+Every rule is read from the schema. No settings key name appears as a literal in
+the validator, and a test pins that: a second hardcoded rule there is the type
+moving back out of the data.
+
+Three decisions worth stating, because each is invisible in the code that
+implements it:
+
+- **Bools are tested before ints, everywhere.** `isinstance(True, int)` is True in
+  Python, so without the ordering every toggle passes as a slider position and
+  every `1` passes as a toggle.
+- **Ints are widened to float for float keys, one-way.** Reject `1` for a float
+  key and the frontend has to send `1.0` for a slider sitting at one, which no
+  renderer does. The reverse is refused: `2.5` for an integral key is a caller who
+  has not decided what they mean.
+- **An off-step value is accepted.** The `step` is a renderer's increment hint,
+  not a constraint, and upstream never enforced it — `StrengthAmountSlider` steps
+  by 25 over 0 to 500, and three makeup sliders step by 3 over 0 to 255, which
+  does not even reach the maximum. Rejecting off-step values would make
+  legitimate stored values unwritable.
+
+### Both directions, and one asymmetry
+
+Every write in `store.py` validates — global, project and face alike. Every read
+validates too, because a row written by a migration, by an older build or by hand
+has never passed the write-side gate, and a wrong value on disk is worse than one
+in flight because it persists. A read-side failure raises `CorruptStoredSetting`,
+which names the **tier** the offending row sits in; the value itself says nothing
+about where it came from, and the tier is the whole diagnosis.
+
+The one asymmetry: for the single key whose options are a directory listing,
+membership is enforced on the way **in** and not on the way out. Deleting a model
+file is not corruption, and since resolution reads the whole tier at once,
+treating it as corruption would take all 201 settings down with one removed file.
+"The file this names is gone" and "this value was never allowed" are different
+facts, and only the second one belongs to the settings layer.
+
+## Gates are evaluated for display, and for nothing else
+
+`visoswap/settings/gates.py` answers whether a renderer should draw a control.
+**Resolution does not call it and must never call it**, and that is asserted by
+AST rather than only written down here.
+
+A key whose gate is closed still resolves to a value. The engine reads
+`parameters[key]` unconditionally — there is no branch in the swap loop asking
+whether a control was on screen — and it reads the parent toggle separately, as
+its own key. Filtering resolved values by visibility would not tidy the output; it
+would remove keys the engine then raises a `KeyError` on, several hundred frames
+after the control that caused it went off screen.
+
+The evaluator handles both mechanisms, both compound spellings (`all` for the pipe
+that reads like OR, `last` for the comma that discards every parent but the final
+one), and transitive chains. It raises `GateCycle` rather than recursing on a
+loop; the measured data has 57 ungated keys, 133 at depth 1, 11 at depth 2 and no
+cycles, so the raise is a change detector rather than a routine path.
+
+One deliberate divergence from upstream: a key is visible only when every parent
+that *decides* its gate is itself visible. Upstream evaluates a widget against its
+immediate parents' values and never asks whether those parents are on screen, so a
+control nested under a switched-off section can still be drawn. "Every parent that
+decides" is meant precisely — under the `last` rule the discarded parents are
+discarded from the visibility chain too, so one notion of which parents matter
+answers both questions.
+
+## Whole-tier resolution
+
+`store.resolve_parameters` returns the project tier as one flat mapping of all 168
+keys; `store.resolve_control` returns the global tier as all 33. **Every key is
+present, always.** `resolve_parameters` is literally the value that goes into the
+engine context's per-face parameters mapping under that face's own key —
+`frame_worker.py:147` reads `self.parameters[target_face.face_id]` and three
+further sites index it the same way — so a sparse result is not a graceful
+fallback to a default. It is a `KeyError` inside the swap loop.
