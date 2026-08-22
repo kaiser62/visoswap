@@ -88,6 +88,14 @@ PROJECT_AUTHORED = frozenset(
         # no upstream source -- only the two combining rules that plan 03-01
         # measured, which are facts about behaviour rather than copied text.
         "settings/gates.py",
+        # Written for this project. It holds no upstream expression at all -- it
+        # seeds, lists and applies a payload. The *data* it reads,
+        # ``settings/data/presets_seed.json``, is derived from a file in the
+        # GPLv3 checkout, which is why that file carries the same licence note
+        # ``schema.json`` does and why ``docs/settings-presets.md`` records its
+        # provenance. Neither is a ``.py`` file, so no gate walks them; the note
+        # is how the obligation is met rather than an oversight.
+        "settings/presets.py",
         "settings/store.py",
         # Written for this project. Unlike ``faces.py`` it transcribes nothing:
         # every rule it applies is read out of the generated schema at run time,

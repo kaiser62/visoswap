@@ -5,7 +5,12 @@ venv/
 node_modules/
 dist/
 .env
-data/
+# Anchored to the repository root. The runtime frame cache lives at
+# ./data/projects/<project-id>/; an unanchored `data/` also swallows
+# visoswap/settings/data/presets_seed.json, which is generated offline and
+# committed on purpose -- and `git add` of an ignored path fails loudly only
+# if somebody is watching.
+/data/
 model_assets/
 tensorrt-engines/
 output/

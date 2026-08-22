@@ -31,8 +31,16 @@ include = ["visoswap*"]
 # .txt.gz has to ship inside the package directory. Without this, a wheel build
 # drops it silently and CLIPseg dies at model-load time with a path error that
 # looks nothing like a missing-asset error.
+#
+# The frozen schema and the migrated preset seed are generated offline from a
+# VisoMaster checkout and committed precisely so a user machine never needs one.
+# Left out of the package data they would be committed and then not shipped,
+# and the failure would be a wheel whose settings have no types and whose
+# presets table cannot be filled -- discovered at first run, not at build.
 [tool.setuptools.package-data]
 "visoswap.processors.external.cliplib" = ["*.txt.gz"]
+"visoswap.schema" = ["*.json"]
+"visoswap.settings" = ["data/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

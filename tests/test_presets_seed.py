@@ -96,6 +96,37 @@ def test_the_seed_is_committed_inside_the_package():
     assert presets.SEED_PATH.is_relative_to(REPO_ROOT / "visoswap")
 
 
+def test_the_seed_is_actually_tracked_by_git():
+    """Existing on disk is not the same fact as being committed.
+
+    This test exists because the seed was very nearly not committed at all: the
+    repository ignores ``data/`` for the runtime frame cache at ``./data/``, and
+    unanchored that pattern also swallows ``visoswap/settings/data/``. The file
+    would have sat in the working tree of the one machine that ran the
+    migration, every test here would have passed on that machine, and the
+    failure would have surfaced as an empty presets table on somebody else's.
+
+    It fails rather than skips when git is unavailable. A gate that opts itself
+    out on the machine where it cannot run is a gate that reports green for the
+    one reason it was never allowed to check.
+    """
+    import subprocess
+
+    relative = presets.SEED_PATH.relative_to(REPO_ROOT).as_posix()
+    result = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "--", relative],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        "{} is not tracked by git ({}). Check .gitignore -- an ignored path "
+        "makes `git add` fail loudly only if somebody is watching, and the "
+        "committed seed is the entire reason a user machine does not need "
+        "profiles.json.".format(relative, result.stderr.strip())
+    )
+
+
 def test_the_seed_holds_exactly_the_two_source_profiles(seed):
     assert [preset["id"] for preset in seed] == list(SOURCE_IDS)
     assert {p["id"]: p["name"] for p in seed} == SOURCE_NAMES
@@ -361,6 +392,40 @@ def test_applying_a_preset_clears_an_override_it_agrees_with_the_default_about(
         store.resolve(connection, key, project_id, models_dir=models_dir)
         == preset["project"][key]
     )
+
+
+def test_a_value_that_is_not_an_option_on_this_machine_is_skipped_and_reported(
+    connection, tmp_path, seed
+):
+    """The one key whose options are a directory listing.
+
+    Both profiles store ``''`` for the DFM model -- upstream's "none chosen" --
+    which is a legal option exactly while no model files exist. Put a model file
+    on disk and ``''`` stops being one, without a single setting having changed.
+    Raising there would make a preset unappliable because of a file; swallowing
+    it would hide the reason a control did not move. It is skipped, and named.
+    """
+    schema.clear_dfm_cache()
+    populated = tmp_path / "model_assets"
+    (populated / "dfm_models").mkdir(parents=True)
+    (populated / "dfm_models" / "someone.dfm").write_bytes(b"not really a model")
+    try:
+        assert schema.effective_default(schema.DYNAMIC_KEY, str(populated)) == (
+            "someone.dfm"
+        )
+        presets.seed_presets(connection)
+        report = presets.apply_preset(
+            connection, seed[0]["id"], "populated", str(populated)
+        )
+        assert report["unavailable"] == [schema.DYNAMIC_KEY]
+        assert (
+            store.get_override(
+                connection, schema.DYNAMIC_KEY, "populated", models_dir=str(populated)
+            )
+            is None
+        )
+    finally:
+        schema.clear_dfm_cache()
 
 
 def test_application_goes_through_the_store_and_not_around_it():
