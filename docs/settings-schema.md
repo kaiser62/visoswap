@@ -246,6 +246,13 @@ for all six and is not emitted.
 | `ViewFaceMaskEnableToggle` | `layout_actions.fit_image_to_view_onchange` | none — a Qt view refit |
 | `ViewFaceCompareEnableToggle` | `layout_actions.fit_image_to_view_onchange` | none — a Qt view refit |
 
+All six are accounted for as of plan 03-03: three have a handler in
+`visoswap/settings/handlers.py` and three are recorded there by name with a
+reason. `tests/test_apply_handlers.py` walks this same set and fails if a key
+carrying an `exec_function` is neither. See
+[`settings-presets.md`](settings-presets.md) for what each handler does and
+why two of the three deliberately diverge from the upstream callback.
+
 ## The face tier, and the identity behind its key
 
 Plan 03-02 made the face tier real. Its key is not a name a human typed and not a
