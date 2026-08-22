@@ -87,6 +87,13 @@ PROJECT_AUTHORED = frozenset(
         # generator emitted rather than upstream's punctuation, so it transcribes
         # no upstream source -- only the two combining rules that plan 03-01
         # measured, which are facts about behaviour rather than copied text.
+        # Written for this project. What it reproduces from upstream is
+        # *behaviour* -- which two calls a provider change makes and in what
+        # order, and which direction the frame-rate callback actually goes --
+        # measured by reading ``control_actions.py`` and stated in prose in the
+        # docstrings. No upstream line is copied; two of the three handlers
+        # deliberately call something upstream does not.
+        "settings/handlers.py",
         "settings/gates.py",
         # Written for this project. It holds no upstream expression at all -- it
         # seeds, lists and applies a payload. The *data* it reads,
