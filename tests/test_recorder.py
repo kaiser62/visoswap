@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import subprocess
+from datetime import datetime
 
 import pytest
 
@@ -265,8 +267,11 @@ def test_a_finished_recording_is_copied_to_the_output_folder(project, tmp_path):
     rec = asyncio.run(run())
 
     assert rec.exported_to is not None
-    # `cache.sanitize_filename` is reused, so spaces become underscores.
-    assert rec.exported_to.name == "My_Clip.mp4"
+    # `cache.sanitize_filename` is reused, so spaces become underscores; the
+    # take name now carries the run's local timestamp (D-12).
+    assert re.fullmatch(r"My_Clip_\d{8}-\d{6}\.mp4", rec.exported_to.name), (
+        rec.exported_to.name
+    )
     assert rec.exported_to.is_file()
     # A copy, not a move: the API still serves the project's own file.
     assert recorder.output_path(project).is_file()
@@ -292,7 +297,12 @@ def test_a_second_run_does_not_overwrite_the_first_export(project, tmp_path):
 
     rec = asyncio.run(run())
 
-    assert rec.exported_to.name == "My_Clip (2).mp4"
+    # The timestamped stem already separates runs, so the new take never
+    # competes with the seeded old-convention file for one name.
+    assert re.fullmatch(r"My_Clip_\d{8}-\d{6}\.mp4", rec.exported_to.name), (
+        rec.exported_to.name
+    )
+    assert rec.exported_to.name != "My_Clip.mp4"
     assert (out_dir / "My_Clip.mp4").read_bytes() == b"the earlier result"
 
 
@@ -307,6 +317,168 @@ def test_an_unwritable_output_folder_does_not_fail_the_run(project, tmp_path, ca
     rec._export()  # must not raise
 
     assert rec.exported_to is None
+
+
+# -- D-12 take naming: {project}_{stamp}_{face}.mp4[.partial] -----------------
+
+
+def _export_full_run(project_id, source, **kw):
+    """Record the whole clip and close it — the clean-finish export path."""
+
+    async def run():
+        rec = _make(project_id, source, **kw)
+        await rec.start()
+        rec.set_frontier(1e9)
+        rec.finish()
+        await asyncio.wait_for(rec._pump, timeout=120)
+        await rec.aclose()
+        return rec
+
+    return asyncio.run(run())
+
+
+TAKE_RE = re.compile(r"^af_\d{8}-\d{6}_afia_2\.mp4$")
+
+
+def test_a_clean_run_exports_project_stamp_face(project, tmp_path):
+    get_settings().output_dir = tmp_path / "out"
+    source = _source(tmp_path, audio=True)
+    _write_generated(project, [0.0])
+
+    rec = _export_full_run(project, source, name="af", face="afia_2.jpg")
+
+    assert rec.exported_to is not None
+    assert TAKE_RE.fullmatch(rec.exported_to.name), rec.exported_to.name
+
+
+def test_a_run_stopped_early_exports_a_partial_take(project, tmp_path):
+    out_dir = tmp_path / "out"
+    get_settings().output_dir = out_dir
+    # A stopped early run leaves its `.part` unpromoted; aclose exports it
+    # under the `.partial` suffix when output_include_partial allows.
+    recorder.partial_path(project).write_bytes(b"partial recording bytes")
+    rec = _make(project, "unused.mp4", name="af", face="afia_2.jpg")
+
+    asyncio.run(rec.aclose())  # never finished -> the stop path
+
+    names = [p.name for p in out_dir.iterdir()]
+    assert len(names) == 1, names
+    assert re.fullmatch(r"af_\d{8}-\d{6}_afia_2\.partial\.mp4", names[0]), names
+
+
+def test_two_runs_leave_two_distinct_unnumbered_takes(project, tmp_path):
+    get_settings().output_dir = tmp_path / "out"
+    source = _source(tmp_path, audio=True)
+    _write_generated(project, [0.0])
+
+    first = _export_full_run(project, source, name="af", face="afia_2.jpg")
+    recorder.clear_output(project)  # what scheduler start does between runs
+    second = _export_full_run(project, source, name="af", face="afia_2.jpg")
+
+    out_dir = get_settings().output_dir
+    names = sorted(p.name for p in out_dir.iterdir())
+    assert len(list(out_dir.iterdir())) == 2, names
+    assert first.exported_to.name != second.exported_to.name
+    # The stamps differ, so neither take needed collision numbering.
+    assert all("(" not in name for name in names), names
+    assert all(TAKE_RE.fullmatch(name) for name in names), names
+
+
+def test_same_second_collisions_are_numbered_not_overwritten(
+    project, tmp_path, monkeypatch
+):
+    out_dir = tmp_path / "out"
+    get_settings().output_dir = out_dir
+
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 8, 24, 12, 34, 56)
+
+    monkeypatch.setattr(recorder, "datetime", Frozen)
+    recorder.output_path(project).write_bytes(b"recording")
+    rec = _make(project, "unused.mp4", name="af", face="afia_2.jpg")
+    rec._export()
+    rec._export()
+
+    names = sorted(p.name for p in out_dir.iterdir())
+    assert names == [
+        "af_20260824-123456_afia_2.mp4",
+        "af_20260824-123456_afia_2 (2).mp4",
+    ], names
+
+
+def test_empty_name_and_no_face_exports_the_timestamp_alone(project, tmp_path):
+    out_dir = tmp_path / "out"
+    get_settings().output_dir = out_dir
+    recorder.output_path(project).write_bytes(b"recording")
+    rec = _make(project, "unused.mp4", name="", face="")
+
+    rec._export()
+
+    names = [p.name for p in out_dir.iterdir()]
+    assert len(names) == 1, names
+    assert re.fullmatch(r"\d{8}-\d{6}\.mp4", names[0]), names
+
+
+def test_face_directory_and_extension_contribute_only_the_sanitized_stem(
+    project, tmp_path
+):
+    out_dir = tmp_path / "out"
+    get_settings().output_dir = out_dir
+    recorder.output_path(project).write_bytes(b"recording")
+    face = tmp_path / "faces" / "Weird Name.JPG"
+    rec = _make(project, "unused.mp4", name="af", face=str(face))
+
+    rec._export()
+
+    names = [p.name for p in out_dir.iterdir()]
+    assert len(names) == 1, names
+    assert re.fullmatch(r"af_\d{8}-\d{6}_Weird_Name\.mp4", names[0]), names
+
+
+def test_starting_again_wipes_only_working_files_and_keeps_the_take(
+    project, tmp_path
+):
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    get_settings().output_dir = out_dir
+    take = out_dir / "af_20260823-033806_afia_2.mp4"
+    take.write_bytes(b"the earlier take")
+    recorder.output_path(project).write_bytes(b"working")
+    recorder.partial_path(project).write_bytes(b"working-part")
+
+    removed = recorder.clear_output(project)
+
+    assert removed == 2
+    assert take.is_file(), "accumulation: the previous take survives a new start"
+    assert not recorder.output_path(project).exists()
+    assert not recorder.partial_path(project).exists()
+    assert [p.name for p in out_dir.iterdir()] == [take.name]
+
+
+def test_an_unwritable_output_folder_leaves_aclose_normal_and_export_none(
+    project, tmp_path
+):
+    blocker = tmp_path / "blocked"
+    blocker.write_bytes(b"a file, not a directory")
+    get_settings().output_dir = blocker / "nested"
+    _write_generated(project, [0.0])
+    generated_before = sorted(p.name for p in cache.generated_dir(project).iterdir())
+
+    rec = _make(project, "unused.mp4", name="af", face="afia_2.jpg")
+    raised = False
+    try:
+        asyncio.run(rec.aclose())
+    except Exception:
+        raised = True
+
+    assert raised is False
+    assert rec.exported_to is None
+    assert (
+        sorted(p.name for p in cache.generated_dir(project).iterdir())
+        == generated_before
+    ), "the run's frames are intact"
 
 
 # -- the grace window ---------------------------------------------------------
