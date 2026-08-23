@@ -34,11 +34,12 @@ SCHEMA_PATH = Path(__file__).resolve().parent / "schema.json"
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-#: Where the weights live. The vendored engine still uses the relative string
-#: ``'./model_assets'`` until Phase 4 makes it env-driven, so this default is
-#: anchored to the repository root rather than to the process working directory
+#: Where the weights live. The project now owns its weights in a verified copy
+#: (``model_assets_owned/``, gitignored) rather than through the ``model_assets``
+#: junction into the read-only VisoMaster tree -- see docs/no-visomaster-install.md.
+#: Anchored to the repository root rather than to the process working directory
 #: -- resolving it from the CWD is how a scan silently finds nothing.
-DEFAULT_MODELS_DIR = REPO_ROOT / "model_assets"
+DEFAULT_MODELS_DIR = REPO_ROOT / "model_assets_owned"
 
 MODELS_DIR_ENV = "MODELS_DIR"
 

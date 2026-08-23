@@ -12,8 +12,9 @@ from a string, and a runtime seal misses a line nothing executes.
 
 The tests are shaped by one lesson from plan 01-04: **a blocker is inert wherever
 the thing it blocks is absent, and an inert blocker reports exactly the same
-CLEAN as a working one.** So the runner puts a VisoMaster checkout on
-``sys.path`` before sealing, and this file asserts that it genuinely resolved --
+CLEAN as a working one.** So the runner puts a package named ``app`` on
+``sys.path`` before sealing -- a self-built subject, or a real checkout via
+``VISOMASTER_DIR`` -- and this file asserts that it genuinely resolved,
 otherwise "VisoMaster could not be imported" would be a fact about the machine
 rather than about the seal.
 """
@@ -67,12 +68,14 @@ def test_selftest_exits_clean_on_the_engine_interpreter(engine_python):
 
 
 def test_the_seal_is_not_inert_against_visomaster(engine_python):
-    """VisoMaster must have been genuinely importable at the moment it was sealed.
+    """A package named ``app`` must have genuinely resolved when it was sealed.
 
-    This is the whole difference between a proof and a coincidence. ``app`` is an
-    implicit namespace package under ``D:/Visomaster``; the runner appends that
-    checkout to ``sys.path`` before arming, so a refusal afterwards is the seal
-    firing rather than the package never having been there.
+    This is the whole difference between a proof and a coincidence. The runner
+    builds a self-contained ``app`` package (or uses a real checkout via
+    ``VISOMASTER_DIR``) and puts it on ``sys.path`` before arming, so a refusal
+    afterwards is the seal firing rather than the package never having been there.
+    The proof holds on any machine -- it does not need a VisoMaster install (plan
+    04-04, severing ENGINE-01 clause 2).
 
     Qt's non-inertness is not re-proven here -- ``tests/test_qt_free.py`` already
     runs the Qt gate on an interpreter where PySide6 is installed, and this file
@@ -83,9 +86,10 @@ def test_the_seal_is_not_inert_against_visomaster(engine_python):
     code, output = run_engine_runner(engine_python, ["--selftest"])
     assert code == EXIT_CLEAN, output
     assert "app=yes" in output, (
-        "VisoMaster's `app` package did not resolve before the seal armed, so "
-        "the visomaster seal proved nothing -- it refused a package that was "
-        "not there. Point VISOMASTER_DIR at a real checkout.\n{}".format(output)
+        "the `app` package did not resolve before the seal armed, so the "
+        "visomaster seal proved nothing -- it refused a package that was not "
+        "there. The runner should build its own subject or be pointed at a real "
+        "checkout via VISOMASTER_DIR.\n{}".format(output)
     )
 
 

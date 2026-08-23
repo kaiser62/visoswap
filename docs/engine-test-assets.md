@@ -6,23 +6,30 @@ checked-in JSON file for the settings, a sealed subprocess for the runtime.
 
 ---
 
-## 1. The weight set: a link, not a copy
+## 1. The weight set: now env-driven, project-owned copy
 
-`visoswap/models/models_data.py` line 6:
+`visoswap/models/models_data.py` line 6 (`models_dir`) is env-driven since plan
+04-04: it reads `MODELS_DIR` with a project-owned default.
 
 ```python
-models_dir = './model_assets'
+models_dir = os.environ.get('MODELS_DIR', './model_assets_owned')
 ```
 
-That string is vendored verbatim and stays **hardcoded until Phase 4**, whose
-model bootstrap makes it env-driven. Every asset path in the engine is built
-from it by f-string, at import or at call time. There is no override before then.
+That one line is the **single edit site** that Phase 1 marked and plan 04-04
+changed. Every asset path in the engine is built from `models_dir` by f-string, so
+all 62 tracked paths follow the change for free. `model_assets_owned/` is the
+project's own verified copy of the weights (gitignored, made by
+`tools/copy_model_assets.py`), replacing the `model_assets` junction into the
+read-only VisoMaster tree as the default. The vendored file now has **two** named
+edit sites: the env-driven `models_dir` (plan 04-04) and the provenance note it
+carries (plan 01-04); the file still carries its attribution header and its diff
+against upstream is confined to those sites. See `docs/no-visomaster-install.md`.
 
 Two consequences, both load-bearing rather than incidental:
 
 - **The working directory of whatever runs engine code is part of the
-  contract.** A relative `./model_assets` resolves against the process CWD. Run
-  engine code from anywhere but the repository root and the engine looks for
+  contract.** A relative `./model_assets_owned` resolves against the process CWD.
+  Run engine code from anywhere but the repository root and the engine looks for
   weights somewhere else entirely — and, worse, `ModelsProcessor` defaults to
   TensorRT, whose execution-provider options write a cache into a *relative*
   `tensorrt-engines/` directory. From the wrong CWD that writes into the
@@ -35,14 +42,13 @@ Two consequences, both load-bearing rather than incidental:
   not raise at construction — it silently produces a degraded processor. That
   silent `None` is the failure mode of getting this wrong.
 
-`tools/link_model_assets.py` creates a directory link at the repository root
-named `model_assets`, pointing at the real weight set. This is the mechanism by
-which ~12GB is reached with **zero bytes copied and nothing downloaded**.
+The `model_assets` junction still exists and still resolves into `D:/Visomaster`.
+It is deliberately left in place (see `docs/no-visomaster-install.md`); the
+project simply no longer *defaults* to it.
 
-Copying would be wrong for a second reason too: `ModelsProcessor.load_model`
-does **not** auto-download. The download call is commented out in the vendored
-file, so a missing weight raises out of `onnxruntime.InferenceSession` rather
-than starting a 12GB fetch. There is no self-healing path; the link is the path.
+`tools/copy_model_assets.py` makes the project-owned copy and verifies it against
+the manifest. `tools/link_model_assets.py` still exists for the junction and for
+a developer who explicitly wants the borrowed tree.
 
 ### Source resolution
 
@@ -241,9 +247,9 @@ import a module that imports pytest at module scope.
 
 A blocker is inert wherever the thing it blocks is absent, and an inert blocker
 reports exactly the same `CLEAN` as a working one. That is the lesson plan 01-04
-paid for. So the runner appends the VisoMaster checkout (`VISOMASTER_DIR`,
-default `D:/Visomaster`) to `sys.path` **before** arming, measures which sealed
-roots would genuinely have resolved, and reports it:
+paid for. So the runner puts a package named `app` on `sys.path` **before**
+arming — a self-built subject by default, or a real checkout via `VISOMASTER_DIR`
+— measures which sealed roots would genuinely have resolved, and reports it:
 
 ```
 reachable_before_seal=PyQt5=no,PyQt6=no,PySide2=no,PySide6=yes,app=yes,backend=no,...
@@ -254,6 +260,23 @@ were there. `backend=no` is honest: the package does not exist until Phase 5, so
 that seal is armed and provably fires on the name, but cannot yet be shown
 non-inert. The self-test provokes each group *separately* — concluding "the seal
 is armed" from one group firing is how the other two end up unenforced.
+
+### Engine interpreter default (plan 04-04)
+
+The default engine interpreter is now the project's own `.venv-clean/Scripts/python.exe`
+(a combined runtime with the inference stack and no PySide6), so the default run
+proves ENGINE-01 clause 1 — the engine runs where Qt is genuinely absent. The
+seal property (a blocker fired against a PySide6 that *is* installed) remains
+provable by pointing the override at a Qt-carrying interpreter:
+
+```
+VISOSWAP_ENGINE_PYTHON="D:/Visomaster/dependencies/Python/python.exe" \
+  .venv-clean/Scripts/python.exe -m pytest tests/test_engine_seal.py -q
+```
+
+Nothing skips when that Qt-carrying interpreter is absent: the seal test's
+non-inertness proof builds its own `app` subject, and the `VISOMASTER_DIR`
+override is only the sharper run, not a requirement.
 
 ### Exit codes
 
@@ -300,13 +323,14 @@ detects faces, swaps one frame and writes two PNGs to `tests/artifacts/`.
 
 | Role | Default path | Override |
 |------|--------------|----------|
-| Target video | `D:/Visomaster/output/17f0d620_rosh_generate_135bda4c9686.mp4` | `VISOSWAP_TEST_VIDEO` |
-| Source face | `D:/Visomaster/inputt/598004cb_tonima.JPG` | `VISOSWAP_TEST_SOURCE` |
+| Target video | `tests/media/17f0d620_rosh_generate_135bda4c9686.mp4` | `VISOSWAP_TEST_VIDEO` |
+| Source face | `tests/media/598004cb_tonima.JPG` | `VISOSWAP_TEST_SOURCE` |
 
 Both are personal media and **neither is committed**. The video is 1920x1080,
 24 frames, 23.976 fps — the smallest real face-bearing clip on the machine, and
 small enough that a whole swap including both model loads measures around eight
-seconds.
+seconds. They live in `tests/media/` (gitignored, plan 04-04) rather than
+`D:/Visomaster`, so the smoke fixtures no longer default into a borrowed tree.
 
 **They are two different people, and that is the point.** The video already
 contains the face in `17f0d620_rosh.jpg`. Using that image as the source would

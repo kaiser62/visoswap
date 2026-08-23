@@ -79,10 +79,13 @@ def test_resolution_never_escapes_the_models_directory(monkeypatch):
     """A manifest entry with traversal cannot make us stat a file elsewhere."""
     from visoswap.models import manifest as m
 
-    # Plant a malicious local_path in the vendored list.
+    # Plant a malicious local_path in the vendored list. It starts with the
+    # current models_dir prefix (so relative_to succeeds) but climbs out of it,
+    # which is the traversal the resolver must refuse.
+    evil_local = "{}/../../outside.onnx".format(models_data.models_dir)
     evil = {
         "model_name": "evil",
-        "local_path": "./model_assets/../../outside.onnx",
+        "local_path": evil_local,
         "hash": "0" * 64,
         "url": "http://example.test/evil.onnx",
     }

@@ -70,7 +70,14 @@ PENDING_QT_STRIP = frozenset()
 
 #: CPython 3.10.13 with torch 2.4.1+cu124, torchvision, kornia, onnxruntime,
 #: tensorrt -- and PySide6 6.7.2.
-DEFAULT_ENGINE_PYTHON = Path("D:/Visomaster/dependencies/Python/python.exe")
+#:
+#: Plan 04-04 (sever VisoMaster): the default becomes the project's own combined
+#: interpreter, `.venv-clean`, which carries the full inference stack and *no*
+#: PySide6 -- so the default run proves ENGINE-01 clause 1 ("the engine runs
+#: where Qt is genuinely absent"). The Qt-carrying proof (a seal property, not a
+#: product requirement) remains reachable by pointing `VISOSWAP_ENGINE_PYTHON` at
+#: a Qt-bearing interpreter; see docs/engine-test-assets.md for the exact command.
+DEFAULT_ENGINE_PYTHON = Path(".venv-clean") / "Scripts" / "python.exe"
 
 ENGINE_PYTHON_ENV_VAR = "VISOSWAP_ENGINE_PYTHON"
 

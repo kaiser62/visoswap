@@ -49,6 +49,8 @@ from _blocked_roots import (  # noqa: E402 - must follow the sys.path setup
     root_of,
 )
 
+from visoswap.schema import resolve_models_dir  # noqa: E402 - same reason
+
 #: The Qt binding roots and VisoMaster's app package stay sealed. ``backend`` is
 #: deliberately NOT in the seal: the tracer must prove the backend can drive the
 #: engine. State that in the output line, never silently.
@@ -61,15 +63,19 @@ EXIT_ASSET_MISSING = 3
 EXIT_ENGINE_ERROR = 4
 
 VISOMASTER_ENV_VAR = "VISOMASTER_DIR"
-DEFAULT_VISOMASTER_DIR = os.path.join("D:", os.sep, "Visomaster")
+# Plan 04-04 (sever VisoMaster): the default is no longer a VisoMaster checkout.
+# A real checkout may still be supplied as an override; the project-owned copy
+# and self-built seal subject are the default.
+DEFAULT_VISOMASTER_DIR = None
 
 VIDEO_ENV_VAR = "VISOSWAP_TEST_VIDEO"
 SOURCE_ENV_VAR = "VISOSWAP_TEST_SOURCE"
+MEDIA_DIR = os.path.join(_REPO_ROOT, "tests", "media")
 DEFAULT_TEST_VIDEO = os.path.join(
-    "D:", os.sep, "Visomaster", "output", "17f0d620_rosh_generate_135bda4c9686.mp4"
+    MEDIA_DIR, "17f0d620_rosh_generate_135bda4c9686.mp4"
 )
 DEFAULT_TEST_SOURCE = os.path.join(
-    "D:", os.sep, "Visomaster", "inputt", "598004cb_tonima.JPG"
+    MEDIA_DIR, "598004cb_tonima.JPG"
 )
 
 #: How long the tracer waits for a single completed frame before giving up.
@@ -127,8 +133,13 @@ def _resolve_media(env_var, default):
     return os.environ.get(env_var) or default
 
 
-def _run_tracer():
-    """Drive ONE real generation through backend.api.generation's route."""
+def _run_tracer(guard=None):
+    """Drive ONE real generation through backend.api.generation's route.
+
+    ``guard`` is an optional ``_open_guard.VisoMasterOpenGuard`` armed for the
+    run; when given, the report carries ``guard_opens`` so ``--no-visomaster``
+    can prove no opened path resolved inside a VisoMaster install.
+    """
     mode = "tracer"
 
     reachable = _reachable_before_seal()
@@ -147,7 +158,7 @@ def _run_tracer():
                 ),
             )
 
-    models_dir = os.path.join(_REPO_ROOT, "model_assets")
+    models_dir = str(resolve_models_dir())
     if not os.path.isdir(models_dir):
         return _report(
             EXIT_ASSET_MISSING,
@@ -177,9 +188,12 @@ def _run_tracer():
     import backend.models.database as database
     from backend.services import cache
 
+    if guard is not None:
+        guard.__enter__()
+
     try:
         result = asyncio.run(
-            _tracer_coro(video_path, source_path, app_main, database, cache, reachable)
+            _tracer_coro(video_path, source_path, app_main, database, cache, reachable, guard)
         )
     except BaseException as exc:  # noqa: BLE001
         return _report(
@@ -191,7 +205,7 @@ def _run_tracer():
     return result
 
 
-async def _tracer_coro(video_path, source_path, app_main, database, cache, reachable):
+async def _tracer_coro(video_path, source_path, app_main, database, cache, reachable, guard=None):
     import asyncio
 
     from backend.config import get_settings
@@ -291,17 +305,21 @@ async def _tracer_coro(video_path, source_path, app_main, database, cache, reach
             )
 
         elapsed = time.monotonic() - started
+        guard_report = ""
+        if guard is not None:
+            guard_report = " guard_opens={}".format(guard.opens)
         return _report(
             EXIT_CLEAN,
             "CLEAN",
             "tracer",
             "frame={} size={} provider={} elapsed={:.1f}s "
-            "reachable_before_seal={}".format(
+            "reachable_before_seal={}{}".format(
                 os.path.basename(str(abs_path)) if abs_path else "",
                 size,
                 provider,
                 elapsed,
                 reachable_before_seal,
+                guard_report,
             ),
         )
 
@@ -309,11 +327,15 @@ async def _tracer_coro(video_path, source_path, app_main, database, cache, reach
 def main(argv):
     if argv == ["--tracer"]:
         return _run_tracer()
+    if argv == ["--tracer", "--no-visomaster"]:
+        from _open_guard import VisoMasterOpenGuard
+
+        return _run_tracer(guard=VisoMasterOpenGuard())
     return _report(
         EXIT_ENGINE_ERROR,
         "ENGINE_ERROR",
         "-",
-        "usage: tests/_backend_runner.py (--tracer)",
+        "usage: tests/_backend_runner.py (--tracer [--no-visomaster])",
     )
 
 

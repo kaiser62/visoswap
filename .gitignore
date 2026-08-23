@@ -12,9 +12,14 @@ dist/
 # if somebody is watching.
 /data/
 model_assets/
+# The project-owned model set (plan 04-04): a verified copy of the weights,
+# gitignored like the junction it replaces as the default.
+model_assets_owned/
 tensorrt-engines/
 output/
 .ruff_cache/
 .pytest_cache/
 .venv-clean/
 tests/artifacts/
+# Project-owned personal media for the engine smoke fixtures (plan 04-04).
+tests/media/

@@ -16,8 +16,9 @@ index 0 refusing three groups of roots:
 Blocking the second and third is what turns the roadmap's criterion 3 from a text
 search into a runtime proof. A grep says no line imports ``backend``. This says
 the engine *cannot* reach ``backend`` or VisoMaster **even when both are
-installed and importable** -- and the self-test puts a VisoMaster checkout on
-``sys.path`` on purpose, so the seal is proven against a package that genuinely
+installed and importable** -- and the self-test puts a package named ``app`` on
+``sys.path`` on purpose (a self-built subject, or a real checkout via
+``VISOMASTER_DIR``), so the seal is proven against a package that genuinely
 would have resolved rather than against one that was never there.
 
 That distinction is the lesson plan 01-04 paid for: a blocker is inert wherever
@@ -65,6 +66,8 @@ from _blocked_roots import (  # noqa: E402 - must follow the sys.path setup abov
     root_of,
 )
 
+from visoswap.schema import resolve_models_dir  # noqa: E402 - same reason
+
 EXIT_CLEAN = 0
 EXIT_SEAL_BREACHED = 1
 EXIT_DEPS_MISSING = 2
@@ -72,7 +75,10 @@ EXIT_ASSET_MISSING = 3
 EXIT_ENGINE_ERROR = 4
 
 VISOMASTER_ENV_VAR = "VISOMASTER_DIR"
-DEFAULT_VISOMASTER_DIR = os.path.join("D:", os.sep, "Visomaster")
+# Plan 04-04 (sever VisoMaster): the default is no longer a VisoMaster checkout.
+# `resolve_visomaster_dir` builds a self-contained `app` subject instead; a real
+# checkout may still be supplied as an override for a sharper run.
+DEFAULT_VISOMASTER_DIR = None
 
 #: The runner's only settings source. Not the layout dicts (they need Qt), not
 #: ``profiles.json`` (untyped strings), not a dict written inline in a test.
@@ -97,11 +103,15 @@ DEFAULT_SETTINGS_FIXTURE = os.path.join(
 #: must not read as a pass, and that rule covers media as well as packages.
 VIDEO_ENV_VAR = "VISOSWAP_TEST_VIDEO"
 SOURCE_ENV_VAR = "VISOSWAP_TEST_SOURCE"
+#: Project-owned media directory (gitignored). Plan 04-04 (sever VisoMaster):
+#: the smoke fixtures no longer default into D:/Visomaster; they live here, a
+#: copy made by the developer, and a missing file stays ASSET_MISSING.
+MEDIA_DIR = os.path.join(_REPO_ROOT, "tests", "media")
 DEFAULT_TEST_VIDEO = os.path.join(
-    "D:", os.sep, "Visomaster", "output", "17f0d620_rosh_generate_135bda4c9686.mp4"
+    MEDIA_DIR, "17f0d620_rosh_generate_135bda4c9686.mp4"
 )
 DEFAULT_TEST_SOURCE = os.path.join(
-    "D:", os.sep, "Visomaster", "inputt", "598004cb_tonima.JPG"
+    MEDIA_DIR, "598004cb_tonima.JPG"
 )
 
 #: Where the smoke mode writes its evidence. Gitignored: these are derivatives of
@@ -111,6 +121,7 @@ ARTIFACTS_DIR = os.path.join(_REPO_ROOT, "tests", "artifacts")
 SOURCE_FRAME_ARTIFACT = "smoke_source_frame.png"
 SWAPPED_FRAME_ARTIFACT = "smoke_swapped_frame.png"
 FACE_EDIT_FRAME_ARTIFACT = "liveportrait_frame.png"
+VIDEO_ARTIFACT = "smoke_swapped.mp4"
 
 #: The smoke run's settings, applied over the fixture.
 #:
@@ -233,8 +244,43 @@ def report(code, label, mode, detail):
     return code
 
 
+def _build_self_app_subject():
+    """A minimal ``app`` package in a temp dir, standing in for VisoMaster's.
+
+    Plan 04-04 (sever VisoMaster): the seal's non-inertness proof must hold on a
+    machine with no VisoMaster install. This builds a package named ``app`` --
+    the name the seal refuses -- so ``app`` genuinely resolves before the seal
+    arms and a refusal afterwards is the seal firing, not the package having been
+    absent. It includes the exact module path the breach case imports
+    (``app.ui.widgets.common_layout_data``) so that case resolves too.
+    """
+    import tempfile
+
+    subject = tempfile.mkdtemp(prefix="visoswap-seal-")
+    pkg = os.path.join(subject, "app")
+    os.makedirs(os.path.join(pkg, "ui", "widgets"), exist_ok=True)
+    with open(os.path.join(pkg, "__init__.py"), "w", encoding="utf-8") as handle:
+        handle.write("# self-built seal subject (plan 04-04)\n__version__ = 'seal-subject'\n")
+    with open(
+        os.path.join(pkg, "ui", "widgets", "common_layout_data.py"),
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        handle.write("# self-built seal subject (plan 04-04)\nCOMMON_LAYOUT_DATA = {}\n")
+    return subject
+
+
 def resolve_visomaster_dir():
-    return os.path.abspath(os.environ.get(VISOMASTER_ENV_VAR) or DEFAULT_VISOMASTER_DIR)
+    """The directory to put on ``sys.path`` as the VisoMaster seal subject.
+
+    A real checkout via ``VISOMASTER_DIR`` is the sharper run (a genuinely larger
+    ``app``). Otherwise the default is a self-built ``app`` package, so the
+    non-inertness proof holds on any machine with no VisoMaster install.
+    """
+    override = os.environ.get(VISOMASTER_ENV_VAR)
+    if override and os.path.isdir(override):
+        return os.path.abspath(override)
+    return _build_self_app_subject()
 
 
 def reachability_before_sealing():
@@ -461,7 +507,7 @@ def apply_overrides(tier, overrides, tier_name):
     return tier
 
 
-def mode_smoke():
+def mode_smoke(guard=None):
     """Load a video, detect a face, swap a frame, write the evidence to disk.
 
     The whole point of the phase in one function: this is the first thing in the
@@ -471,6 +517,10 @@ def mode_smoke():
     proof that the engine reached a swapped frame **without** Qt, without
     VisoMaster's ``app`` package and without the backend -- which is roadmap
     criterion 3 as a runtime fact rather than a text search.
+
+    ``guard`` is an optional ``_open_guard.VisoMasterOpenGuard``; when given it is
+    armed for the run and its observed open count is reported, so ``--no-visomaster``
+    can prove no opened path resolved inside a VisoMaster install.
     """
     mode = "smoke"
 
@@ -487,6 +537,9 @@ def mode_smoke():
     visomaster_dir = resolve_visomaster_dir()
     if os.path.isdir(visomaster_dir) and visomaster_dir not in sys.path:
         sys.path.append(visomaster_dir)
+
+    if guard is not None:
+        guard.__enter__()
 
     reachable = reachability_before_sealing()
 
@@ -518,7 +571,7 @@ def mode_smoke():
                 "docs/engine-test-assets.md".format(label, path, env_var),
             )
 
-    models_dir = os.path.join(_REPO_ROOT, "model_assets")
+    models_dir = str(resolve_models_dir())
     if not os.path.isdir(models_dir):
         return report(
             EXIT_ASSET_MISSING,
@@ -645,13 +698,16 @@ def mode_smoke():
 
     # One line, no image payload -- the project's own logging convention, and
     # T-02-10: nothing that could reconstruct a face goes into a log.
+    guard_report = ""
+    if guard is not None:
+        guard_report = " guard_opens={}".format(guard.opens)
     return report(
         EXIT_CLEAN,
         "CLEAN",
         mode,
         "faces={} frames={} fps={:.3f} provider={} input_shape={} output_shape={} "
         "diff_pixels={} elapsed={:.1f}s artifacts={} "
-        "reachable_before_seal={}".format(
+        "reachable_before_seal={}{}".format(
             len(cards),
             media["frame_count"],
             media["fps"],
@@ -665,6 +721,210 @@ def mode_smoke():
                 "{}={}".format(root, "yes" if ok else "no")
                 for root, ok in sorted(reachable.items())
             ),
+            guard_report,
+        ),
+    )
+
+
+def mode_video():
+    """Swap every frame of the bound video and write an output mp4.
+
+    The engine's public surface is single-frame (``Engine.swap(frame, source)``)
+    and deliberately has no display path out of the worker -- the seam Phase 2
+    defined. A whole-clip test therefore has to be this loop: bind once, detect
+    once, then read-and-swap each frame through the same decoder path and write
+    the results with OpenCV's writer. This is the same process boundary as
+    ``mode_smoke`` so the seal and the provider lock still hold.
+    """
+    mode = "video"
+
+    preloaded = leaked_roots()
+    if preloaded:
+        return report(
+            EXIT_SEAL_BREACHED,
+            "SEAL_BREACHED",
+            mode,
+            "sealed roots already in sys.modules before the seal armed: "
+            + ", ".join(preloaded),
+        )
+
+    fixture_path = resolve_settings_fixture()
+    settings = load_settings(fixture_path)
+    if settings is None:
+        return report(
+            EXIT_ASSET_MISSING,
+            "ASSET_MISSING",
+            mode,
+            "settings fixture not found at {} -- regenerate with "
+            "tools/dump_engine_settings.py".format(fixture_path),
+        )
+
+    video_path = resolve_media(VIDEO_ENV_VAR, DEFAULT_TEST_VIDEO)
+    source_path = resolve_media(SOURCE_ENV_VAR, DEFAULT_TEST_SOURCE)
+    for label, path, env_var in (
+        ("target video", video_path, VIDEO_ENV_VAR),
+        ("source face", source_path, SOURCE_ENV_VAR),
+    ):
+        if not os.path.isfile(path):
+            return report(
+                EXIT_ASSET_MISSING,
+                "ASSET_MISSING",
+                mode,
+                "{} not found at {} -- point {} at one, or see "
+                "docs/engine-test-assets.md".format(label, path, env_var),
+            )
+
+    models_dir = str(resolve_models_dir())
+    if not os.path.isdir(models_dir):
+        return report(
+            EXIT_ASSET_MISSING,
+            "ASSET_MISSING",
+            mode,
+            "model_assets not reachable at {} -- run tools/link_model_assets.py. "
+            "Without it ModelsProcessor constructs a silently degraded "
+            "processor rather than raising.".format(models_dir),
+        )
+
+    arm_seal()
+
+    import time
+
+    started = time.monotonic()
+
+    try:
+        import cv2
+        import numpy as np
+    except ImportError as exc:
+        return report(EXIT_DEPS_MISSING, "DEPS_MISSING", mode, exc)
+
+    try:
+        from visoswap.engine import Engine
+    except SealBroken as exc:
+        return report(EXIT_SEAL_BREACHED, "SEAL_BREACHED", mode, exc)
+    except ModuleNotFoundError as exc:
+        if root_of(getattr(exc, "name", None)) in ALL_SEALED_ROOTS:
+            return report(EXIT_SEAL_BREACHED, "SEAL_BREACHED", mode, exc)
+        return report(EXIT_DEPS_MISSING, "DEPS_MISSING", mode, exc)
+    except BaseException as exc:  # noqa: BLE001 - the runner reports, never raises
+        return report(
+            EXIT_ENGINE_ERROR,
+            "ENGINE_ERROR",
+            mode,
+            "importing visoswap.engine raised {}: {}".format(type(exc).__name__, exc),
+        )
+
+    output_path = os.path.join(ARTIFACTS_DIR, VIDEO_ARTIFACT)
+    writer = None
+    try:
+        control = apply_overrides(
+            dict(settings.get("global", {})), SMOKE_GLOBAL_OVERRIDES, "global"
+        )
+        parameters = apply_overrides(
+            dict(settings.get("project", {})), SMOKE_PROJECT_OVERRIDES, "project"
+        )
+
+        engine = Engine(
+            device="cuda", global_settings=control, project_settings=parameters
+        )
+        media = engine.load(video_path)
+        cards = engine.detect_faces(0)
+        if not cards:
+            return report(
+                EXIT_ENGINE_ERROR,
+                "ENGINE_ERROR",
+                mode,
+                "no faces detected in any sampled frame of {}".format(
+                    os.path.basename(video_path)
+                ),
+            )
+
+        frame_count = int(media["frame_count"])
+        fps = float(media["fps"])
+        os.makedirs(ARTIFACTS_DIR, exist_ok=True)
+
+        # Probe the frame shape once so the writer is sized correctly; the
+        # engine's own decoder is the one that fed detection, so reuse it.
+        probe = engine._read_frame(0)  # noqa: SLF001
+        height, width = probe.shape[:2]
+        writer = cv2.VideoWriter(
+            output_path,
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            fps,
+            (width, height),
+        )
+        if not writer.isOpened():
+            return report(
+                EXIT_ENGINE_ERROR,
+                "ENGINE_ERROR",
+                mode,
+                "could not open VideoWriter for {}".format(output_path),
+            )
+
+        swapped_frames = 0
+        for frame_number in range(frame_count):
+            swapped = engine.swap(frame_number, source_path)
+            swapped_frames += 1
+            writer.write(swapped)
+        writer.release()
+        writer = None
+        written = swapped_frames
+
+        if written == 0:
+            return report(
+                EXIT_ENGINE_ERROR,
+                "ENGINE_ERROR",
+                mode,
+                "video writer accepted no frames for {}".format(output_path),
+            )
+
+        provider = engine.context.models_processor.provider_name
+        engine._release()  # noqa: SLF001 - the decoder holds an OS handle
+    except SealBroken as exc:
+        if writer is not None:
+            writer.release()
+        return report(EXIT_SEAL_BREACHED, "SEAL_BREACHED", mode, exc)
+    except FileNotFoundError as exc:
+        if writer is not None:
+            writer.release()
+        return report(EXIT_ASSET_MISSING, "ASSET_MISSING", mode, exc)
+    except BaseException as exc:  # noqa: BLE001 - the runner reports, never raises
+        if writer is not None:
+            writer.release()
+        import traceback
+
+        return report(
+            EXIT_ENGINE_ERROR,
+            "ENGINE_ERROR",
+            mode,
+            "{}: {} | {}".format(
+                type(exc).__name__, exc, traceback.format_exc().replace("\n", " ~ ")
+            ),
+        )
+
+    leaked = leaked_roots()
+    if leaked:
+        return report(
+            EXIT_SEAL_BREACHED,
+            "SEAL_BREACHED",
+            mode,
+            "sealed roots in sys.modules after swapping: " + ", ".join(leaked),
+        )
+
+    return report(
+        EXIT_CLEAN,
+        "CLEAN",
+        mode,
+        "faces={} frames={} fps={:.3f} provider={} written={} shape={}x{} "
+        "elapsed={:.1f}s artifact={}".format(
+            len(cards),
+            frame_count,
+            fps,
+            provider,
+            written,
+            width,
+            height,
+            time.monotonic() - started,
+            VIDEO_ARTIFACT,
         ),
     )
 
@@ -803,7 +1063,7 @@ def mode_faceedit():
                 "docs/engine-test-assets.md".format(label, path, env_var),
             )
 
-    models_dir = os.path.join(_REPO_ROOT, "model_assets")
+    models_dir = str(resolve_models_dir())
     if not os.path.isdir(models_dir):
         return report(
             EXIT_ASSET_MISSING,
@@ -1023,9 +1283,24 @@ def mode_faceedit():
     )
 
 
+def mode_no_visomaster():
+    """Run the smoke swap with an open guard armed against every VisoMaster root.
+
+    Plan 04-04 Task 3 (closing ENGINE-01 clause 2): a grep proves no *literal*
+    names a VisoMaster path; only a guard watching real opens proves no *resolved*
+    path reaches one. The smoke run completes under the guard, and the report
+    carries ``guard_opens`` so a caller can assert the guard observed real opens
+    rather than none.
+    """
+    from _open_guard import VisoMasterOpenGuard
+
+    guard = VisoMasterOpenGuard()
+    return mode_smoke(guard=guard)
+
+
 USAGE = (
     "usage: _engine_runner.py "
-    "(--selftest | --import DOTTED_NAME | --smoke | --faceedit)"
+    "(--selftest | --import DOTTED_NAME | --smoke | --faceedit | --video | --no-visomaster)"
 )
 
 
@@ -1036,6 +1311,10 @@ def main(argv):
         return mode_smoke()
     if argv == ["--faceedit"]:
         return mode_faceedit()
+    if argv == ["--video"]:
+        return mode_video()
+    if argv == ["--no-visomaster"]:
+        return mode_no_visomaster()
     if len(argv) == 2 and argv[0] == "--import":
         return mode_import(argv[1])
     return report(EXIT_ENGINE_ERROR, "ENGINE_ERROR", "-", USAGE)

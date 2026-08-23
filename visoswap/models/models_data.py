@@ -3,7 +3,15 @@
 # This file was vendored into VisoSwap and may have been modified from upstream.
 # See NOTICE for vendoring provenance and LICENSE for the full GPLv3 text.
 
-models_dir = './model_assets'  # Vendored verbatim. Phase 4's model bootstrap makes this env-driven (MODELS_DIR); until then it must diff clean against upstream.
+import os  # EDIT SITE (Phase 4, plan 04-04)
+
+# EDIT SITE (Phase 4, plan 04-04): upstream sets `models_dir = './model_assets'`,
+# which on this machine is a junction into the read-only VisoMaster weight tree.
+# This project now owns its weights (model_assets_owned/, gitignored, a verified
+# copy made by tools/copy_model_assets.py), so the default points there and
+# MODELS_DIR overrides it. This is a deliberate divergence from upstream; see
+# docs/no-visomaster-install.md.
+models_dir = os.environ.get('MODELS_DIR', './model_assets_owned')
 assets_repo = "https://github.com/visomaster/visomaster-assets/releases/download"
 
 try:
