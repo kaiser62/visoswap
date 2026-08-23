@@ -36,13 +36,56 @@ class ProjectUpdate(BaseModel):
     full_video_mode: bool | None = None
     generation_mode: GenerationMode | None = None
     stream_buffer: float | None = Field(default=None, gt=0, le=600)
-    # Server-assigned only (the tracer / a trusted caller sets it directly on
-    # the row). Not exposed for arbitrary client writes.
-    source_face_path: str | None = None
+    # `source_face_path` is deliberately absent (T-05.1-02-07): it is written
+    # solely by the activation endpoint from a validated face id, never by a
+    # client payload.
 
 
 class UrlSource(BaseModel):
     url: str = Field(..., max_length=4096)
+
+
+class FaceOut(BaseModel):
+    """One library face. Paths never appear -- only content-addressed URLs."""
+
+    face_id: str
+    display_name: str | None = None
+    bytes: int
+    url: str
+    thumbnail_url: str | None = None
+
+
+class FaceActivate(BaseModel):
+    """Bind a library face to a project. No target index: D-04 keeps the
+    automatic single-target chooser; per-target picking is a later phase."""
+
+    face_id: str = Field(..., min_length=32, max_length=32)
+
+
+class FaceAssignment(BaseModel):
+    target_index: int
+    face_id: str
+    thumbnail_url: str | None = None
+
+
+class FaceAssignments(BaseModel):
+    assignments: list[FaceAssignment]
+
+
+class AffectedProject(BaseModel):
+    id: str
+    name: str
+
+
+class FaceUsageConflict(BaseModel):
+    """The 409 body for deleting a face projects still point at (D-05).
+
+    Machine-readable on purpose: the confirm dialog renders this list, not a
+    human reading a message string.
+    """
+
+    message: str
+    projects: list[AffectedProject]
 
 
 class PlaybackUpdate(BaseModel):

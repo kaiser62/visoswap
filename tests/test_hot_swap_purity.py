@@ -30,11 +30,12 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from backend.config import get_settings
 from backend.main import create_app
 from backend.models.database import db
-from backend.services import cache, recorder
+from backend.services import cache, facestore, recorder
 from backend.services.generator import FrameGenerator, GenerationResult
 
 FPS = 10.0
@@ -149,12 +150,20 @@ def _clip(tmp_path) -> bytes:
     return dest.read_bytes()
 
 
-def _face(tmp_path, name: str, colour) -> str:
-    from PIL import Image
+def _library_face(c, colour) -> str:
+    """Upload a face into the global store and activate it on the project.
 
-    path = tmp_path / name
-    Image.new("RGB", (32, 32), colour).save(path)
-    return str(path)
+    Since plan 05.1-02 the activation endpoint is the only writer of
+    ``source_face_path`` (T-05.1-02-07), so the hot-swap cycle goes through it
+    exactly as the product does.
+    """
+    buf = io.BytesIO()
+    Image.new("RGB", (32, 32), colour).save(buf, "PNG")
+    uploaded = c.post(
+        "/api/faces", files={"file": ("face.png", buf.getvalue(), "image/png")}
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    return uploaded.json()["face_id"]
 
 
 def _wait_for_completed(client, project_id: str, at_least: int) -> dict:
@@ -214,15 +223,15 @@ def test_stop_change_face_start_leaves_nothing_from_the_previous_face(
     )
     assert upload.status_code == 200, upload.text
 
-    face_one = _face(tmp_path, "face_one.png", (200, 40, 40))
-    face_two = _face(tmp_path, "face_two.png", (40, 200, 40))
+    face_one = _library_face(c, (200, 40, 40))
+    face_two = _library_face(c, (40, 200, 40))
 
     # ---- run one: face one -------------------------------------------------
-    patched = c.patch(
-        f"/api/projects/{project_id}",
-        json={"source_face_path": face_one},
+    activated = c.post(
+        f"/api/projects/{project_id}/face", json={"face_id": face_one}
     )
-    assert patched.status_code == 200, patched.text
+    assert activated.status_code == 200, activated.text
+    bound_one = str(facestore.face_path(face_one))
 
     started = c.post(f"/api/projects/{project_id}/scheduler/start", json={})
     assert started.status_code == 200, started.text
@@ -248,11 +257,11 @@ def test_stop_change_face_start_leaves_nothing_from_the_previous_face(
     built_before_restart = len(built)
 
     # ---- run two: face two, playhead partway into the clip ------------------
-    patched = c.patch(
-        f"/api/projects/{project_id}",
-        json={"source_face_path": face_two},
+    activated = c.post(
+        f"/api/projects/{project_id}/face", json={"face_id": face_two}
     )
-    assert patched.status_code == 200, patched.text
+    assert activated.status_code == 200, activated.text
+    bound_two = str(facestore.face_path(face_two))
 
     restarted = c.post(
         f"/api/projects/{project_id}/scheduler/start",
@@ -267,7 +276,7 @@ def test_stop_change_face_start_leaves_nothing_from_the_previous_face(
     survivors = [
         payload
         for payload in _generated_payloads(project_id)
-        if payload.startswith(f"FACE|{face_one}|".encode("utf-8"))
+        if payload.startswith(f"FACE|{bound_one}|".encode("utf-8"))
     ]
     assert not survivors, (
         f"{len(survivors)} frame file(s) made with the first face survived the "
@@ -295,7 +304,7 @@ def test_stop_change_face_start_leaves_nothing_from_the_previous_face(
     assert payloads, "run two wrote no generated frame files"
     wrong = [
         payload for payload in payloads
-        if not payload.startswith(f"FACE|{face_two}|".encode("utf-8"))
+        if not payload.startswith(f"FACE|{bound_two}|".encode("utf-8"))
     ]
     assert not wrong, (
         f"{len(wrong)} frame(s) were not made with the second face"
@@ -312,7 +321,7 @@ def test_stop_change_face_start_leaves_nothing_from_the_previous_face(
     )
     stale_bindings = [
         project.get("source_face_path") for project in second_run_generators
-        if project.get("source_face_path") != face_two
+        if project.get("source_face_path") != bound_two
     ]
     assert not stale_bindings, (
         f"{len(stale_bindings)} generator(s) of the second run were built "

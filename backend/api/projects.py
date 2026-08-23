@@ -10,10 +10,16 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 
 from backend.api.deps import get_db, get_project
-from backend.api.schemas import ProjectCreate, ProjectUpdate, UrlSource
+from backend.api.schemas import (
+    FaceActivate,
+    FaceAssignments,
+    ProjectCreate,
+    ProjectUpdate,
+    UrlSource,
+)
 from backend.config import get_settings
 from backend.models.database import Database
-from backend.services import cache, video
+from backend.services import cache, facestore, video
 from backend.services.ffmpeg import FFmpegError, probe
 from backend.services.scheduler import effective_interval, registry
 
@@ -179,15 +185,52 @@ async def _bind_source(
     return _public(updated)
 
 
+@router.post("/{project_id}/face", response_model=FaceAssignments)
+async def activate_face(
+    payload: FaceActivate,
+    project: dict[str, Any] = Depends(get_project),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    """Bind a library face to this project (D-03).
+
+    The request is singular on purpose: `faceselect.choose_target` is still the
+    only chooser and returns one index, so the response wraps that one choice
+    in an assignment list -- the seam a later per-target-picking phase extends
+    without breaking this contract (D-04).
+    """
+    try:
+        path = facestore.face_path(payload.face_id)
+    except facestore.UnsafeFaceId as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="face not found")
+
+    updated = await db.update_project(project["id"], source_face_path=str(path))
+    assert updated is not None
+    return {
+        "assignments": [
+            {
+                "target_index": 0,
+                "face_id": payload.face_id,
+                "thumbnail_url": f"/api/faces/{payload.face_id}/thumbnail",
+            }
+        ]
+    }
+
+
 def _public(project: dict[str, Any]) -> dict[str, Any]:
     """Never leak absolute filesystem paths to the browser."""
     data = dict(project)
     local_path = data.pop("video_path", None)
-    data.pop("source_face_path", None)
+    face_path_raw = data.pop("source_face_path", None)
     data["has_video"] = bool(local_path or data.get("video_url"))
     data["video_filename"] = Path(local_path).name if local_path else None
     data["video_src"] = (
         f"/api/projects/{project['id']}/video" if data["has_video"] else None
+    )
+    # The active library face as its content id -- never the stored path.
+    data["source_face_id"] = (
+        facestore.face_id_for_path(face_path_raw) if face_path_raw else None
     )
     # Stream mode's grid is the video's fps, not `interval`. The overlay picker
     # must use the same spacing the scheduler plans on.
