@@ -1,5 +1,40 @@
 @import 'tailwindcss';
 
+/*
+ * The Studio colour vocabulary, defined once (plan 05.1-04 Task 1).
+ * Values are ported verbatim from the user-approved webui2 reference
+ * (D:/Visomaster/webui2/styles.css `:root`). Naming them under Tailwind v4's
+ * `--color-*` namespace generates bg-card, border-line, text-muted, … for
+ * every component; nothing else may hardcode a surface colour.
+ */
 @theme {
   --font-sans: ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
+
+  --color-bg: #090c0f;
+  --color-card: #11171c;
+  --color-raised: #182129;
+  --color-line: #293640;
+  --color-text: #e7eef2;
+  --color-muted: #8da1ad;
+  --color-accent: #32bbd0;
+  --color-active: #153b43;
+  --color-good: #5dcc8b;
+  --color-bad: #ef7265;
+}
+
+/*
+ * The schema surface is ~201 native form controls (checkboxes, ranges,
+ * selects and their dropdown popups); the parts the browser paints itself
+ * follow `color-scheme`, not classes. Without dark here, the app is dark
+ * chrome full of white widgets.
+ */
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+  }
 }

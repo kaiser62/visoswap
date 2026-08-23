@@ -1,9 +1,12 @@
-/** Small hand-rolled Tailwind primitives (D-07) per the approved UI-SPEC tokens. */
+/** Small hand-rolled Tailwind primitives (D-07), restyled to the Studio
+ * token vocabulary (plan 05.1-04 Task 1). Every colour reads from the
+ * `--color-*` tokens defined in index.css — no hardcoded surfaces.
+ */
 
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
 
-const ACCENT = '#2563EB'
-const DESTRUCTIVE = '#DC2626'
+const ACCENT = '#32bbd0'
+const DESTRUCTIVE = '#ef7265'
 
 export function Button({
   variant = 'primary',
@@ -14,12 +17,12 @@ export function Button({
 }) {
   const base =
     'inline-flex h-8 items-center justify-center gap-1 rounded px-3 text-sm font-semibold ' +
-    'transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ' +
+    'transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
     'disabled:pointer-events-none disabled:opacity-50'
   const variants = {
-    primary: `bg-blue-600 text-white hover:bg-blue-700`,
-    destructive: `bg-red-600 text-white hover:bg-red-700`,
-    ghost: `bg-transparent text-neutral-600 hover:bg-neutral-100`,
+    primary: `bg-accent text-bg hover:bg-accent/90`,
+    destructive: `bg-bad text-bg hover:bg-bad/90`,
+    ghost: `bg-transparent text-muted hover:bg-raised`,
   }
   return (
     <button
@@ -35,7 +38,7 @@ export function Card({
 }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={`rounded-lg border border-neutral-200 bg-white p-4 ${className}`}
+      className={`rounded-lg border border-line bg-card p-4 ${className}`}
       {...rest}
     />
   )
@@ -47,7 +50,7 @@ export function Badge({
 }: HTMLAttributes<HTMLSpanElement>) {
   return (
     <span
-      className={`inline-flex h-5 items-center rounded-full bg-blue-600 px-2 text-xs font-semibold text-white ${className}`}
+      className={`inline-flex h-5 items-center rounded-full bg-accent px-2 text-xs font-semibold text-bg ${className}`}
     >
       {children}
     </span>
@@ -56,9 +59,9 @@ export function Badge({
 
 export function Spinner({ label = 'Loading…' }: { label?: string }) {
   return (
-    <div className="flex h-8 items-center gap-2 text-sm text-neutral-500">
+    <div className="flex h-8 items-center gap-2 text-sm text-muted">
       <span
-        className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-200 border-t-blue-600"
+        className="h-4 w-4 animate-spin rounded-full border-2 border-line border-t-accent"
         aria-hidden
       />
       <span>{label}</span>
@@ -69,7 +72,7 @@ export function Spinner({ label = 'Loading…' }: { label?: string }) {
 export function Skeleton({ className = '' }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={`h-8 animate-pulse rounded bg-neutral-100 ${className}`}
+      className={`h-8 animate-pulse rounded bg-raised ${className}`}
       aria-hidden
     />
   )
@@ -93,13 +96,13 @@ export function Modal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-lg border border-neutral-200 bg-white p-6"
+        className="w-full max-w-md rounded-lg border border-line bg-card p-6"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={title}
       >
-        <h2 className="mb-4 text-base font-semibold text-neutral-900">{title}</h2>
+        <h2 className="mb-4 text-base font-semibold text-text">{title}</h2>
         {children}
       </div>
     </div>
