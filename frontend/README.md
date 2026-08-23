@@ -43,7 +43,12 @@ serves `frontend/dist` at `/` when the directory exists.
 ```
 npm test            # vitest run (render-count / ui-states / save-flow / preset-flow / gates)
 npm run build       # tsc -b && vite build — the FRONTEND-01 type-error gate
+npm run test:e2e    # Playwright: real Chromium against the backend on :8000
 ```
+
+Playwright reuses an already-running backend on :8000 (serving `frontend/dist`)
+or starts one itself; point `E2E_BASE_URL` elsewhere to target another instance.
+First run needs `npx playwright install chromium`.
 
 Backend settings API suite (repo root):
 

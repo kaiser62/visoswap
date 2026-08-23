@@ -105,8 +105,10 @@ coverage:
       - kind: integration
         ref: "live backend http://127.0.0.1:8000: PUT AutoColorBlendAmountSlider=77 -> fresh GET returns Int64(77); POST presets A and with AUD -> report + 201-key values; wrong-tier PUT -> 400; GET / serves built frontend (200)"
         status: pass
-    human_judgment: true
-    rationale: "The visual walkthrough (watching values change in the rendered UI) needs a human at a browser; the server-side round-trips behind every step are verified green and the app is served at http://127.0.0.1:8000/?project=<id> for the check."
+      - kind: e2e
+        ref: "playwright (headless Chromium): frontend/e2e/settings.spec.ts — 201 controls + sidebar; gate lock/unlock + clamp; preset A cancel / with AUD apply; save->reload round-trip with server-side check (4 passed)"
+        status: pass
+    human_judgment: false
 
 # Metrics
 duration: 35min
