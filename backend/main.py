@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,12 +16,13 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.api import backends, generation, playback, projects, ws
-from backend.config import get_settings
+from backend.config import Settings, get_settings
 from backend.models.database import db
 from backend.services import cache, video
 from backend.services.ffmpeg import ffmpeg_available
 from backend.services.scheduler import registry
 from backend.services.video import ytdlp_available
+from visoswap.models import bootstrap
 
 log = logging.getLogger(__name__)
 
@@ -36,12 +38,46 @@ def configure_logging(level: str) -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
+# ---------------------------------------------------------------------------
+# the model bootstrap gate
+# ---------------------------------------------------------------------------
+
+
+def _verify_models_at_startup(settings: Settings) -> None:
+    """Refuse to start before any route can serve if required models are incomplete.
+
+    Raising from the lifespan means the app never reaches a serving state, so no
+    route can answer -- not merely that the generation route checks first. A
+    check inside ``api/generation.py`` would satisfy criterion 2's wording and
+    miss its point: the failure would arrive as a 500 on the first frame, which
+    is the mid-inference failure BACKEND-01 exists to replace.
+
+    The error is written to stderr as well as logged, because a user starting a
+    server reads a terminal, not a log file. Mode selection and the verification
+    marker live in ``visoswap.models.bootstrap`` (``verify_at_startup``).
+    """
+    try:
+        bootstrap.verify_at_startup(
+            settings.models_dir,
+            settings.data_dir,
+            settings.models_verify_mode,
+        )
+    except bootstrap.ModelVerificationError as exc:
+        sys.stderr.write(str(exc) + "\n")
+        log.error("model bootstrap refused: %s", exc)
+        raise
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.projects_dir.mkdir(parents=True, exist_ok=True)
+
+    # Model gate first: refuse to start on incomplete models before any route can
+    # serve, before the DB is even opened. See _verify_models_at_startup.
+    _verify_models_at_startup(settings)
 
     await db.connect()
     log.info(

@@ -48,6 +48,21 @@ class Settings(BaseSettings):
     data_dir: Path = REPO_ROOT / "data"
     database_url: str = "sqlite:///./data/app.db"
 
+    # Model bootstrap (plan 04-03). The backend refuses to start until the
+    # required models are present and (on a first run) hash-verified.
+    # `MODELS_DIR` env is read into `models_dir` automatically (pydantic-settings
+    # maps the field name case-insensitively). None means "let
+    # visoswap.schema.resolve_models_dir decide": MODELS_DIR, then the repo's
+    # `model_assets/` default. The gate must not invent a second resolution order.
+    models_dir: Path | None = None
+    # Startup verification mode: "auto" (fast when a verification marker for the
+    # current manifest exists, full otherwise -- the safe default), "fast"
+    # (presence/non-emptiness only, the developer-loop escape hatch), or "full"
+    # (also hash every required entry). There is deliberately no off switch: an
+    # off switch on a refusal-to-start gate is the first thing an environment
+    # file sets and then forgets, and BACKEND-01 would quietly stop being true.
+    models_verify_mode: str = "auto"
+
     # Generation
     # 1 by default: one engine serializes, so a second worker against it only
     # inflates per-frame latency (0.886s -> 0.913s per frame, same throughput).
@@ -140,6 +155,24 @@ class Settings(BaseSettings):
     def _resolve_data_dir(cls, v: object) -> Path:
         p = Path(str(v))
         return p if p.is_absolute() else (REPO_ROOT / p).resolve()
+
+    @field_validator("models_dir", mode="before")
+    @classmethod
+    def _resolve_models_dir(cls, v: object) -> Path | None:
+        if v in (None, ""):
+            return None
+        p = Path(str(v))
+        return p if p.is_absolute() else (REPO_ROOT / p).resolve()
+
+    @field_validator("models_verify_mode")
+    @classmethod
+    def _check_verify_mode(cls, v: str) -> str:
+        v = (v or "").lower().strip()
+        if v not in {"auto", "fast", "full"}:
+            raise ValueError(
+                f"unknown models_verify_mode {v!r}; expected auto, fast or full"
+            )
+        return v
 
     @property
     def resolved_gender_model(self) -> Path | None:

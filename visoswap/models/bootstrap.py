@@ -24,6 +24,7 @@ empty file satisfies ``isfile`` and answers every reader with nothing.
 
 from __future__ import annotations
 
+import hashlib
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,6 +43,10 @@ __all__ = [
     "RepairRefused",
     "verify",
     "repair",
+    "manifest_fingerprint",
+    "verification_marker_path",
+    "resolve_startup_mode",
+    "verify_at_startup",
 ]
 
 #: Verify presence and non-emptiness only; do not hash.
@@ -251,3 +256,63 @@ def repair(
         fetcher(entry.name, str(entry.path), entry.digest, entry.url)
 
     return _verify_core(models_dir, mode)
+
+
+# ---------------------------------------------------------------------------
+# the startup gate (plan 04-03 Task 3)
+# ---------------------------------------------------------------------------
+
+
+def manifest_fingerprint() -> str:
+    """A stable id for the current required model set.
+
+    Derived from the (name, digest) pairs of the *required* entries, sorted, so it
+    is stable across the interpreter's TensorRT availability (the six TRT entries
+    are optional either way). A change upstream in a required file's digest flips
+    it, which is what invalidates a verification marker.
+    """
+    required = sorted((e.name, e.digest) for e in manifest.required_entries())
+    return hashlib.sha256(repr(required).encode("utf-8")).hexdigest()
+
+
+def verification_marker_path(data_dir: os.PathLike) -> Path:
+    """Where the 'this manifest was fully verified' marker lives.
+
+    Beside the project's own data, never inside the models directory -- writing
+    into a directory that may be a junction into a read-only tree is the mistake
+    this gate is most exposed to.
+    """
+    return Path(data_dir) / ".model-verify-{}.marker".format(manifest_fingerprint())
+
+
+def resolve_startup_mode(configured: str, data_dir: os.PathLike) -> str:
+    """The mode the gate runs: full when no marker for the current manifest exists.
+
+    ``auto`` (the safe default) means fast on every start, full on a first run
+    against an unverified tree -- the design's "on first run" shape, backed by the
+    measured ~7 s warm cost of a full 12 GB pass. ``fast`` and ``full`` force a
+    side explicitly, for the developer loop or for a hard proof.
+    """
+    if configured != "auto":
+        return configured
+    return "full" if not verification_marker_path(data_dir).exists() else "fast"
+
+
+def verify_at_startup(
+    models_dir: Optional[os.PathLike],
+    data_dir: os.PathLike,
+    configured_mode: str,
+) -> VerificationResult:
+    """Verify at startup, choosing the mode, and record a full pass.
+
+    Raises :class:`ModelVerificationError` when incomplete. A successful ``full``
+    pass writes the marker so later starts are fast; a ``fast`` pass writes
+    nothing, so it can never be mistaken for a hash-verified one.
+    """
+    mode = resolve_startup_mode(configured_mode, data_dir)
+    result = _verify_core(models_dir, mode)
+    if not result.ok:
+        raise ModelVerificationError(result)
+    if mode == FULL:
+        verification_marker_path(data_dir).write_text("ok\n", encoding="utf-8")
+    return result
