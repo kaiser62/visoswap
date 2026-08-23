@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.api import backends, generation, playback, projects, ws
+from backend.api import backends, generation, playback, projects, settings as settings_api, ws
 from backend.config import Settings, get_settings
 from backend.models.database import db
 from backend.services import cache, video
@@ -209,6 +209,7 @@ def create_app() -> FastAPI:
     app.include_router(playback.router)
     app.include_router(generation.router)
     app.include_router(backends.router)
+    app.include_router(settings_api.router)
     app.include_router(ws.router)
 
     # Serve the built frontend when it exists (single-container deployment).
