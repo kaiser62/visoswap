@@ -146,11 +146,19 @@ def resolve_media_pair(pipeline):
     return video_path, source_path
 
 
-def mode_micro():
-    """Tier 1: sequential ``Engine.swap`` latency distribution, native resolution."""
+def mode_micro(threads=None, embed_once=False):
+    """Tier 1: sequential ``Engine.swap`` latency distribution, native resolution.
+
+    ``threads`` overrides the global tier's ``nThreadsSlider`` for the run.
+    ``embed_once`` monkey-patches ``_source_embedding_store`` to compute the
+    store a single time -- the exact projection of the planned source-embedding
+    cache, measured through the full ``swap`` path.
+    """
     import time
 
     settings = load_settings_pair()
+    if threads is not None:
+        settings["global"]["nThreadsSlider"] = int(threads)
     video_path, source_path = resolve_media_pair(pipeline=False)
 
     arm_seal()
@@ -175,6 +183,10 @@ def mode_micro():
         probe = engine._read_frame(0)  # noqa: SLF001 - sealed-runner convention
         height, width = probe.shape[:2]
 
+        if embed_once:
+            cached = engine._source_embedding_store(source_path)  # noqa: SLF001
+            engine._source_embedding_store = lambda path: cached  # noqa: SLF001
+
         for _ in range(MICRO_WARMUP):
             engine.swap(0, source_path)
 
@@ -189,8 +201,12 @@ def mode_micro():
         engine._release()  # noqa: SLF001 - the decoder holds an OS handle
 
     timing = stats(latencies)
+    label = "MICRO{}{}".format(
+        "-t{}".format(threads) if threads is not None else "",
+        "-embedonce" if embed_once else "",
+    )
     result = {
-        "mode": "micro",
+        "mode": label.lower(),
         "provider": provider,
         "resolution": "{}x{}".format(width, height),
         "media_fps": round(float(media["fps"]), 3),
@@ -198,15 +214,19 @@ def mode_micro():
         "detect_s": round(detect_s, 2),
         "faces": len(cards),
         "warmup": MICRO_WARMUP,
+        "threads": threads,
+        "embed_once": bool(embed_once),
         **timing,
     }
     bench(
-        "MICRO",
-        "provider={} res={} media_fps={} load_s={:.2f} detect_s={:.2f} faces={} "
-        "swaps={} mean_ms={} p50_ms={} min_ms={} max_ms={} swap_fps={}".format(
-            provider, result["resolution"], result["media_fps"], load_s, detect_s,
-            len(cards), timing["n"], timing["mean_ms"], timing["p50_ms"],
-            timing["min_ms"], timing["max_ms"], timing["fps_from_mean"],
+        label,
+        "provider={} res={} media_fps={} threads={} embed_once={} "
+        "load_s={:.2f} detect_s={:.2f} faces={} swaps={} mean_ms={} p50_ms={} "
+        "min_ms={} max_ms={} swap_fps={}".format(
+            provider, result["resolution"], result["media_fps"], threads,
+            bool(embed_once), load_s, detect_s, len(cards), timing["n"],
+            timing["mean_ms"], timing["p50_ms"], timing["min_ms"],
+            timing["max_ms"], timing["fps_from_mean"],
         ),
     )
     print("BENCH_JSON:{}".format(result), flush=True)
@@ -302,6 +322,21 @@ def main(argv):
             return EXIT_SEAL_BREACHED
         if argv == ["--micro"]:
             return mode_micro()
+        if len(argv) >= 2 and argv[0] == "--micro":
+            threads = None
+            embed_once = False
+            rest = argv[1:]
+            while rest:
+                if rest[0] == "--threads" and len(rest) >= 2:
+                    threads = int(rest[1])
+                    rest = rest[2:]
+                elif rest[0] == "--embed-once":
+                    embed_once = True
+                    rest = rest[1:]
+                else:
+                    bench("ENGINE_ERROR", USAGE)
+                    return EXIT_ENGINE_ERROR
+            return mode_micro(threads=threads, embed_once=embed_once)
         if argv == ["--pipeline"]:
             return mode_pipeline(DEFAULT_PIPELINE_FRAMES)
         if len(argv) == 3 and argv[0] == "--pipeline" and argv[1] == "--frames":

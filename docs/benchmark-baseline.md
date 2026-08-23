@@ -45,6 +45,25 @@ The reference implementation reached 21.2 fps CUDA / 27.8 fps TensorRT at 1080p
 was assigned; the per-frame loop ran only the swapper. The vendored frame worker itself
 is not the regression — the seam shape around it is.
 
+## Lever matrix (idle GPU, 1080p, 2 faces, CUDA)
+
+| Configuration | mean ms/frame | fps | vs playback |
+|---------------|--------------|-----|-------------|
+| `swap` re-embed, 1 thread (= today's Engine) | 147.65 | 6.77 | 0.28× |
+| `swap` re-embed, 8 threads | 159.40 | 6.27 | 0.26× |
+| **embed-once, 1 thread** (= post-cache-fix projection) | **96.85** (p50 94, min 78) | **10.33** | 0.43× |
+| **embed-once, 8 threads** | **95.35** | **10.49** | 0.44× |
+| VisoMaster upstream, embed-once | 121.10 | 8.26 | 0.34× |
+| Playback requires | ≤ 41.7 | 23.98 | 1.00× |
+
+Readings:
+
+- **Threads are a dead lever** on this single-frame path (within noise everywhere).
+  Keep `nThreadsSlider` exposed at its fixture default; promise nothing.
+- **The source-embedding cache is worth +52% throughput** (147.7 → 96.9 ms), and the
+  patched-swap measurement *is* the post-fix projection through the real `swap` path.
+- Post-fix floor ≈ **10.3 fps** — still 2.3× short of 1080p24. Remaining levers below.
+
 ## Cross-check: VisoMaster itself, headless (`tools/benchmark_visomaster.py`)
 
 Same clip, same fixture settings, same machine, driven through **upstream's own**
@@ -93,3 +112,21 @@ Therefore, for Phase 05.1:
 Plan 05.1 must sequence: **(1)** idle-GPU discipline + source-embedding cache +
 re-benchmark gate, **(2)** everything else. No overlay implementation may land against
 today's numbers.
+
+## Session addendum — user requirements folded into the plan (2026-08-23)
+
+1. **Face hot-swap on one project** (stop → change face → start, no recreate): the
+   backend already guarantees purity — every `scheduler/start` deletes all frame rows,
+   cached frame files, and the recorder output before planning new targets
+   (`backend/api/generation.py`). A fresh generator is built per start from a fresh
+   project row, so the new `source_face_path` is honored; with the embedding cache
+   keyed by path+mtime, a face change can never leak across runs. Plan task: verify the
+   stop→change→restart path end-to-end and decide whether stop should ALSO purge
+   (today old frames linger visibly until the next start).
+2. **Closer-frames-first for streaming**: the scheduler already plans its target grid
+   forward from the playhead with per-frame priority; plan task: verify nearest-first
+   ordering under lookahead and surface it in the Jobs tab.
+3. **Performance ladder beyond the cache** (each rung needs its own bench gate):
+   `processing_scale`/`processing_width` downsizing (plumbed scheduler-side, unmeasured
+   here), TensorRT behind an absolute cache path (the T-02-09 refusal made safe),
+   and honest cadence (interval modes + nearest-previous) instead of promising parity.
