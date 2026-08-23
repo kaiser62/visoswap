@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 05.1
 current_phase_name: Studio Frontend Media Workspace
 status: executing
-stopped_at: "Completed 05.1-01 (source cache, bench gate pass, purity E2E, keep-on-stop); next: /gsd-execute-phase 5.1 -> plan 05.1-02"
-last_updated: "2026-08-23T22:58:00.000Z"
+stopped_at: "Completed 05.1-02 (global face library backend); next: /gsd-execute-phase 5.1 -> plan 05.1-03"
+last_updated: "2026-08-24T05:24:00.000+06:00"
 last_activity: 2026-08-24
-last_activity_desc: "Plan 05.1-01 complete: source-embedding memo in Engine (realpath+mtime_ns+size), idle-GPU gate certified ~96-98ms/10.3fps @1080p, hot-swap purity E2E green, D-13 stop-time policy settled keep-on-stop"
+last_activity_desc: "Plan 05.1-02 complete: machine-global facestore (blake2b content ids, 112px thumbnails), /api/faces upload/list/image/thumbnail/usage/delete, project face activation with assignment-list contract, D-05 warn-and-cascade delete, source_face_path made server-assigned-only"
 state_head: 1b77bd2c8a4e3a53d25466a3390c9f83b083d071
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 28
-  completed_plans: 21
+  completed_plans: 22
 milestone_name: milestone
 ---
 
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-08-21)
 ## Current Position
 
 Phase: 05.1 (Studio Frontend Media Workspace) — EXECUTING
-Plan: 05.1-01 complete (SUMMARY committed); next 05.1-02 — Backend media surface I: video ingest, face library, project face binding
-Status: Tracer discharged — bench precondition met, overlay/UI work may land against the measured ~10.3 fps floor @1080p
-Last activity: 2026-08-24 — plan 05.1-01 shipped: source cache in engine seam, --gate idle-GPU certification, purity E2E, keep-on-stop policy
+Plan: 05.1-02 complete (SUMMARY committed); next 05.1-03 — Backend media surface II: single-frame preview endpoint, timestamped take naming, takes gallery API with range streaming
+Status: Face library backend shipped — machine-global store live at data/faces; UI work (plans 04-07) may consume /api/faces + source_face_id contracts
+Last activity: 2026-08-24 — plan 05.1-02 shipped: facestore service, faces router, activation endpoint, warn-and-cascade delete
 
-Progress: [█████████░] 21/28 planned items summarized across phases 1–5.1; Phase 05.1 at 1/8 plans; Phase 6 verification follows it
+Progress: [█████████░] 22/28 planned items summarized across phases 1–5.1; Phase 05.1 at 2/8 plans; Phase 6 verification follows it
 
 ## Performance Metrics
 
@@ -52,7 +52,7 @@ Progress: [█████████░] 21/28 planned items summarized across
 | 03 | 3 | - | - |
 | 04 | 4 | - | - |
 | 05 | 5 | - | - |
-| 05.1 | 1 | - | - |
+| 05.1 | 2 | - | - |
 
 **Recent Trend:**
 
@@ -69,6 +69,7 @@ Progress: [█████████░] 21/28 planned items summarized across
 | Phase 01 P04 | ~40 min | 3 tasks | 6 files |
 | Phase 02 P01 | 55 min | 3 tasks | 10 files |
 | Phase 5.1 P01 | ~40 min | 4 tasks | 6 files |
+| Phase 5.1 P02 | ~25 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -110,6 +111,9 @@ Recent decisions affecting current work:
 - [Phase 5.1]: D-13 stop-time frame policy settled keep-on-stop — stopping preserves generated frames for inspection; purity stays guaranteed at start by the existing per-start wipe; staleness labeling is plan 07's face badge job. Plans 06/07 may cite this.
 - [Phase 5.1]: Source embeddings are memoised per (realpath, st_mtime_ns, st_size) with stat on every call and cleared in Engine.load — in-place face replacement and project rebind both recompute; the memo is underscore-private so the pinned three-name surface holds.
 - [Phase 5.1]: Benchmark certification is gated, not assumed: --gate refuses without --idle-gpu and fails on two-run spread >25%; measured post-cache floor ≈96–98 ms / 10.2–10.4 fps @1080p (docs/benchmark-baseline.md).
+- [Phase 5.1]: Face identity is content-addressed (blake2b-16 of the bytes): the same image uploaded twice is one library entry and every on-disk name is derived, so no user string ever becomes a path segment; faces live at data/faces outside projects_dir.
+- [Phase 5.1]: source_face_path is now genuinely server-assigned-only — removed from ProjectUpdate (it was PATCHable); the purity E2E binds faces through upload+activate. Activation response is an assignment list (target_index 0 today) so per-target picking needs no contract break (D-04).
+- [Phase 5.1]: D-05 delete protocol: usage endpoint feeds the dialog, unforced delete 409s with a machine-readable project list, force stops schedulers → nulls rows → unlinks; faceless projects are refused at scheduler start with 400. Listing display_name falls back to the face id (two-file-per-face invariant forbids sidecars) — plan 06 may add labels additively.
 
 ### Pending Todos
 
@@ -136,9 +140,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-23T22:58:00Z
-Stopped at: Completed 05.1-01-PLAN.md — source cache landed (e37c147), bench gate pass (c9dfe50), purity E2E green (c14cfc5), Task 4 decision keep-on-stop recorded
-Resume file: .planning/phases/05.1-studio-frontend-media-workspace/05.1-02-PLAN.md
+Last session: 2026-08-24T05:24:00+06:00
+Stopped at: Completed 05.1-02-PLAN.md — facestore (722a32e/7826f5b), faces router + activation (fdcd7bb/749c3a6), warn-and-cascade delete (4471c36/f4f7dce), project-delete survival test (479acdf)
+Resume file: .planning/phases/05.1-studio-frontend-media-workspace/05.1-03-PLAN.md
 
 ## Rebuild Log
 

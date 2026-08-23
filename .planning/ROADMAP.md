@@ -219,7 +219,7 @@ generation" and "Single-face targeting" from PROJECT.md's Validated section on t
 Plans:
 
 - [x] 05.1-01-PLAN.md — TRACER: idle-GPU bench gate + source-embedding cache; re-benchmark before any overlay work (D-11/D-13/D-14/D-15a)
-- [ ] 05.1-02-PLAN.md — Backend media surface I: video ingest (upload/URL/local path), content-addressed face library, project face binding (D-03/D-04/D-05)
+- [x] 05.1-02-PLAN.md — Backend media surface I: video ingest (upload/URL/local path), content-addressed face library, project face binding (D-03/D-04/D-05)
 - [ ] 05.1-03-PLAN.md — Backend media surface II: single-frame preview endpoint, timestamped take naming, takes gallery API with range streaming (D-09/D-12/D-10)
 - [ ] 05.1-04-PLAN.md — Studio shell: dark theme tokens + retheme of all schema controls; one-page card grid with the 201 controls CSS-hidden, never unmounted (D-01/D-02)
 - [ ] 05.1-05-PLAN.md — Live overlay: client frame index + binary search, informational WebSocket with refetch-on-open, player with nearest-previous overlay that never stalls the video (D-06/D-08/D-15d)
@@ -270,5 +270,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Settings Schema & Three-Tier Resolution | 3/3 | Complete | 2026-08-22 |
 | 4. Backend Integration & Model Bootstrap | 4/4 | Complete | 2026-08-23 |
 | 5. Frontend Schema Rendering | 5/5 | Complete | 2026-08-23 |
-| 05.1. Studio Frontend Media Workspace | 1/8 | In Progress | - |
+| 05.1. Studio Frontend Media Workspace | 2/8 | In Progress | - |
 | 6. End-to-End Verification | 0/TBD | Not started | - |
