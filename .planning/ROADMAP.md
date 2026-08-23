@@ -21,7 +21,7 @@ including a fix for the recorder test that hangs on master today.
 - [ ] **Phase 2: Engine API & First Swap** - The vendored engine swaps one real frame end to end, with no PySide6 and no VisoMaster install present
 - [ ] **Phase 3: Settings Schema & Three-Tier Resolution** - Every setting is typed, generated from the layout dicts, and resolves global → project → face
 - [x] **Phase 4: Backend Integration & Model Bootstrap** - The backend runs on the new engine, refuses to start on incomplete models, and the full existing test suite passes
-- [ ] **Phase 5: Frontend Schema Rendering** - Every settings control renders from schema.json, both migrated presets are selectable
+- [x] **Phase 5: Frontend Schema Rendering** - Every settings control renders from schema.json, both migrated presets are selectable
 - [ ] **Phase 6: End-to-End Verification** - Recorder, launcher, and userscript verified against the new engine, including a cancelled-recording regression check
 
 ## Phase Details
@@ -241,5 +241,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Engine API & First Swap | 4/4 | Complete | 2026-08-22 |
 | 3. Settings Schema & Three-Tier Resolution | 3/3 | Complete | 2026-08-22 |
 | 4. Backend Integration & Model Bootstrap | 4/4 | Complete | 2026-08-23 |
-| 5. Frontend Schema Rendering | 0/5 | Planned (wave 1→4) | - |
+| 5. Frontend Schema Rendering | 5/5 | Complete | 2026-08-23 |
 | 6. End-to-End Verification | 0/TBD | Not started | - |
