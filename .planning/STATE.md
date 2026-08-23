@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 05.1
 current_phase_name: Studio Frontend Media Workspace
 status: executing
-stopped_at: "Completed 05.1-02 (global face library backend); next: /gsd-execute-phase 5.1 -> plan 05.1-03"
-last_updated: "2026-08-24T05:24:00.000+06:00"
+stopped_at: "Completed 05.1-04 (Studio shell: dark tokens, retargeted primitives, webui2 card layout); next: /gsd-execute-phase 5.1 -> plan 05.1-03"
+last_updated: "2026-08-24T05:28:00.000+06:00"
 last_activity: 2026-08-24
-last_activity_desc: "Plan 05.1-02 complete: machine-global facestore (blake2b content ids, 112px thumbnails), /api/faces upload/list/image/thumbnail/usage/delete, project face activation with assignment-list contract, D-05 warn-and-cascade delete, source_face_path made server-assigned-only"
+last_activity_desc: "Plan 05.1-04 complete: webui2 token vocabulary in index.css @theme + color-scheme dark; primitives/controls/dialogs retargeted to tokens; StudioLayout (CSS-hiding StudioCard per D-02 + two-column grid); App rewritten as the one-page shell with the settings surface absorbed into a Controls card; shell.test.tsx collapse-count gate"
 state_head: 1b77bd2c8a4e3a53d25466a3390c9f83b083d071
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 28
-  completed_plans: 22
+  completed_plans: 23
 milestone_name: milestone
 ---
 
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-08-21)
 ## Current Position
 
 Phase: 05.1 (Studio Frontend Media Workspace) — EXECUTING
-Plan: 05.1-02 complete (SUMMARY committed); next 05.1-03 — Backend media surface II: single-frame preview endpoint, timestamped take naming, takes gallery API with range streaming
-Status: Face library backend shipped — machine-global store live at data/faces; UI work (plans 04-07) may consume /api/faces + source_face_id contracts
-Last activity: 2026-08-24 — plan 05.1-02 shipped: facestore service, faces router, activation endpoint, warn-and-cascade delete
+Plan: 05.1-04 complete (SUMMARY committed); next 05.1-03 — Backend media surface II: single-frame preview endpoint, timestamped take naming, takes gallery API with range streaming
+Status: Studio shell live — one dark page at `/`, settings surface inside the Controls card, all 201 controls mounted open or collapsed; plans 05-07 mount cards into StudioGrid
+Last activity: 2026-08-24 — plan 05.1-04 shipped: token vocabulary, primitive/control/dialog retheme, StudioLayout, one-page App rewrite, shell.test.tsx D-02 gate
 
-Progress: [█████████░] 22/28 planned items summarized across phases 1–5.1; Phase 05.1 at 2/8 plans; Phase 6 verification follows it
+Progress: [█████████░] 23/28 planned items summarized across phases 1–5.1; Phase 05.1 at 3/8 plans; Phase 6 verification follows it
 
 ## Performance Metrics
 
@@ -52,7 +52,7 @@ Progress: [█████████░] 22/28 planned items summarized across
 | 03 | 3 | - | - |
 | 04 | 4 | - | - |
 | 05 | 5 | - | - |
-| 05.1 | 2 | - | - |
+| 05.1 | 3 | - | - |
 
 **Recent Trend:**
 
@@ -70,6 +70,7 @@ Progress: [█████████░] 22/28 planned items summarized across
 | Phase 02 P01 | 55 min | 3 tasks | 10 files |
 | Phase 5.1 P01 | ~40 min | 4 tasks | 6 files |
 | Phase 5.1 P02 | ~25 min | 3 tasks | 9 files |
+| Phase 5.1 P04 | ~11 min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -114,6 +115,8 @@ Recent decisions affecting current work:
 - [Phase 5.1]: Face identity is content-addressed (blake2b-16 of the bytes): the same image uploaded twice is one library entry and every on-disk name is derived, so no user string ever becomes a path segment; faces live at data/faces outside projects_dir.
 - [Phase 5.1]: source_face_path is now genuinely server-assigned-only — removed from ProjectUpdate (it was PATCHable); the purity E2E binds faces through upload+activate. Activation response is an assignment list (target_index 0 today) so per-target picking needs no contract break (D-04).
 - [Phase 5.1]: D-05 delete protocol: usage endpoint feeds the dialog, unforced delete 409s with a machine-readable project list, force stops schedulers → nulls rows → unlinks; faceless projects are refused at scheduler start with 400. Listing display_name falls back to the face id (two-file-per-face invariant forbids sidecars) — plan 06 may add labels additively.
+- [Phase 5.1]: The Studio colour vocabulary lives only in index.css `@theme` (`--color-bg…bad`, webui2 values verbatim) plus `color-scheme: dark`; component files carry no surface literals, so recolouring is a one-block edit. Accent fills take `text-bg` as the dark foreground.
+- [Phase 5.1]: D-02 enforcement is structural: StudioCard always mounts its body and hides with display:none, so collapsing any card can never drop a `[data-key]` node; shell.test.tsx asserts the count across a collapse click. Plans 05-07 must keep using StudioCard for new cards.
 
 ### Pending Todos
 
@@ -140,8 +143,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-24T05:24:00+06:00
-Stopped at: Completed 05.1-02-PLAN.md — facestore (722a32e/7826f5b), faces router + activation (fdcd7bb/749c3a6), warn-and-cascade delete (4471c36/f4f7dce), project-delete survival test (479acdf)
+Last session: 2026-08-24T05:28:00+06:00
+Stopped at: Completed 05.1-04-PLAN.md — token vocabulary + primitives (d619ee2), Controls-card retheme (9618cc0), Studio layout + one-page shell + shell gate test (33a0660)
 Resume file: .planning/phases/05.1-studio-frontend-media-workspace/05.1-03-PLAN.md
 
 ## Rebuild Log
