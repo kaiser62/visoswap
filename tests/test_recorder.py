@@ -366,13 +366,27 @@ def test_a_run_stopped_early_exports_a_partial_take(project, tmp_path):
     assert re.fullmatch(r"af_\d{8}-\d{6}_afia_2\.partial\.mp4", names[0]), names
 
 
-def test_two_runs_leave_two_distinct_unnumbered_takes(project, tmp_path):
+def test_two_runs_leave_two_distinct_unnumbered_takes(
+    project, tmp_path, monkeypatch
+):
     get_settings().output_dir = tmp_path / "out"
     source = _source(tmp_path, audio=True)
     _write_generated(project, [0.0])
+    # A run finishes inside a wall-clock second, so the clock is pinned and
+    # advanced between runs: the stamps must differ by design (that is what
+    # separates the takes), not by luck of the scheduler.
+    clock = {"now": datetime(2026, 8, 24, 12, 34, 56)}
+
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return clock["now"]
+
+    monkeypatch.setattr(recorder, "datetime", Frozen)
 
     first = _export_full_run(project, source, name="af", face="afia_2.jpg")
     recorder.clear_output(project)  # what scheduler start does between runs
+    clock["now"] = datetime(2026, 8, 24, 12, 34, 57)
     second = _export_full_run(project, source, name="af", face="afia_2.jpg")
 
     out_dir = get_settings().output_dir
@@ -401,11 +415,11 @@ def test_same_second_collisions_are_numbered_not_overwritten(
     rec._export()
     rec._export()
 
-    names = sorted(p.name for p in out_dir.iterdir())
-    assert names == [
+    names = {p.name for p in out_dir.iterdir()}
+    assert names == {
         "af_20260824-123456_afia_2.mp4",
         "af_20260824-123456_afia_2 (2).mp4",
-    ], names
+    }, names
 
 
 def test_empty_name_and_no_face_exports_the_timestamp_alone(project, tmp_path):

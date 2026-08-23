@@ -31,6 +31,7 @@ import asyncio
 import logging
 import shutil
 from bisect import bisect_right
+from datetime import datetime
 from pathlib import Path
 
 from backend.config import get_settings
@@ -132,6 +133,7 @@ class Recorder:
         duration: float | None = None,
         grace: float | None = None,
         name: str = "",
+        face: str = "",
     ) -> None:
         s = get_settings()
         self.project_id = project_id
@@ -141,6 +143,9 @@ class Recorder:
         self.fps = float(fps) if fps and fps > 0 else 0.0
         self.duration = duration
         self.name = name
+        # Display stem of the source face this run used — not a path; the
+        # recorder never opens it. It only names the exported take.
+        self.face = face
         # Set once the finished recording has been copied to the output folder.
         self.exported_to: Path | None = None
         self.grace = s.recorder_grace if grace is None else float(grace)
@@ -365,6 +370,24 @@ class Recorder:
             return
         part.replace(output_path(self.project_id))
 
+    def _stem(self) -> str:
+        """`project_datetime_face`, each part sanitized and empties dropped.
+
+        The timestamp is what separates one run from the next: without it every
+        run of the same project competes for one name and `_free_path` numbers
+        them `(2)`, `(3)`, which says nothing about which is which. Local time,
+        not UTC — this name is read by the person sitting at the machine.
+        """
+        def part(value: str) -> str:
+            # Strip the extension a face carries (`ada.jpg`) before it becomes
+            # a component of an mp4 name.
+            cleaned = cache.sanitize_filename(value, "").rsplit(".", 1)[0]
+            return cleaned.strip("._")
+
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        pieces = [part(self.name), stamp, part(self.face)]
+        return "_".join(p for p in pieces if p) or stamp
+
     def _export(self) -> None:
         """Copy the recording into the output folder under a readable name.
 
@@ -386,8 +409,7 @@ class Recorder:
 
         try:
             s.output_dir.mkdir(parents=True, exist_ok=True)
-            stem = cache.sanitize_filename(self.name or "video", "video").rsplit(".", 1)[0]
-            dest = _free_path(s.output_dir, f"{stem}{suffix}", ".mp4")
+            dest = _free_path(s.output_dir, f"{self._stem()}{suffix}", ".mp4")
             shutil.copy2(source, dest)
             self.exported_to = dest
             log.info("[RECORDER] project=%s exported=%s", self.project_id, dest.name)

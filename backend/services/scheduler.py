@@ -11,6 +11,7 @@ import asyncio
 import logging
 import math
 import time
+from pathlib import Path
 from typing import Any
 
 from backend.config import get_settings
@@ -299,11 +300,16 @@ class ProjectScheduler:
         try:
             source = _cache.to_absolute(video_path)
             info = await probe(source)
+            # The display stem of the active face names the exported take
+            # (D-12). `_start_recorder` reads the fresh project row, so a face
+            # changed between runs is picked up with no further wiring.
+            face_source = str(project.get("source_face_path") or "")
             recorder = Recorder(
                 self.project_id, source,
                 width=info.width, height=info.height, fps=info.fps,
                 duration=info.duration,
                 name=str(project.get("name") or ""),
+                face=Path(face_source).stem if face_source else "",
             )
             await recorder.start()
         except Exception as exc:
