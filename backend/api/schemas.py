@@ -36,6 +36,9 @@ class ProjectUpdate(BaseModel):
     full_video_mode: bool | None = None
     generation_mode: GenerationMode | None = None
     stream_buffer: float | None = Field(default=None, gt=0, le=600)
+    # Server-assigned only (the tracer / a trusted caller sets it directly on
+    # the row). Not exposed for arbitrary client writes.
+    source_face_path: str | None = None
 
 
 class UrlSource(BaseModel):

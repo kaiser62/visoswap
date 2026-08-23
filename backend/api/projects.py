@@ -183,6 +183,7 @@ def _public(project: dict[str, Any]) -> dict[str, Any]:
     """Never leak absolute filesystem paths to the browser."""
     data = dict(project)
     local_path = data.pop("video_path", None)
+    data.pop("source_face_path", None)
     data["has_video"] = bool(local_path or data.get("video_url"))
     data["video_filename"] = Path(local_path).name if local_path else None
     data["video_src"] = (

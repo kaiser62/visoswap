@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from backend.config import get_settings
 from backend.services.generator import FrameGenerator, GenerationResult
 
 
@@ -24,13 +25,40 @@ class EngineFrameGenerator(FrameGenerator):
 
     @classmethod
     def from_project(cls, project: dict[str, Any], timeout: float = 0, worker_index: int = 0):
-        from backend.config import get_settings
         return cls(get_settings().visomaster_provider)
 
     def _get_engine(self):
         if self._engine is None:
+            import sqlite3
+
             from visoswap.engine import Engine
-            self._engine = Engine(device="cuda")
+            from visoswap.settings import db as settings_db
+            from visoswap.settings import store
+
+            # The engine reads its control/parameters mappings unconditionally
+            # (frame_worker.py indexes them by name), so a sparse dict would
+            # raise a KeyError deep in a tensor op. Resolve the full global and
+            # project tiers from the Phase 3 store so every key is present --
+            # this is the store Phase 3 exists to serve. The settings tables
+            # live in the backend's own app DB (they were applied at connect),
+            # so a fresh sync connection to `get_settings().db_path` reads them.
+            connection = sqlite3.connect(get_settings().db_path)
+            connection.row_factory = sqlite3.Row
+            try:
+                settings_db.apply_settings_schema(connection)
+                global_settings = store.resolve_control(connection)
+                project_settings = {}
+                if self._project and self._project.get("id"):
+                    project_settings = store.resolve_parameters(
+                        connection, self._project["id"]
+                    )
+            finally:
+                connection.close()
+            self._engine = Engine(
+                device="cuda",
+                global_settings=global_settings,
+                project_settings=project_settings,
+            )
         return self._engine
 
     async def health(self) -> dict[str, Any]:
@@ -47,10 +75,14 @@ class EngineFrameGenerator(FrameGenerator):
         video = project.get("video_path")
         if not video:
             raise ValueError("project has no local video to bind")
+        # Set the project before building the engine: `_get_engine` resolves the
+        # project tier from the store, and `detect_faces` reads the project
+        # settings (e.g. `SimilarityThresholdSlider`) unconditionally, so a
+        # project-less engine would be built with an empty project tier.
+        self._project = dict(project)
         engine = self._get_engine()
         self._media = engine.load(str(video))
         self.faces = engine.detect_faces()
-        self._project = dict(project)
 
     async def generate(self, image_bytes: bytes, filename: str) -> GenerationResult:
         raise NotImplementedError("engine generator decodes its bound video")

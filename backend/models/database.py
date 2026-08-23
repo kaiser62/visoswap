@@ -49,6 +49,11 @@ CREATE TABLE IF NOT EXISTS projects (
     processing_width  INTEGER,
     -- See `Settings.generated_format`: webp costs ~0.8s per 1080p frame here.
     generated_format  TEXT NOT NULL DEFAULT 'jpeg',
+    -- Absolute path of the source face image the engine swaps onto every
+    -- detected target. Project-authored (not a VisoMaster folder reference);
+    -- the reference backend sourced faces by name from VisoMaster's folder,
+    -- which this repo drops. `EngineFrameGenerator.generate_at` reads this.
+    source_face_path TEXT,
     -- Rolling seconds-per-frame, written by the worker. The stream-mode grid is
     -- planned from it, so it must survive a restart: a cold guess that is too
     -- dense floods the queue before the first measurement lands.
@@ -126,6 +131,7 @@ class Database:
             "generation_mode": "TEXT NOT NULL DEFAULT 'interval'",
             "stream_buffer": "REAL NOT NULL DEFAULT 6.0",
             "measured_frame_cost": "REAL",
+            "source_face_path": "TEXT",
         }
         for column, ddl in additions.items():
             if column not in have:
@@ -179,6 +185,7 @@ class Database:
             "processing_scale": float(fields.get("processing_scale") or 1.0),
             "processing_width": fields.get("processing_width"),
             "generated_format": fields.get("generated_format") or s.generated_format,
+            "source_face_path": fields.get("source_face_path"),
             "full_video_mode": int(bool(fields.get("full_video_mode"))),
             "generation_mode": fields.get("generation_mode") or "interval",
             "stream_buffer": float(fields.get("stream_buffer") or 6.0),
@@ -213,7 +220,7 @@ class Database:
             "name", "video_path", "video_url", "duration", "width", "height",
             "fps", "interval", "lookahead", "backend", "processing_scale", "processing_width",
             "generated_format", "full_video_mode", "generation_mode",
-            "stream_buffer", "status", "error",
+            "stream_buffer", "status", "error", "source_face_path",
         }
         updates = {k: v for k, v in fields.items() if k in allowed}
         if "full_video_mode" in updates:
