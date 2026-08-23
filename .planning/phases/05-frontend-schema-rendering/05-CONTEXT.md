@@ -8,7 +8,7 @@
 
 A Vite + React + TypeScript web frontend that renders **all 201 settings controls** from `schema.json` (never hand-listed in frontend source), applies the **2 migrated presets** (`A`, `with AUD`), and round-trips changed values through the project/face tier persisted by the backend. Because no settings API exists today, **this phase also adds the backend endpoints** the frontend calls (schema, settings per project, presets). The result must satisfy the four FRONTEND-01 success criteria: rendered-control count == schema key count, preset selection updates visible values, reload restores a changed value, and `npm run build` passes with no type errors.
 
-**Depends on:** Phase 3 (schema + seeded presets), Phase 4 (backend + project-tier persistence). Phase 4 is unverified as of planning — the plan must not assume its internals; it should build the settings API on the Phase 3 `visoswap.settings` store (the authoritative three-tier source).
+**Depends on:** Phase 3 (schema + seeded presets), Phase 4 (backend + project-tier persistence). Phase 4 is **complete and verified** (all four plans, 347 tests green, 0 skips). The plan builds on its verified backend: the `backend/api/deps.py` router pattern (`get_db`/`get_project`), the `.venv-clean` combined interpreter for backend tests, and the **model bootstrap startup gate** — the backend refuses to start on incomplete models (04-03), so every Phase 5 test that enters the app lifespan must run against a complete model set (the project-owned `model_assets_owned` copy, or `MODELS_DIR`). The settings API wraps the Phase 3 `visoswap.settings` store (the authoritative three-tier source).
 
 </domain>
 
