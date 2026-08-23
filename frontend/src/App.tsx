@@ -1,0 +1,169 @@
+/** Read path: load -> grouped render with sidebar (D-01, D-06). */
+
+import { useEffect, useMemo, useState } from 'react'
+import { GroupSection } from './components/GroupSection'
+import { Sidebar, buildHierarchy } from './components/Sidebar'
+import { Button, Card, Skeleton } from './components/ui'
+import { SettingsProvider, useSettings } from './state/SettingsContext'
+
+function Header() {
+  const { projects, projectId, setProject } = useSettings()
+  return (
+    <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-neutral-200 bg-white px-6">
+      <h1 className="text-xl font-semibold text-neutral-900">
+        Predictive Video Frame Transformer
+      </h1>
+      {projects.length > 0 && (
+        <select
+          value={projectId ?? ''}
+          onChange={(e) => setProject(e.target.value)}
+          aria-label="Project"
+          className="h-8 rounded border border-neutral-200 px-2 text-sm text-neutral-900"
+        >
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      )}
+    </header>
+  )
+}
+
+function SettingsBody() {
+  const { status, schema, values, setValue, load } = useSettings()
+  const [activeGroup, setActiveGroup] = useState<string | null>(null)
+
+  const hierarchy = useMemo(
+    () => (schema ? buildHierarchy(schema.widgets) : []),
+    [schema],
+  )
+
+  // Flat list of every group in schema order, plus a key map, so the sidebar
+  // can scroll to any section and all controls are always rendered.
+  const { allGroups, groupKeys } = useMemo(() => {
+    const names: string[] = []
+    const keysMap: Record<string, string[]> = {}
+    for (const tier of hierarchy) {
+      for (const group of tier.groups) {
+        if (!names.includes(group.name)) names.push(group.name)
+        keysMap[group.name] = group.keys
+      }
+    }
+    return { allGroups: names, groupKeys: keysMap }
+  }, [hierarchy])
+
+  useEffect(() => {
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  if (status === 'error') {
+    return (
+      <div className="flex flex-1 items-center justify-center p-8">
+        <Card className="max-w-md text-center">
+          <p className="mb-2 text-base font-semibold text-neutral-900">
+            Couldn't load settings
+          </p>
+          <p className="mb-4 text-sm text-neutral-500">
+            The backend didn't respond. Check that the server is running, then
+            retry.
+          </p>
+          <Button onClick={() => void load()}>Retry</Button>
+        </Card>
+      </div>
+    )
+  }
+
+  if (status === 'loading' || !schema) {
+    return (
+      <div className="flex flex-1 gap-6 p-6">
+        <div className="w-56 shrink-0 space-y-2">
+          <Skeleton className="h-8" />
+          <Skeleton className="h-8" />
+          <Skeleton className="h-8" />
+        </div>
+        <div className="flex-1 space-y-4">
+          <Skeleton className="h-20" />
+          <Skeleton className="h-20" />
+          <Skeleton className="h-20" />
+        </div>
+      </div>
+    )
+  }
+
+  const widgetKeys = Object.keys(schema.widgets)
+  if (widgetKeys.length === 0) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-8">
+        <Card className="max-w-md text-center">
+          <p className="mb-2 text-base font-semibold text-neutral-900">
+            No settings available
+          </p>
+          <p className="text-sm text-neutral-500">
+            The schema returned no controls. Check that the backend is running
+            and serving `/api/schema`, then reload.
+          </p>
+        </Card>
+      </div>
+    )
+  }
+
+  // Clicking a sidebar group scrolls its section into view; the sidebar stays
+  // in sync with whichever section is nearest the viewport top.
+  const scrollToGroup = (group: string) => {
+    setActiveGroup(group)
+    document
+      .getElementById(`group-${group}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 gap-6 p-6">
+      <div className="w-56 shrink-0">
+        <Sidebar
+          hierarchy={hierarchy}
+          activeGroup={activeGroup}
+          onSelect={scrollToGroup}
+          loading={false}
+        />
+      </div>
+      <div
+        className="min-w-0 flex-1 space-y-4 overflow-y-auto"
+        onScroll={(e) => {
+          const target = e.currentTarget
+          let current: string | null = null
+          for (const group of allGroups) {
+            const el = document.getElementById(`group-${group}`)
+            if (el && el.offsetTop - target.scrollTop <= 80) current = group
+          }
+          if (current && current !== activeGroup) setActiveGroup(current)
+        }}
+      >
+        {allGroups.map((group) => (
+          <GroupSection
+            key={group}
+            id={`group-${group}`}
+            name={group}
+            keys={groupKeys[group] ?? []}
+            widgets={schema.widgets}
+            values={values}
+            onChange={setValue}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export default function App() {
+  return (
+    <SettingsProvider>
+      <div className="flex h-screen flex-col bg-neutral-50 text-neutral-900">
+        <Header />
+        <SettingsBody />
+      </div>
+    </SettingsProvider>
+  )
+}
