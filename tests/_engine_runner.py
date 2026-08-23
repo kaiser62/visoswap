@@ -44,6 +44,7 @@ Usage::
     python tests/_engine_runner.py --selftest
     python tests/_engine_runner.py --import PySide6.QtCore
     python tests/_engine_runner.py --smoke
+    python tests/_engine_runner.py --source-cache
 """
 
 import json
@@ -929,6 +930,200 @@ def mode_video():
     )
 
 
+def mode_source_cache():
+    """Prove the source-embedding memo's identity and invalidation semantics.
+
+    Phase 05.1 plan 01: ``Engine._source_embedding_store`` now memoises per
+    ``(realpath, st_mtime_ns, st_size)``, cleared on ``load``. This mode drives
+    the private helper directly -- no ``detect_faces``, no pixel output --
+    through four probes and reports each as a ``key=value`` token on one line:
+
+    * ``repeat``   two calls for one untouched file -> the identical object;
+    * ``rewrite``  the file replaced in place (new bytes, new mtime) -> a
+                   different object, proving the stat is taken every call;
+    * ``rebind``   a second ``Engine.load`` -> a different object, proving the
+                   memo does not survive a rebind across parameter tiers;
+    * ``entries``  how many keys the memo holds at the end of the run.
+
+    Timings, counts and booleans only -- no pixel data and no embedding values
+    (T-02-10).
+    """
+    import shutil
+    import tempfile
+    import time
+
+    mode = "source-cache"
+
+    preloaded = leaked_roots()
+    if preloaded:
+        return report(
+            EXIT_SEAL_BREACHED,
+            "SEAL_BREACHED",
+            mode,
+            "sealed roots already in sys.modules before the seal armed: "
+            + ", ".join(preloaded),
+        )
+
+    # Every asset resolved before anything expensive happens, exactly as the
+    # neighbouring modes do: a missing one is ASSET_MISSING, never a skip.
+    fixture_path = resolve_settings_fixture()
+    settings = load_settings(fixture_path)
+    if settings is None:
+        return report(
+            EXIT_ASSET_MISSING,
+            "ASSET_MISSING",
+            mode,
+            "settings fixture not found at {} -- regenerate with "
+            "tools/dump_engine_settings.py".format(fixture_path),
+        )
+
+    video_path = resolve_media(VIDEO_ENV_VAR, DEFAULT_TEST_VIDEO)
+    source_path = resolve_media(SOURCE_ENV_VAR, DEFAULT_TEST_SOURCE)
+    for label, path, env_var in (
+        ("target video", video_path, VIDEO_ENV_VAR),
+        ("source face", source_path, SOURCE_ENV_VAR),
+    ):
+        if not os.path.isfile(path):
+            return report(
+                EXIT_ASSET_MISSING,
+                "ASSET_MISSING",
+                mode,
+                "{} not found at {} -- point {} at one, or see "
+                "docs/engine-test-assets.md".format(label, path, env_var),
+            )
+
+    models_dir = str(resolve_models_dir())
+    if not os.path.isdir(models_dir):
+        return report(
+            EXIT_ASSET_MISSING,
+            "ASSET_MISSING",
+            mode,
+            "model_assets not reachable at {} -- run tools/link_model_assets.py. "
+            "Without it ModelsProcessor constructs a silently degraded "
+            "processor rather than raising.".format(models_dir),
+        )
+
+    arm_seal()
+
+    started = time.monotonic()
+
+    try:
+        import numpy as np
+    except ImportError as exc:
+        return report(EXIT_DEPS_MISSING, "DEPS_MISSING", mode, exc)
+
+    try:
+        from visoswap.engine import Engine
+    except SealBroken as exc:
+        return report(EXIT_SEAL_BREACHED, "SEAL_BREACHED", mode, exc)
+    except ModuleNotFoundError as exc:
+        if root_of(getattr(exc, "name", None)) in ALL_SEALED_ROOTS:
+            return report(EXIT_SEAL_BREACHED, "SEAL_BREACHED", mode, exc)
+        return report(EXIT_DEPS_MISSING, "DEPS_MISSING", mode, exc)
+    except BaseException as exc:  # noqa: BLE001 - the runner reports, never raises
+        return report(
+            EXIT_ENGINE_ERROR,
+            "ENGINE_ERROR",
+            mode,
+            "importing visoswap.engine raised {}: {}".format(type(exc).__name__, exc),
+        )
+
+    tmp_dir = tempfile.mkdtemp(prefix="visoswap-src-cache-")
+    try:
+        try:
+            import cv2
+        except ImportError as exc:
+            return report(EXIT_DEPS_MISSING, "DEPS_MISSING", mode, exc)
+
+        try:
+            control = apply_overrides(
+                dict(settings.get("global", {})), SMOKE_GLOBAL_OVERRIDES, "global"
+            )
+            parameters = apply_overrides(
+                dict(settings.get("project", {})), SMOKE_PROJECT_OVERRIDES, "project"
+            )
+            engine = Engine(
+                device="cuda", global_settings=control, project_settings=parameters
+            )
+            engine.load(video_path)
+
+            # Probe 1 -- repeat: one untouched file embedded once.
+            first = engine._source_embedding_store(source_path)  # noqa: SLF001
+            second = engine._source_embedding_store(source_path)  # noqa: SLF001
+            repeat = "same" if second is first else "different"
+
+            # Probe 2 -- rewrite: the same path carrying different bytes. The
+            # perturbation stays in a far corner of the image so the picture
+            # remains one detectable face; the explicit utime bump guarantees
+            # st_mtime_ns moves even on a coarse-timestamped filesystem, which
+            # is precisely the replacement-in-place case the stat-in-key rule
+            # exists for.
+            temp_source = os.path.join(tmp_dir, "probe_source.jpg")
+            shutil.copyfile(source_path, temp_source)
+            rewritten_first = engine._source_embedding_store(temp_source)  # noqa: SLF001
+            image = cv2.imread(temp_source)
+            if image is None:
+                raise RuntimeError(
+                    "the copied probe image {} did not decode".format(temp_source)
+                )
+            image[:8, :8, :] = np.clip(
+                image[:8, :8, :].astype(np.int16) - 60, 0, 255
+            ).astype(np.uint8)
+            if not cv2.imwrite(temp_source, image):
+                raise RuntimeError("could not rewrite {}".format(temp_source))
+            stamp = os.stat(temp_source)
+            os.utime(temp_source, ns=(stamp.st_atime_ns, stamp.st_mtime_ns + 1_000_000_000))
+            rewritten_second = engine._source_embedding_store(temp_source)  # noqa: SLF001
+            rewrite = (
+                "different" if rewritten_second is not rewritten_first else "same"
+            )
+
+            # Probe 3 -- rebind: the memo must not survive Engine.load().
+            pre_rebind = engine._source_embedding_store(source_path)  # noqa: SLF001
+            engine.load(video_path)
+            post_rebind = engine._source_embedding_store(source_path)  # noqa: SLF001
+            rebind = "different" if post_rebind is not pre_rebind else "same"
+
+            entries = len(engine._source_store_cache)  # noqa: SLF001
+            provider = engine.context.models_processor.provider_name
+            engine._release()  # noqa: SLF001 - the decoder holds an OS handle
+        except SealBroken as exc:
+            return report(EXIT_SEAL_BREACHED, "SEAL_BREACHED", mode, exc)
+        except FileNotFoundError as exc:
+            return report(EXIT_ASSET_MISSING, "ASSET_MISSING", mode, exc)
+        except BaseException as exc:  # noqa: BLE001 - the runner reports, never raises
+            import traceback
+
+            return report(
+                EXIT_ENGINE_ERROR,
+                "ENGINE_ERROR",
+                mode,
+                "{}: {} | {}".format(
+                    type(exc).__name__, exc, traceback.format_exc().replace("\n", " ~ ")
+                ),
+            )
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    leaked = leaked_roots()
+    if leaked:
+        return report(
+            EXIT_SEAL_BREACHED,
+            "SEAL_BREACHED",
+            mode,
+            "sealed roots in sys.modules after probing: " + ", ".join(leaked),
+        )
+
+    return report(
+        EXIT_CLEAN,
+        "CLEAN",
+        mode,
+        "repeat={} rewrite={} rebind={} entries={} provider={} elapsed={:.1f}s".format(
+            repeat, rewrite, rebind, entries, provider, time.monotonic() - started
+        ),
+    )
+
+
 def swap_only_baseline_path():
     return os.path.join(ARTIFACTS_DIR, SWAPPED_FRAME_ARTIFACT)
 
@@ -1300,7 +1495,8 @@ def mode_no_visomaster():
 
 USAGE = (
     "usage: _engine_runner.py "
-    "(--selftest | --import DOTTED_NAME | --smoke | --faceedit | --video | --no-visomaster)"
+    "(--selftest | --import DOTTED_NAME | --smoke | --faceedit | --video "
+    "| --source-cache | --no-visomaster)"
 )
 
 
@@ -1313,6 +1509,8 @@ def main(argv):
         return mode_faceedit()
     if argv == ["--video"]:
         return mode_video()
+    if argv == ["--source-cache"]:
+        return mode_source_cache()
     if argv == ["--no-visomaster"]:
         return mode_no_visomaster()
     if len(argv) == 2 and argv[0] == "--import":

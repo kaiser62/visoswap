@@ -32,6 +32,7 @@ revisit it by making the cache path absolute first.
 from __future__ import annotations
 
 import hashlib
+import os
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Optional, Sequence
@@ -288,6 +289,20 @@ class Engine:
         self._frame_count: int = 0
         self._reader_pos: int = -1
 
+        # Memoised source-image embedding stores, keyed by
+        # (realpath, st_mtime_ns, st_size). ``swap`` asks for the same source
+        # image's store once per frame, and the four-call detection sequence
+        # behind it never changes its answer while the file is untouched --
+        # measuring that tax is what docs/benchmark-baseline.md calls a 52%
+        # throughput loss. The stat rides in the key so an in-place file
+        # replacement can never be served from here, and ``load`` clears the
+        # memo on rebind so an embedding computed under one project's resolved
+        # parameter tier cannot survive into another. Private by construction:
+        # ``tests/test_engine_surface.py`` counts plain assignments as surface.
+        self._source_store_cache: dict[
+            tuple[str, int, int], dict[str, np.ndarray]
+        ] = {}
+
     # -- public API -------------------------------------------------------
 
     def load(self, video_path: str) -> dict[str, Any]:
@@ -320,6 +335,10 @@ class Engine:
         # A rebind invalidates everything keyed off the previous video.
         self.context.target_faces.clear()
         self.context.parameters.clear()
+        # The embedding stores too: they are computed under the project tier
+        # resolved at detect time, and a rebind can change that tier, so a
+        # store carried across it would be an answer to the wrong question.
+        self._source_store_cache.clear()
         return {"path": path, "fps": fps, "frame_count": frame_count}
 
     def detect_faces(self, frame_number: int = 0) -> list[FaceCard]:
@@ -554,8 +573,23 @@ class Engine:
         return False
 
     def _source_embedding_store(self, source_path: str) -> dict[str, np.ndarray]:
-        """The embedding store of the one face in the source image."""
+        """The embedding store of the one face in the source image.
+
+        Memoised per ``Engine`` behind ``(realpath, st_mtime_ns, st_size)``,
+        so one unmodified file is embedded once per bind instead of once per
+        frame. The stat is taken on *every* call and rides in the key on
+        purpose: the user replaces a face image in place, and a path-only key
+        would then serve a stale identity forever. A stat failure propagates
+        rather than falling back to a path-only key -- refusing to cache is
+        always safe; caching a renamed file's identity is not.
+        """
         path = str(source_path)
+        resolved = os.path.realpath(path)
+        stat = os.stat(resolved)
+        key = (resolved, stat.st_mtime_ns, stat.st_size)
+        memoised = self._source_store_cache.get(key)
+        if memoised is not None:
+            return memoised
         image = cv2.imread(path)
         if image is None:
             raise RuntimeError("could not read source image {}".format(path))
@@ -568,4 +602,6 @@ class Engine:
                 "contain exactly one so there is no question which face is "
                 "being assigned".format(path, len(cards))
             )
-        return cards[0].embedding_store
+        store = cards[0].embedding_store
+        self._source_store_cache[key] = store
+        return store
