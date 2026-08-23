@@ -10,6 +10,7 @@ interface GroupSectionProps {
   values: Record<string, SettingValue> | null
   onChange?: (key: string, value: SettingValue) => void
   disabled?: boolean
+  disabledKeys?: Set<string>
   id?: string
 }
 
@@ -20,6 +21,7 @@ export function GroupSection({
   values,
   onChange,
   disabled = false,
+  disabledKeys,
   id,
 }: GroupSectionProps) {
   return (
@@ -35,7 +37,7 @@ export function GroupSection({
             entry={entry}
             value={values?.[key]}
             onChange={onChange ? (v) => onChange(key, v) : undefined}
-            disabled={disabled}
+            disabled={disabled || disabledKeys?.has(key) === true}
           />
         )
       })}

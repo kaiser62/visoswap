@@ -5,11 +5,25 @@ import { Header } from './components/Header'
 import { GroupSection } from './components/GroupSection'
 import { Sidebar, buildHierarchy } from './components/Sidebar'
 import { Button, Card, Skeleton } from './components/ui'
+import { isControlEnabled } from './lib/gates'
 import { SettingsProvider, useSettings } from './state/SettingsContext'
 
 function SettingsBody() {
   const { status, schema, values, setValue, load } = useSettings()
   const [activeGroup, setActiveGroup] = useState<string | null>(null)
+
+  // Which keys are gated-off, recomputed as values change (flipping a deciding
+  // parent re-enables/disables its children immediately).
+  const disabledKeys = useMemo(() => {
+    if (!schema || !values) return new Set<string>()
+    const disabled = new Set<string>()
+    for (const key of Object.keys(schema.widgets)) {
+      if (!isControlEnabled(key, schema.widgets[key], values, schema.widgets)) {
+        disabled.add(key)
+      }
+    }
+    return disabled
+  }, [schema, values])
 
   const hierarchy = useMemo(
     () => (schema ? buildHierarchy(schema.widgets) : []),
@@ -126,6 +140,7 @@ function SettingsBody() {
             widgets={schema.widgets}
             values={values}
             onChange={setValue}
+            disabledKeys={disabledKeys}
           />
         ))}
       </div>

@@ -35,7 +35,14 @@ export function SchemaControl({
   return (
     <div className="flex items-center justify-between gap-4 py-2">
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-semibold text-neutral-900">{entry.label}</div>
+        <div className="flex items-center gap-1 text-sm font-semibold text-neutral-900">
+          {disabled && (
+            <span title="Locked: enable the deciding control to edit this" aria-hidden>
+              🔒
+            </span>
+          )}
+          <span>{entry.label}</span>
+        </div>
         {entry.help ? (
           <div
             className="mt-0.5 line-clamp-2 text-sm text-neutral-500"
