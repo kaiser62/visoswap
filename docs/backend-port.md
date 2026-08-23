@@ -32,3 +32,35 @@ the seam a future optional backend would use.
 The provider default changes from TensorRT to CUDA. TensorRT is rejected
 because its relative engine-cache path can write outside the intended project
 directory.
+
+## The engine generator
+
+`EngineFrameGenerator` sits behind the unchanged eight-member `FrameGenerator`
+seam. Settings come from the Phase 3 store, not a hand-written dict: the global
+tier (`store.resolve_control`, all 33 keys) and the project tier
+(`store.resolve_parameters`, all 168 keys) are resolved from the backend's own
+app DB each time an engine is built, so the engine's unconditional control and
+parameter reads never hit a sparse dict.
+
+The source face is carried on the project row as `source_face_path` — a
+project-authored absolute path, not a name resolved inside VisoMaster's folder.
+The predecessor resolved faces by name from VisoMaster's own source directory,
+which this repo drops. The column is server-assigned (the tracer / a trusted
+caller sets it directly on the row) and is stripped from the public API
+response alongside `video_path`, so absolute filesystem paths never reach the
+browser.
+
+## The tracer's proof
+
+The end-to-end tracer drives ONE generation request through
+`backend/api/generation.py` — not through the adapter directly — on the
+combined interpreter, with the Qt seal armed and `backend` left off the block
+list. Measured output line:
+
+```
+CLEAN:tracer:frame=000000.000.jpg size=336835 provider=CUDA elapsed=10.7s reachable_before_seal=PyQt5=no,PyQt6=no,PySide2=no,PySide6=no,app=no,qtpy=no,shiboken2=no,shiboken6=no
+```
+
+This is roadmap criterion 5's first proof: a generation request through the
+backend produced a frame file on disk via the vendored engine, in a process
+where PySide6 was not importable.

@@ -27,6 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 VISOSWAP_ROOT = REPO_ROOT / "visoswap"
 PROBE = Path(__file__).resolve().parent / "_qt_guard_probe.py"
 ENGINE_RUNNER = Path(__file__).resolve().parent / "_engine_runner.py"
+BACKEND_RUNNER = Path(__file__).resolve().parent / "_backend_runner.py"
 
 #: The seals, re-exported so the pytest side has one obvious import site.
 #:
@@ -175,6 +176,19 @@ def run_engine_runner(engine_python, args, env=None) -> tuple[int, str]:
     """
     return _run_subprocess(
         [str(engine_python), "-B", str(ENGINE_RUNNER), *args], env=env
+    )
+
+
+def run_backend_runner(engine_python, args, env=None) -> tuple[int, str]:
+    """Run the sealed backend tracer on the combined interpreter. -> (exit_code, stdout).
+
+    The backend runner drives a real generation through the route, so it must run
+    on the combined interpreter (``.venv-clean``) that carries both the web stack
+    and the inference stack. ``cwd`` is the repository root for the same reason
+    as ``run_engine_runner``.
+    """
+    return _run_subprocess(
+        [str(engine_python), "-B", str(BACKEND_RUNNER), *args], env=env
     )
 
 
