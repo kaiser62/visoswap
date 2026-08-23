@@ -178,12 +178,6 @@ def _upload(client, name="face.png", content=None):
     )
 
 
-def _create_project(client) -> str:
-    resp = client.post("/api/projects", json={"name": "faces project"})
-    assert resp.status_code == 201, resp.text
-    return resp.json()["id"]
-
-
 def _strings(value) -> list[str]:
     if isinstance(value, str):
         return [value]
@@ -283,4 +277,149 @@ def test_face_and_project_responses_never_leak_absolute_paths(client, tmp_path):
     project_body = _strings(client.get(f"/api/projects/{project_id}").json())
     for value in faces_body + project_body:
         assert str(tmp_path) not in value, value
+
+
+# ---------------------------------------------------------------------------
+# warn-and-cascade delete (D-05)
+# ---------------------------------------------------------------------------
+
+
+def _create_project(client, name="faces project") -> str:
+    resp = client.post("/api/projects", json={"name": name})
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+def _bind(client, project_id: str, content) -> str:
+    face_id = _upload(client, content=content).json()["face_id"]
+    resp = client.post(f"/api/projects/{project_id}/face", json={"face_id": face_id})
+    assert resp.status_code == 200, resp.text
+    return face_id
+
+
+def _clip_bytes(tmp_path) -> bytes:
+    """A small real mp4 so the source bind's ffprobe succeeds."""
+    import subprocess
+
+    dest = tmp_path / "start-clip.mp4"
+    cmd = [
+        get_settings().ffmpeg_bin, "-hide_banner", "-loglevel", "error",
+        "-f", "lavfi", "-i", "testsrc=size=160x120:rate=10:duration=2",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-y", str(dest),
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+    return dest.read_bytes()
+
+
+@pytest.fixture()
+def stubbed_start(monkeypatch):
+    """Keep any scheduler start away from the real engine in these tests.
+
+    In RED (no guard yet) the flow reaches ``build_generator`` and the stub's
+    validate raises, so the route answers 400 with the wrong detail -- a safe
+    failure. In GREEN the no-source-face guard fires before it.
+    """
+    from backend.api import generation as generation_api
+
+    class _ExplodingGenerator:
+        name = "exploding-stub"
+        decodes_own_source = True
+
+        async def validate(self):
+            raise ValueError("stub generator was reached")
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(
+        generation_api, "build_generator", lambda *a, **k: _ExplodingGenerator()
+    )
+
+
+def test_usage_of_an_unused_or_unknown_face_is_empty(client):
+    face_id = _upload(client).json()["face_id"]
+
+    unused = client.get(f"/api/faces/{face_id}/usage")
+    assert unused.status_code == 200, unused.text
+    assert unused.json() == {"projects": []}
+
+    unknown = client.get(f"/api/faces/{'0' * 32}/usage")
+    assert unknown.status_code == 200, unknown.text
+    assert unknown.json() == {"projects": []}
+
+
+def test_usage_names_every_project_whose_source_is_the_face(client):
+    project_a = _create_project(client, name="alpha")
+    project_b = _create_project(client, name="beta")
+    face_id = _bind(client, project_a, PNG_BYTES)
+    assert (
+        client.post(f"/api/projects/{project_b}/face", json={"face_id": face_id}).status_code
+        == 200
+    )
+
+    body = client.get(f"/api/faces/{face_id}/usage").json()
+    listed = {p["id"]: p["name"] for p in body["projects"]}
+    assert listed == {project_a: "alpha", project_b: "beta"}
+
+
+def test_deleting_an_unused_face_is_204_and_removes_both_files(client):
+    record = facestore.store(PNG_BYTES, "unused.png")
+
+    resp = client.delete(f"/api/faces/{record['face_id']}")
+    assert resp.status_code == 204, resp.text
+    assert not facestore.face_path(record["face_id"]).exists()
+    assert not facestore.thumb_path(record["face_id"]).exists()
+
+
+def test_unforced_delete_of_a_used_face_is_409_and_removes_nothing(client):
+    project_a = _create_project(client, name="alpha")
+    project_b = _create_project(client, name="beta")
+    face_id = _bind(client, project_a, PNG_BYTES)
+    client.post(f"/api/projects/{project_b}/face", json={"face_id": face_id})
+    stored = facestore.face_path(face_id)
+    thumb = facestore.thumb_path(face_id)
+
+    resp = client.delete(f"/api/faces/{face_id}")
+    assert resp.status_code == 409, resp.text
+
+    conflict = resp.json()["detail"]
+    listed = {p["id"]: p["name"] for p in conflict["projects"]}
+    assert listed == {project_a: "alpha", project_b: "beta"}
+
+    # Nothing was removed and no binding changed.
+    assert stored.is_file()
+    assert thumb.is_file()
+    for pid in (project_a, project_b):
+        assert client.get(f"/api/projects/{pid}").json()["source_face_id"] == face_id
+
+
+def test_forced_delete_removes_files_and_clears_both_bindings(client):
+    project_a = _create_project(client, name="alpha")
+    project_b = _create_project(client, name="beta")
+    face_id = _bind(client, project_a, PNG_BYTES)
+    client.post(f"/api/projects/{project_b}/face", json={"face_id": face_id})
+
+    resp = client.delete(f"/api/faces/{face_id}?force=true")
+    assert resp.status_code == 204, resp.text
+    assert not facestore.face_path(face_id).exists()
+    assert not facestore.thumb_path(face_id).exists()
+
+    # Each affected project reports the no-source state by id, never a path.
+    for pid in (project_a, project_b):
+        assert client.get(f"/api/projects/{pid}").json()["source_face_id"] is None
+
+
+def test_scheduler_start_refuses_a_project_left_with_no_source_face(
+    client, tmp_path, monkeypatch, stubbed_start
+):
+    project_id = _create_project(client, name="faceless")
+    uploaded = client.post(
+        f"/api/projects/{project_id}/source",
+        files={"file": ("clip.mp4", _clip_bytes(tmp_path), "video/mp4")},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+
+    resp = client.post(f"/api/projects/{project_id}/scheduler/start", json={})
+    assert resp.status_code == 400, resp.text
+    assert "source face" in resp.json()["detail"], resp.text
 
