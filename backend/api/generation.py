@@ -27,6 +27,11 @@ async def start_scheduler(
 ) -> dict[str, Any]:
     if not project.get("video_path") and not project.get("video_url"):
         raise HTTPException(status_code=400, detail="project has no video source")
+    # Same fail-fast posture: a faceless run would raise from `generate_at` and
+    # fail every frame rather than the run, so refuse here where the user can
+    # act on the message (D-05's no-source state is refusable, not silent).
+    if not project.get("source_face_path"):
+        raise HTTPException(status_code=400, detail="project has no source face")
     if not ffmpeg_available():
         raise HTTPException(status_code=503, detail="ffmpeg/ffprobe not found on PATH")
 
