@@ -160,7 +160,12 @@ the frontend/E2E phases that assume a working backend.
   5. A real generation request through `backend/api/generation.py` produces a frame file on disk
      via the new engine, with no PySide6 process spawned and no reference to a VisoMaster install
      path anywhere in the call path
-**Plans**: TBD
+**Plans**: 2/4 plans executed
+
+- [x] 04-01-PLAN.md — Backend ported onto the engine path; ComfyUI removed; engine adapter; source-face wiring; real tracer (criterion 5 proof)
+- [x] 04-02-PLAN.md — Recorder cancel-hang fixed; 14 recorder + 3 mechanism tests green (criterion 1)
+- [ ] 04-03-PLAN.md — Model bootstrap: manifest, verify/repair, startup refusal (criteria 2 & 3)
+- [ ] 04-04-PLAN.md — Sever VisoMaster install dependency; no-VisoMaster proof
 
 ### Phase 5: Frontend Schema Rendering
 
@@ -235,6 +240,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Vendor the Engine & Strip Qt | 4/4 | Complete | 2026-08-21 |
 | 2. Engine API & First Swap | 4/4 | Complete | 2026-08-22 |
 | 3. Settings Schema & Three-Tier Resolution | 3/3 | Complete | 2026-08-22 |
-| 4. Backend Integration & Model Bootstrap | 0/TBD | Not started | - |
+| 4. Backend Integration & Model Bootstrap | 2/4 | Executing | - |
 | 5. Frontend Schema Rendering | 0/5 | Planned (wave 1→4) | - |
 | 6. End-to-End Verification | 0/TBD | Not started | - |
