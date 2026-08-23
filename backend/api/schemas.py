@@ -103,6 +103,28 @@ class SchedulerStart(BaseModel):
     range_duration: float | None = Field(default=None, gt=0, le=36000)
 
 
+class PreviewRequest(BaseModel):
+    """One-shot preview (D-09): render a single swapped frame at `t`."""
+
+    t: float = Field(..., ge=0)
+
+
+class PreviewResponse(BaseModel):
+    timestamp: float
+    url: str
+
+
+class TakeOut(BaseModel):
+    """One exported take in the output folder. Paths never appear — only the
+    name and its serving URL."""
+
+    name: str
+    bytes: int
+    modified: float
+    partial: bool
+    url: str
+
+
 class BackendTest(BaseModel):
     backend: Backend = "engine"
 

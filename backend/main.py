@@ -20,6 +20,7 @@ from backend.api import (
     faces,
     generation,
     playback,
+    preview,
     projects,
     settings as settings_api,
     ws,
@@ -215,6 +216,7 @@ def create_app() -> FastAPI:
 
     app.include_router(projects.router)
     app.include_router(faces.router)
+    app.include_router(preview.router)
     app.include_router(playback.router)
     app.include_router(generation.router)
     app.include_router(backends.router)

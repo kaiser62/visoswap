@@ -66,9 +66,18 @@ def generated_dir(project_id: str) -> Path:
     return project_dir(project_id) / "generated"
 
 
+def preview_dir(project_id: str) -> Path:
+    """One-shot preview frames live here, deliberately separate from
+    `generated_dir`: `Recorder._generated_for` bisects the sorted listing of
+    `generated_dir` to pick which generated frame covers a timestamp, so
+    anything written there is a candidate for muxing into the recording. A
+    preview is not part of the video."""
+    return project_dir(project_id) / "preview"
+
+
 def ensure_project_dirs(project_id: str) -> Path:
     root = project_dir(project_id)
-    for sub in ("source", "frames", "generated"):
+    for sub in ("source", "frames", "generated", "preview"):
         (root / sub).mkdir(parents=True, exist_ok=True)
     return root
 

@@ -87,12 +87,19 @@ def stub_generator(monkeypatch):
     holder: dict[str, StubGenerator] = {}
 
     def factory(project, timeout, worker_index=0):
-        stub = StubGenerator()
-        holder["stub"] = stub
-        return stub
+        # One shared instance across requests so a test can reconfigure it
+        # between two previews.
+        if "stub" not in holder:
+            holder["stub"] = StubGenerator()
+        return holder["stub"]
 
     monkeypatch.setattr(preview_api, "build_generator", factory)
     return holder
+
+
+def _entries(path) -> list[str]:
+    """Names inside a cache directory; absent directory reads as empty."""
+    return sorted(p.name for p in path.iterdir()) if path.is_dir() else []
 
 
 def _clip_bytes(tmp_path) -> bytes:
@@ -189,7 +196,7 @@ def test_a_preview_leaves_no_frame_rows_and_no_scheduler_behind(
     # ...the registry never saw a scheduler for this project...
     assert registry.peek(pid) is None
     # ...and the generated-frame directory the recorder bisects is untouched.
-    assert list(cache.generated_dir(pid)) == []
+    assert _entries(cache.generated_dir(pid)) == []
 
 
 def test_preview_writes_neither_generated_nor_frames_directories(
@@ -200,11 +207,10 @@ def test_preview_writes_neither_generated_nor_frames_directories(
     resp = client.post(f"/api/projects/{pid}/preview", json={"t": 1.5})
     assert resp.status_code == 200, resp.text
 
-    assert list(cache.generated_dir(pid)) == []
-    assert list(cache.frames_dir(pid)) == []
+    assert _entries(cache.generated_dir(pid)) == []
+    assert _entries(cache.frames_dir(pid)) == []
     # The one permitted location holds exactly the rendered frame.
-    listed = [p.name for p in cache.preview_dir(pid).iterdir()]
-    assert listed == ["frame.jpg"]
+    assert _entries(cache.preview_dir(pid)) == ["frame.jpg"]
 
 
 def test_preview_while_a_run_is_active_is_refused_with_409(
@@ -253,8 +259,9 @@ def test_second_preview_overwrites_the_first_single_image_remains(
     second = client.post(f"/api/projects/{pid}/preview", json={"t": 1.2})
     assert second.status_code == 200, second.text
 
-    listed = sorted(p.name for p in cache.preview_dir(pid).iterdir())
-    assert listed == ["frame.jpg"], "a project holds at most one preview image"
+    assert _entries(cache.preview_dir(pid)) == ["frame.jpg"], (
+        "a project holds at most one preview image"
+    )
     served = client.get(f"/api/projects/{pid}/preview")
     assert served.content == JPEG_TWO
 
