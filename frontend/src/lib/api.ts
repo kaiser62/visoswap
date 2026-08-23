@@ -49,6 +49,14 @@ export function listProjects(): Promise<Project[]> {
   return request<Project[]>('/api/projects')
 }
 
+export function createProject(name?: string): Promise<Project> {
+  return request<Project>('/api/projects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name ?? 'Untitled project' }),
+  })
+}
+
 export function getPresets(): Promise<{ presets: Preset[] }> {
   return request<{ presets: Preset[] }>('/api/presets')
 }

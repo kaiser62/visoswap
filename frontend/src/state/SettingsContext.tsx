@@ -14,6 +14,7 @@ import {
   type ReactNode,
 } from 'react'
 import {
+  createProject,
   getProjectSettings,
   getSchema,
   listProjects,
@@ -147,14 +148,28 @@ export function SettingsProvider({
     dispatch({ type: 'LOAD_START' })
     try {
       const schema = await getSchema()
-      const projectId = new URLSearchParams(window.location.search).get('project')
-      let values: Values = {}
-      if (projectId) {
-        values = (await getProjectSettings(projectId)).values
-        dispatch({ type: 'SET_PROJECT', projectId })
-      } else {
+      const fromUrl = new URLSearchParams(window.location.search).get('project')
+      // No project in the URL: fall back to the most recently updated one, or
+      // create the first. A settings surface with no selected project cannot
+      // save (writes are per-project), so leaving projectId null would turn
+      // every Save into a silent no-op — edits lost on reload with no error.
+      let target = fromUrl
+      if (!target) {
         const projects = await listProjects()
+        if (projects[0]) {
+          target = projects[0].id
+        } else {
+          const created = await createProject('My project')
+          target = created.id
+          projects.unshift(created)
+        }
         dispatch({ type: 'SET_PROJECTS', projects })
+      }
+      const values = (await getProjectSettings(target)).values
+      dispatch({ type: 'SET_PROJECT', projectId: target })
+      // Keep the URL in sync so a plain reload reopens the same project.
+      if (fromUrl !== target) {
+        window.history.replaceState({}, '', `/?project=${target}`)
       }
       dispatch({ type: 'LOAD_OK', schema, values })
     } catch {
@@ -184,7 +199,15 @@ export function SettingsProvider({
 
   const save = useCallback(async () => {
     const projectId = state.projectId
-    if (!projectId) return
+    // Unreachable since load() auto-selects a project — kept as a loud guard:
+    // a silent no-op here is exactly how edits appear to save and do not.
+    if (!projectId) {
+      dispatch({
+        type: 'SAVE_ERROR',
+        message: "Couldn't save your changes. No project is selected — pick one in the header and try again.",
+      })
+      return
+    }
     const overrides: Values = {}
     for (const key of Object.keys(state.dirty)) {
       if (state.values && state.values[key] !== undefined) {

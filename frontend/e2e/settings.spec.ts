@@ -106,4 +106,35 @@ test.describe('FRONTEND-01 in a real browser', () => {
     await expect(page.locator('[data-key="AutoColorEnableToggle"]')).toBeChecked()
     await expect(page.getByRole('button', { name: /Save Changes \(0\)/ })).toBeDisabled()
   })
+
+  test('root URL without ?project: edits still persist (project auto-selected)', async ({
+    page,
+  }) => {
+    // The reported bug: opening / with no ?project left saves as silent no-ops.
+    await page.goto('/')
+    await page.waitForSelector('[data-key]')
+
+    // A project was auto-selected and synced into the URL for reloads.
+    const url = new URL(page.url())
+    expect(url.searchParams.get('project')).toMatch(/^[0-9a-f]{32}$/)
+
+    const toggle = page.locator('[data-key="AutoColorEnableToggle"]')
+    const initialChecked = await toggle.isChecked()
+    await toggle.click()
+    await page
+      .getByRole('button', { name: /Save Changes \(1\)/ })
+      .click()
+    await expect(
+      page.getByRole('button', { name: /Save Changes \(0\)/ }),
+    ).toBeDisabled({ timeout: 15_000 })
+
+    await page.reload()
+    await page.waitForSelector('[data-key]')
+    const afterReload = await page
+      .locator('[data-key="AutoColorEnableToggle"]')
+      .isChecked()
+    expect(afterReload).toBe(!initialChecked)
+    // No failure banner appeared at any point.
+    await expect(page.getByText("Couldn't save your changes")).toBeHidden()
+  })
 })

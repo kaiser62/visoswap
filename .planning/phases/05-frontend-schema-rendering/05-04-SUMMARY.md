@@ -182,6 +182,8 @@ None beyond the auto-fixed deviations above.
 
 **3. [Blocking] Save failed for hand-edited numeric values** — found during the browser walkthrough after phase close. Two client paths produced the documented save-failure banner: a cleared number input parsed to NaN and shipped JSON `null` (API 422), and hand-typed values bypassed the inputs' min/max so out-of-bounds numbers reached store.validate (400). Fix: `SchemaControl.emitNumber` ignores non-finite parses and clamps into schema bounds before marking dirty; regression test `typed out-of-bounds numbers are clamped and never ship null` pins both. Frontend suite 28 green; rebuilt dist served by the running backend.
 
+**4. [Blocking] Saves silently lost when opened on `/` without `?project=`** — second browser-walkthrough find. The loader left `projectId` null on the root URL and `save()` early-returned: edits marked dirty, Save clicked, nothing sent, nothing surfaced; reload restored defaults. Fix: `load()` auto-selects the most recently updated project (creating "My project" when none exist) whenever the URL carries no project, syncs it into `location.search` via `history.replaceState` so plain reloads reopen it, and the null-project guard in `save()` now raises the visible save-failure banner instead of returning silently. Tests: two vitest cases pin auto-select + auto-create; Playwright case `root URL without ?project: edits still persist` walks it end to end (5 passed).
+
 ## User Setup Required
 None - no external service configuration required.
 

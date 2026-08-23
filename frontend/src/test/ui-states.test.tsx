@@ -23,10 +23,9 @@ function fakeSchema(widgetCount: number) {
 }
 
 beforeEach(() => {
-  Object.defineProperty(window, 'location', {
-    value: { search: '?project=t' },
-    writable: true,
-  })
+  // Real jsdom URL handling — the component reads location.search and its
+  // history.replaceState sync must land somewhere assertions can see.
+  window.history.replaceState({}, '', '/?project=t')
 })
 
 describe('UI states', () => {
@@ -94,5 +93,55 @@ describe('UI states', () => {
     await waitFor(() => {
       expect(document.querySelectorAll('[data-key]').length).toBe(1)
     })
+  })
+
+  it('root without ?project auto-selects a project so saves have a target', async () => {
+    window.history.replaceState({}, '', '/')
+    const fetchedUrls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        fetchedUrls.push(`${init?.method ?? 'GET'} ${url}`)
+        if (url === '/api/schema') return jsonResponse(fakeSchema(1))
+        if (url === '/api/projects' && !init?.method)
+          return jsonResponse([{ id: 'latest01', name: 'recent project' }])
+        if (url === '/api/projects/latest01/settings')
+          return jsonResponse({ values: { key0: true } })
+        return jsonResponse({ detail: 'not found' }, 404)
+      }),
+    )
+    render(<App />)
+    await waitFor(() => {
+      expect(document.querySelectorAll('[data-key]').length).toBe(1)
+    })
+    // The latest project's settings were loaded, not empty defaults.
+    expect(fetchedUrls).toContain('GET /api/projects/latest01/settings')
+    // URL synced so a plain reload reopens the same project.
+    expect(window.location.search).toBe('?project=latest01')
+  })
+
+  it('root with zero projects creates one instead of leaving saves targetless', async () => {
+    window.history.replaceState({}, '', '/')
+    const fetchedUrls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        fetchedUrls.push(`${init?.method ?? 'GET'} ${url}`)
+        if (url === '/api/schema') return jsonResponse(fakeSchema(1))
+        if (url === '/api/projects' && !init?.method) return jsonResponse([])
+        if (url === '/api/projects' && init?.method === 'POST')
+          return jsonResponse({ id: 'brandnew', name: 'My project' })
+        if (url === '/api/projects/brandnew/settings')
+          return jsonResponse({ values: { key0: false } })
+        return jsonResponse({ detail: 'not found' }, 404)
+      }),
+    )
+    render(<App />)
+    await waitFor(() => {
+      expect(document.querySelectorAll('[data-key]').length).toBe(1)
+    })
+    expect(fetchedUrls).toContain('POST /api/projects')
+    expect(fetchedUrls).toContain('GET /api/projects/brandnew/settings')
+    expect(window.location.search).toBe('?project=brandnew')
   })
 })
