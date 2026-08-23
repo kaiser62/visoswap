@@ -23,3 +23,5 @@ output/
 tests/artifacts/
 # Project-owned personal media for the engine smoke fixtures (plan 04-04).
 tests/media/
+
+tools/.vmbench/

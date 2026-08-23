@@ -45,22 +45,48 @@ The reference implementation reached 21.2 fps CUDA / 27.8 fps TensorRT at 1080p
 was assigned; the per-frame loop ran only the swapper. The vendored frame worker itself
 is not the regression — the seam shape around it is.
 
+## Cross-check: VisoMaster itself, headless (`tools/benchmark_visomaster.py`)
+
+Same clip, same fixture settings, same machine, driven through **upstream's own**
+`ModelsProcessor` + `FrameWorker` on VisoMaster's interpreter (`dependencies/Python`,
+PySide6 present), cwd on a scratch junction so the read-only install is untouched:
+
+| Configuration | mean ms/frame | fps |
+|---------------|--------------|-----|
+| VisoMaster pipeline, **source embedded once** (how its UI assigns a face) | **121.1** (p50 125, min 94) | **8.26** |
+| VisoMaster pipeline, source re-detected every frame (= `Engine.swap`'s shape) | 187.5 (p50 172) | 5.33 |
+| VisoSwap `Engine.swap` today (re-embeds per frame) | 147.7 | 6.77 |
+| 1080p@23.976 playback requires | ≤ 41.7 | 23.98 |
+
+Readings:
+
+1. **The re-embed tax is confirmed on both stacks**: embedding once instead of per
+   frame is worth ~66 ms/frame on upstream (~35%). The planned `Engine` cache fix
+   recovers roughly that much — worth taking, nowhere near sufficient alone.
+2. **PROJECT.md's 21.2/27.8 fps figures do not reproduce today, even in pristine
+   VisoMaster form** (8.26 fps embed-once). Those numbers predate this benchmark;
+   until re-measured under controlled conditions they should be treated as unverified
+   legend, not a target.
+3. Our `Engine` sits *between* upstream's two variants while carrying the worse seam
+   shape — consistent with the same vendor floor plus the re-embed tax, partially
+   masked by run-to-run variance.
+
 ## Verdict for D-06 (live overlay, priority 1)
 
-**Even on an idle GPU the overlay cannot keep up: 0.374× of playback fps (micro 6.77 vs
-23.976).** The remediation is contained and project-authored (`engine.py` carries no
-vendor header):
+**No configuration on this machine today reaches 1080p playback rate — including
+authentic VisoMaster.** At 8.3–9.4 gen fps against 23.976 playback, a Stream-Live run
+generates roughly one swapped frame per three played frames regardless of seam shape.
+Therefore, for Phase 05.1:
 
-- Cache `_source_embedding_store` inside `Engine`, keyed by resolved path + mtime +
-  size, invalidated on `load()`; optionally pre-warm at bind/detect time.
-- After the fix, re-run this exact benchmark as a gate. If the swap-only floor clears
-  media fps with margin for scheduler/db/ws layers, Stream-Live ships as true real-time
-  overlay; otherwise it ships as nearest-previous swapped frame behind the playhead —
-  the core-value behavior, which never blocks or stutters — with the generation gap
-  surfaced honestly in the Jobs tab.
-
-Tier 2's scope note stands: these numbers exclude the scheduler queue, DB writes and ws
-fan-out by design.
+- The **nearest-previous swapped frame behind the playhead** behavior is not a degraded
+  fallback — it *is* the design, and the core value (playback never pauses/stutters)
+  holds trivially because generation can never be waited on.
+- The **cache fix stays sequenced first** (cheap, honest win, re-benchmarked as gate).
+- The **Jobs tab must surface the live generation deficit** (generated-vs-played ratio)
+  so the user sees reality instead of a lie of omission.
+- Real-time parity levers, if ever wanted, are separate work with separate gates:
+  `processing_scale`/`processing_width` downsizing (fields already exist), interval
+  modes, or revisiting TensorRT behind an absolute cache path. None are in 05.1 scope.
 
 ## Decision recorded
 
