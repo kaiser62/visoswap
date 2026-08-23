@@ -21,9 +21,10 @@ from typing import Any, Iterator
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.api.deps import get_project
+from backend.api.schemas import PresetApplyResponse, SettingsResponse, SettingsUpdate
 from backend.config import get_settings
 from visoswap import schema
-from visoswap.settings import presets, store
+from visoswap.settings import presets, store, validate
 
 router = APIRouter(prefix="/api", tags=["settings"])
 
@@ -40,7 +41,7 @@ def _settings_error(exc: Exception) -> HTTPException:
     """
     if isinstance(
         exc,
-        (store.UnknownSettingsKey, store.InvalidSettingValue, store.WrongTier, presets.UnknownPreset),
+        (store.UnknownSettingsKey, validate.InvalidSettingValue, store.WrongTier, presets.UnknownPreset),
     ):
         return HTTPException(status_code=400, detail=str(exc))
     if isinstance(exc, sqlite3.Error):
@@ -126,3 +127,81 @@ async def get_presets() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         raise _settings_error(exc) from exc
     return {"presets": result}
+
+
+# ---------------------------------------------------------------------------
+# writes
+# ---------------------------------------------------------------------------
+
+
+@router.put("/projects/{project_id}/settings", response_model=SettingsResponse)
+async def put_project_settings(
+    update: SettingsUpdate,
+    project: dict[str, Any] = Depends(get_project),
+) -> dict[str, Any]:
+    """Persist exactly the provided overrides to the project tier (D-02).
+
+    Iterates ``update.overrides`` calling ``store.set_project`` per key, then
+    commits and returns the freshly resolved values. On the first store error
+    (unknown key, wrong tier, invalid value) the transaction rolls back and
+    nothing is persisted — a body mixing valid and invalid keys stores neither.
+    """
+
+    def _write() -> dict[str, Any]:
+        with _sync_conn() as conn:
+            _ensure_ready(conn)
+            try:
+                for key, value in update.overrides.items():
+                    store.set_project(conn, project["id"], key, value)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            return store.resolve_all(conn, project_id=project["id"])
+
+    try:
+        values = await asyncio.to_thread(_write)
+    except Exception as exc:  # noqa: BLE001 - mapped to the right status
+        raise _settings_error(exc) from exc
+    return {"values": values}
+
+
+@router.post(
+    "/projects/{project_id}/presets/{preset_id}",
+    response_model=PresetApplyResponse,
+)
+async def apply_preset(
+    preset_id: str,
+    project: dict[str, Any] = Depends(get_project),
+) -> dict[str, Any]:
+    """Apply a migrated preset atomically (D-04 backend half).
+
+    Resolves the preset (404 on unknown), then ``presets.apply_preset`` writes
+    overrides only, clears overrides that agree with defaults and skips keys
+    whose value is not an available option on this machine. The whole write runs
+    in one caller-owned transaction committed only on success.
+    """
+
+    def _apply() -> tuple[dict[str, Any], dict[str, Any]]:
+        with _sync_conn() as conn:
+            _ensure_ready(conn)
+            try:
+                presets.get_preset(conn, preset_id)
+            except presets.UnknownPreset as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            try:
+                report = presets.apply_preset(conn, preset_id, project["id"])
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            values = store.resolve_all(conn, project_id=project["id"])
+            return report, values
+
+    try:
+        report, values = await asyncio.to_thread(_apply)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - mapped to the right status
+        raise _settings_error(exc) from exc
+    return {"report": report, "values": values}

@@ -62,3 +62,33 @@ class SchedulerStart(BaseModel):
 
 class BackendTest(BaseModel):
     backend: Backend = "engine"
+
+
+# ---------------------------------------------------------------------------
+# Settings API (plan 05-01/05-02)
+# ---------------------------------------------------------------------------
+
+
+class SettingsUpdate(BaseModel):
+    """Project-tier overrides to persist.
+
+    ``overrides`` holds arbitrary keys: per-key type/bounds/option/tier
+    validation is the Phase 3 store's job, not the schema's, so an unknown key
+    or an invalid value reaches ``store.set_project`` and is rejected there with
+    the correct error type (and nothing stored).
+    """
+
+    overrides: dict[str, bool | int | float | str] = {}
+
+
+class SettingsResponse(BaseModel):
+    """The 200 body of a settings read or write: every resolved value."""
+
+    values: dict[str, bool | int | float | str] = {}
+
+
+class PresetApplyResponse(BaseModel):
+    """The 200 body of a preset apply: the write report plus resolved values."""
+
+    report: dict[str, int | list]
+    values: dict[str, bool | int | float | str] = {}
