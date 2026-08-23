@@ -115,6 +115,13 @@ PROJECT_AUTHORED = frozenset(
         # names, paths and hashes), which is a measured fact rather than
         # copyrightable text.
         "models/manifest.py",
+        # Written for this project (plan 04-03). It verifies the models directory
+        # in three states and wraps the vendored downloader for repair. It copies
+        # no upstream expression -- the only upstream code it calls is the already
+        # vendored ``integrity_checker`` and ``downloader``, which remain under
+        # the header. Its own logic (three states, two modes, the read-only-tree
+        # repair guard) is this project's design.
+        "models/bootstrap.py",
     }
 )
 
