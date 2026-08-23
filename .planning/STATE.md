@@ -1,19 +1,19 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-current_phase: 04
-current_phase_name: Backend Integration & Model Bootstrap
+current_phase: 05
+current_phase_name: Frontend Schema Rendering
 status: complete
-stopped_at: "Phase 4 complete: all four plans (04-01..04-04) done"
-last_updated: "2026-08-23T20:05:00.000Z"
+stopped_at: "Phase 5 complete: all five plans (05-01..05-05) done"
+last_updated: "2026-08-23T21:30:00.000Z"
 last_activity: 2026-08-23
-last_activity_desc: Phase 04 complete (04-01..04-04); ENGINE-01 closed, no VisoMaster needed
-state_head: 05746414bf222a94d0ca6da7959528f06fb1b41f
+last_activity_desc: Phase 05 complete (05-01..05-05); settings API + greenfield frontend rendering 201 schema controls; FRONTEND-01 gates green
+state_head: 6f8ae48
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 20
-  completed_plans: 15
+  completed_plans: 20
 milestone_name: milestone
 ---
 
@@ -24,16 +24,16 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-08-21)
 
 **Core value:** Playback never blocks on generation — a missing generated frame shows the original video frame rather than pausing the video.
-**Current focus:** Phase 04 complete; Phase 05 (Frontend Schema Rendering) planned but not executed
+**Current focus:** Phase 05 complete — all 20 planned items across phases 1-5 summarized
 
 ## Current Position
 
-Phase: 04 (Backend Integration & Model Bootstrap) — COMPLETE
-Plan: 4 of 4 (04-01, 04-02, 04-03, 04-04 done)
-Status: Complete — Phase 4 finished; ENGINE-01 closed
-Last activity: 2026-08-23 — 04-04 executed and verified (347 tests green, 0 skips; no VisoMaster needed)
+Phase: 05 (Frontend Schema Rendering) — COMPLETE
+Plan: 5 of 5 (05-01, 05-02, 05-03, 05-04, 05-05 done)
+Status: Complete — FRONTEND-01 criteria evidenced (201-control render count, preset apply, save/reload round-trip, clean build)
+Last activity: 2026-08-23 — 05-05 executed and verified (frontend 27 vitest green, build clean; backend 369 tests green)
 
-Progress: [███████░░░] 75% (15/20 planned items summarized; Phase 5 is next)
+Progress: [██████████] 100% (20/20 planned items summarized; Phase 6 is next)
 
 ## Performance Metrics
 
@@ -97,6 +97,10 @@ Recent decisions affecting current work:
 - [Phase 4]: ruff is not installed on any interpreter here and the repo carries no ruff config, so `ruff check` in the stated workflow has never run. Settle this in Phase 4.
 - [Phase 2]: Five widget shapes exist in the layout dicts, not four: ClipText carries min/max with no step (character bounds on a line edit) and types as an empty string, so there are 93 int keys, not 94
 - [Phase 2]: The seal block lists live in tests/_blocked_roots.py (import-free) and are re-exported by conftest.py, because both subprocess consumers run on the engine interpreter, which has no pytest
+- [Phase 5]: The settings API bridges the synchronous Phase 3 store over the async Phase 4 backend with a per-request sqlite3 connection run in asyncio.to_thread — never the aiosqlite singleton; a path-aware readiness helper applies DDL + preset seed once per db path so the API is self-sufficient.
+- [Phase 5]: SchemaControl dispatches exclusively on entry.type — a test reads the component source and asserts none of the 201 schema keys appears as a literal (no per-key mapping can regress in).
+- [Phase 5]: The app renders all 201 controls simultaneously and the sidebar scrolls to the active group; filtering to one group would break the count gate and hide controls.
+- [Phase 5]: Gating is presentational in the UI exactly as in gates.py: disabled controls stay rendered and never change what is saved or resolved.
 
 ### Pending Todos
 
@@ -119,6 +123,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-23T20:05:00Z
-Stopped at: Phase 4 complete (04-01..04-04); Phase 5 planned, not executed
-Resume file: .planning/phases/04-backend-integration-model-bootstrap/04-04-SUMMARY.md
+Last session: 2026-08-23T21:30:00Z
+Stopped at: Phase 5 complete (05-01..05-05); all 20 milestone plans done; Phase 6 next
+Resume file: .planning/phases/05-frontend-schema-rendering/05-05-SUMMARY.md
