@@ -8,6 +8,8 @@ the benchmark measures exactly what production measures::
     .venv-clean/Scripts/python.exe tools/benchmark_engine.py --micro
     .venv-clean/Scripts/python.exe tools/benchmark_engine.py --pipeline
         [--frames N]
+    .venv-clean/Scripts/python.exe tools/benchmark_engine.py --gate --idle-gpu
+        [--frames N]
 
 Tier 1 (``--micro``) answers "how fast is one swap": bind the test clip, detect
 once, warm up, then time N sequential ``Engine.swap`` calls at the media's native
@@ -22,6 +24,14 @@ engine+encode floor sits below playback fps no amount of queueing saves the
 overlay; if it sits above, the headroom tells us how much those layers may cost.
 Default window is 600 frames; point ``BENCH_PIPELINE_VIDEO`` at a longer personal
 clip for a steadier measurement (the committed clip is ~24 frames).
+
+Gate (``--gate --idle-gpu``) certifies the Phase 05.1 source-embedding cache:
+the real cache is measured twice, then the ``embed_once`` monkey-patch runs as
+the control, and the verdict passes only when both real means sit within
+``GATE_TOLERANCE`` of the control and agree with each other within
+``GATE_SPREAD_LIMIT``. Without ``--idle-gpu`` it prints reproduce instructions
+and refuses to print a verdict: docs/benchmark-baseline.md records a contended
+card reading 201.55 ms/swap where an idle one read 147.65 ms.
 
 No image is written and no pixel data is logged: report lines carry timings,
 shapes and counts only (T-02-10). Output mixes human lines (``BENCH ...``) with
@@ -70,6 +80,16 @@ MICRO_MEASURED = 20
 #: Steady-state window for tier 2: long enough to average out per-frame jitter,
 #: short enough that the whole benchmark stays a minutes-scale errand.
 DEFAULT_PIPELINE_FRAMES = 600
+#: Gate tolerance (Phase 05.1 plan 01): the real cache and the ``embed_once``
+#: monkey-patch now do the same work, so their mean latencies must agree. A
+#: material gap means the memo missed on some frames and per-frame re-embed
+#: cost leaked back in.
+GATE_TOLERANCE = 0.15
+#: Two real-cache runs taken in the same process must agree with each other
+#: before either can certify anything: a card that disagrees with itself by
+#: more than this is contended, and docs/benchmark-baseline.md records how
+#: badly a contended card distorts these numbers (201.55 ms vs 147.65 ms).
+GATE_SPREAD_LIMIT = 0.25
 
 
 def bench(label, detail):
@@ -308,8 +328,159 @@ def mode_pipeline(frames):
     return EXIT_CLEAN
 
 
+def _micro_window(engine, source_path, window, total_frames):
+    """One ``mode_micro``-shaped measurement window on an already-warm engine.
+
+    Sequential ``Engine.swap`` calls over rotating frame indices, returning the
+    per-swap latency list in seconds. The gate takes three of these windows
+    (real cache twice, then the ``embed_once`` control) on one engine so all
+    three see the same load, the same decoder and the same models.
+    """
+    import time
+
+    total = max(1, int(total_frames or 1))
+    latencies = []
+    for i in range(window):
+        started = time.monotonic()
+        engine.swap(i % total, source_path)
+        latencies.append(time.monotonic() - started)
+    return latencies
+
+
+def mode_gate(frames=None, idle_gpu=False):
+    """Certify the real source-embedding cache against the embed-once control.
+
+    Answers one question (CONTEXT D-15a): did the real cache land within noise
+    of the measured ``--embed-once`` projection? Three windows run in one
+    process on one engine -- the real cache measured **twice** (their spread
+    certifies the card), then the ``embed_once`` monkey-patch as the control --
+    and the verdict is machine-readable from the exit code: ``EXIT_CLEAN`` on
+    pass, ``EXIT_ENGINE_ERROR`` on fail.
+
+    Idle-GPU discipline is enforced, not assumed (D-11): without an explicit
+    ``--idle-gpu`` the gate refuses to print a verdict at all.
+    """
+    if not idle_gpu:
+        bench(
+            "GATE REFUSED",
+            "no --idle-gpu acknowledgement. Performance numbers from a "
+            "contended card are noise: the same commands measured 201.55 "
+            "ms/swap contended and 147.65 ms idle "
+            "(docs/benchmark-baseline.md). Reproduce on an idle GPU with: "
+            ".venv-clean/Scripts/python.exe tools/benchmark_engine.py "
+            "--gate --idle-gpu [--frames N]",
+        )
+        return EXIT_ENGINE_ERROR
+
+    window = max(1, int(frames or MICRO_MEASURED))
+    settings = load_settings_pair()
+    video_path, source_path = resolve_media_pair(pipeline=False)
+
+    arm_seal()
+
+    engine = build_engine(settings)
+    try:
+        media = engine.load(video_path)
+        cards = engine.detect_faces(0)
+        if not cards:
+            raise RuntimeError(
+                "no faces detected in {}".format(os.path.basename(video_path))
+            )
+        probe = engine._read_frame(0)  # noqa: SLF001 - sealed-runner convention
+        height, width = probe.shape[:2]
+
+        for _ in range(MICRO_WARMUP):
+            engine.swap(0, source_path)
+
+        real_first = stats(
+            _micro_window(engine, source_path, window, media["frame_count"])
+        )
+        real_second = stats(
+            _micro_window(engine, source_path, window, media["frame_count"])
+        )
+
+        # The projection's monkey-patch, exactly as mode_micro applies it: the
+        # store computed once, every later call served the same object.
+        cached_store = engine._source_embedding_store(source_path)  # noqa: SLF001
+        engine._source_embedding_store = lambda path: cached_store  # noqa: SLF001
+        for _ in range(MICRO_WARMUP):
+            engine.swap(0, source_path)
+        control = stats(
+            _micro_window(engine, source_path, window, media["frame_count"])
+        )
+
+        provider = engine.context.models_processor.provider_name
+    finally:
+        engine._release()  # noqa: SLF001 - the decoder holds an OS handle
+
+    fastest_real = min(real_first["mean_ms"], real_second["mean_ms"])
+    spread = (
+        abs(real_first["mean_ms"] - real_second["mean_ms"]) / fastest_real
+        if fastest_real > 0
+        else float("inf")
+    )
+    ratio_first = real_first["mean_ms"] / control["mean_ms"]
+    ratio_second = real_second["mean_ms"] / control["mean_ms"]
+
+    reasons = []
+    if spread > GATE_SPREAD_LIMIT:
+        reasons.append("contended")
+    for ratio in (ratio_first, ratio_second):
+        if not (1.0 - GATE_TOLERANCE) <= ratio <= (1.0 + GATE_TOLERANCE):
+            reasons.append("cache_gap")
+            break
+    verdict = "pass" if not reasons else "fail"
+
+    result = {
+        "mode": "gate",
+        "provider": provider,
+        "resolution": "{}x{}".format(width, height),
+        "media_fps": round(float(media["fps"]), 3),
+        "frames_per_window": window,
+        "faces": len(cards),
+        "real_mean_ms": [real_first["mean_ms"], real_second["mean_ms"]],
+        "real_p50_ms": [real_first["p50_ms"], real_second["p50_ms"]],
+        "real_min_ms": [real_first["min_ms"], real_second["min_ms"]],
+        "real_max_ms": [real_first["max_ms"], real_second["max_ms"]],
+        "control_mean_ms": control["mean_ms"],
+        "control_p50_ms": control["p50_ms"],
+        "control_fps": control["fps_from_mean"],
+        "ratio": [round(ratio_first, 4), round(ratio_second, 4)],
+        "spread": round(spread, 4),
+        "tolerance": GATE_TOLERANCE,
+        "spread_limit": GATE_SPREAD_LIMIT,
+        "verdict": verdict,
+        "reasons": reasons,
+        "idle_gpu": True,
+    }
+    bench(
+        "GATE",
+        "provider={} res={} frames={} real_mean_ms={}/{} real_p50_ms={}/{} "
+        "control_mean_ms={} control_p50_ms={} ratio={}/{} spread={} "
+        "verdict={} reason={}".format(
+            provider,
+            result["resolution"],
+            window,
+            real_first["mean_ms"],
+            real_second["mean_ms"],
+            real_first["p50_ms"],
+            real_second["p50_ms"],
+            control["mean_ms"],
+            control["p50_ms"],
+            result["ratio"][0],
+            result["ratio"][1],
+            result["spread"],
+            verdict,
+            "+".join(reasons) if reasons else "none",
+        ),
+    )
+    print("BENCH_JSON:{}".format(result), flush=True)
+    return EXIT_CLEAN if verdict == "pass" else EXIT_ENGINE_ERROR
+
+
 USAGE = (
-    "usage: benchmark_engine.py (--micro | --pipeline [--frames N])"
+    "usage: benchmark_engine.py (--micro | --pipeline [--frames N] "
+    "| --gate --idle-gpu [--frames N])"
     "  # run on the engine interpreter"
 )
 
@@ -341,6 +512,21 @@ def main(argv):
             return mode_pipeline(DEFAULT_PIPELINE_FRAMES)
         if len(argv) == 3 and argv[0] == "--pipeline" and argv[1] == "--frames":
             return mode_pipeline(max(1, int(argv[2])))
+        if argv and argv[0] == "--gate":
+            frames = None
+            idle_gpu = False
+            rest = argv[1:]
+            while rest:
+                if rest[0] == "--frames" and len(rest) >= 2:
+                    frames = max(1, int(rest[1]))
+                    rest = rest[2:]
+                elif rest[0] == "--idle-gpu":
+                    idle_gpu = True
+                    rest = rest[1:]
+                else:
+                    bench("ENGINE_ERROR", USAGE)
+                    return EXIT_ENGINE_ERROR
+            return mode_gate(frames=frames, idle_gpu=idle_gpu)
     except SealBroken as exc:
         bench("SEAL_BREACHED", exc)
         return EXIT_SEAL_BREACHED

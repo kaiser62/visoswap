@@ -60,6 +60,10 @@ Readings:
 
 - **Threads are a dead lever** on this single-frame path (within noise everywhere).
   Keep `nThreadsSlider` exposed at its fixture default; promise nothing.
+- **D-14, settled finding:** thread count measured within noise at 1 and 8
+  threads on this single-frame path (147.65 vs 159.40 ms re-embed; 96.85 vs
+  95.35 ms embed-once). `nThreadsSlider` stays exposed at its fixture default
+  and no artefact of Phase 05.1 claims a thread count changes throughput.
 - **The source-embedding cache is worth +52% throughput** (147.7 → 96.9 ms), and the
   patched-swap measurement *is* the post-fix projection through the real `swap` path.
 - Post-fix floor ≈ **10.3 fps** — still 2.3× short of 1080p24. Remaining levers below.
@@ -112,6 +116,36 @@ Therefore, for Phase 05.1:
 Plan 05.1 must sequence: **(1)** idle-GPU discipline + source-embedding cache +
 re-benchmark gate, **(2)** everything else. No overlay implementation may land against
 today's numbers.
+
+## Post-cache measurement (Phase 05.1 plan 01)
+
+**Date:** 2026-08-23 · **Provider:** CUDA · **Resolution:** 1920×1080 (the committed
+test clip, 23.976 fps, 2 faces) · **Threads:** fixture default (`nThreadsSlider` untouched).
+
+Command (run on this machine, idle GPU — the gate refuses without the acknowledgement):
+
+```
+.venv-clean/Scripts/python.exe tools/benchmark_engine.py --gate --idle-gpu
+```
+
+The gate measures the real cached `swap` path twice in one process, then the
+`embed_once` monkey-patch control from the lever matrix, on one engine. Result of the
+recorded run:
+
+| Window | mean ms | p50 ms | min ms | max ms | fps from mean |
+|--------|---------|--------|--------|--------|---------------|
+| real cache, run 1 | 96.10 | 94.0 | 78.0 | 141.0 | 10.41 |
+| real cache, run 2 | 98.40 | 94.0 | 78.0 | 187.0 | 10.16 |
+| `embed_once` control (same run) | 103.90 | 94.0 | — | — | 9.62 |
+
+- Ratio real/control: **0.925 / 0.947** (tolerance ±15%) · two-run spread **2.39%**
+  (limit 25%) · verdict **pass**.
+- **The projection was reached.** The real cache landed within noise of the recorded
+  96.85 ms / 10.33 fps embed-once projection: p50 is byte-identical across all three
+  windows at 94 ms, and the real-cache means sit slightly *under* the control's mean.
+  The pre-cache 147.65 ms / 6.77 fps tax is gone; sustained throughput now reads
+  ≈ **10.2–10.4 swap fps** at 1080p — still ~2.3× short of 1080p24 playback, exactly
+  as the verdict for D-06 above states.
 
 ## Session addendum — user requirements folded into the plan (2026-08-23)
 
