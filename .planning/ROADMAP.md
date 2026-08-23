@@ -185,7 +185,13 @@ last phase where new user-facing surface is built — Phase 6 only verifies what
 
   4. `npm run build` succeeds with no type errors
 
-**Plans**: TBD
+**Plans**: 5 plans created (wave 1→4)
+
+- [ ] 05-01-PLAN.md — Backend read API: GET /api/schema, GET /api/projects/{id}/settings, GET /api/presets wrapping the Phase 3 store (TRACER)
+- [ ] 05-02-PLAN.md — Backend write API: PUT settings (overrides only), POST preset apply (atomic) (TRACER)
+- [ ] 05-03-PLAN.md — Greenfield Vite+React+TS+Tailwind scaffold; generic schema-driven renderer; grouped sidebar; count==201 + fidelity tests (TRACER)
+- [ ] 05-04-PLAN.md — Dirty-tracking save + discard; preset header selector + apply diff modal (TRACER)
+- [ ] 05-05-PLAN.md — Gate handling port; final build gate + backend suite + browser E2E human-check (TRACER)
 **UI hint**: yes
 
 ### Phase 6: End-to-End Verification
@@ -230,5 +236,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Engine API & First Swap | 4/4 | Complete | 2026-08-22 |
 | 3. Settings Schema & Three-Tier Resolution | 3/3 | Complete | 2026-08-22 |
 | 4. Backend Integration & Model Bootstrap | 0/TBD | Not started | - |
-| 5. Frontend Schema Rendering | 0/TBD | Not started | - |
+| 5. Frontend Schema Rendering | 0/5 | Planned (wave 1→4) | - |
 | 6. End-to-End Verification | 0/TBD | Not started | - |
