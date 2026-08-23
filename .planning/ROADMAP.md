@@ -197,7 +197,28 @@ last phase where new user-facing surface is built — Phase 6 only verifies what
 - [ ] 05-03-PLAN.md — Greenfield Vite+React+TS+Tailwind scaffold; generic schema-driven renderer; grouped sidebar; count==201 + fidelity tests (TRACER)
 - [ ] 05-04-PLAN.md — Dirty-tracking save + discard; preset header selector + apply diff modal (TRACER)
 - [ ] 05-05-PLAN.md — Gate handling port; final build gate + backend suite + browser E2E human-check (TRACER)
+
 **UI hint**: yes
+
+### Phase 05.1: Studio Frontend Media Workspace (INSERTED)
+
+**Goal**: The frontend becomes the whole application: load a target video (file upload or
+URL/local path), pick the source face, watch swapped frames play back behind the playhead,
+export/record the mp4, and browse a video library — laid out after the user's VisoMaster Studio
+build (`D:/Visomaster/webui2`: dark card grid, player with live preview overlay and in/out range
+transport, media panel with input-face and detected-target-face strips, tabbed controls, jobs view),
+with the existing 201 schema controls embedded as the Controls surface.
+**Why here**: PROJECT.md's core promise ("you load a video, pick a source face, and the swapped
+result plays back") needs a media workspace; end-to-end verification only means something once that
+workspace exists. Inserted before Phase 6 so system-level checks cover the completed UI.
+**Requirements**: None (v1 Active) — re-proves "Real-time playback with asynchronous predictive frame
+generation" and "Single-face targeting" from PROJECT.md's Validated section on the new stack.
+**Depends on:** Phase 5
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 05.1 to break down)
 
 ### Phase 6: End-to-End Verification
 
