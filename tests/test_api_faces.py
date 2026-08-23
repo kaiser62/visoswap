@@ -423,3 +423,19 @@ def test_scheduler_start_refuses_a_project_left_with_no_source_face(
     assert resp.status_code == 400, resp.text
     assert "source face" in resp.json()["detail"], resp.text
 
+
+def test_deleting_a_project_leaves_the_global_face_library_intact(client):
+    """The store is machine-global (D-03): no project owns a face."""
+    project_id = _create_project(client, name="mortal")
+    face_id = _bind(client, project_id, PNG_BYTES)
+    stored = facestore.face_path(face_id)
+    thumb = facestore.thumb_path(face_id)
+
+    deleted = client.delete(f"/api/projects/{project_id}")
+    assert deleted.status_code == 204, deleted.text
+
+    assert stored.is_file()
+    assert thumb.is_file()
+    remaining = client.get("/api/faces").json()
+    assert [r["face_id"] for r in remaining] == [face_id]
+
