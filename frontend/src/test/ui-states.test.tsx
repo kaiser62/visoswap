@@ -32,15 +32,18 @@ beforeEach(() => {
 describe('UI states', () => {
   it('error state renders banner + zero controls, retry recovers', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('network'))
-      .mockImplementation(async (url: string) => {
-        if (url === '/api/schema') return jsonResponse(fakeSchema(2))
-        if (url === '/api/projects/t/settings')
-          return jsonResponse({ values: { key0: true, key1: false } })
-        return jsonResponse({ detail: 'not found' }, 404)
-      })
+    let schemaAttempts = 0
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/presets') return jsonResponse({ presets: [] })
+      if (url === '/api/schema') {
+        schemaAttempts += 1
+        if (schemaAttempts === 1) throw new Error('network')
+        return jsonResponse(fakeSchema(2))
+      }
+      if (url === '/api/projects/t/settings')
+        return jsonResponse({ values: { key0: true, key1: false } })
+      return jsonResponse({ detail: 'not found' }, 404)
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     render(<App />)

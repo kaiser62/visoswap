@@ -1,35 +1,11 @@
 /** Read path: load -> grouped render with sidebar (D-01, D-06). */
 
 import { useEffect, useMemo, useState } from 'react'
+import { Header } from './components/Header'
 import { GroupSection } from './components/GroupSection'
 import { Sidebar, buildHierarchy } from './components/Sidebar'
 import { Button, Card, Skeleton } from './components/ui'
 import { SettingsProvider, useSettings } from './state/SettingsContext'
-
-function Header() {
-  const { projects, projectId, setProject } = useSettings()
-  return (
-    <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-neutral-200 bg-white px-6">
-      <h1 className="text-xl font-semibold text-neutral-900">
-        Predictive Video Frame Transformer
-      </h1>
-      {projects.length > 0 && (
-        <select
-          value={projectId ?? ''}
-          onChange={(e) => setProject(e.target.value)}
-          aria-label="Project"
-          className="h-8 rounded border border-neutral-200 px-2 text-sm text-neutral-900"
-        >
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      )}
-    </header>
-  )
-}
 
 function SettingsBody() {
   const { status, schema, values, setValue, load } = useSettings()

@@ -1,7 +1,8 @@
 /** React Context + useReducer state container (D-06).
  *
  * Holds schema, resolved values, projects, the selected project, load status,
- * and a dirty map tracking which keys the user has edited since last save.
+ * a dirty map tracking which keys the user has edited since last save, the
+ * last-persisted baseline (for Discard), and save state (saving/saveError).
  */
 
 import {
@@ -16,6 +17,7 @@ import {
   getProjectSettings,
   getSchema,
   listProjects,
+  saveProjectSettings,
 } from '../lib/api'
 import type {
   LoadStatus,
@@ -32,6 +34,9 @@ export interface SettingsState {
   projects: Project[]
   projectId: string | null
   dirty: Record<string, true>
+  baselineValues: Values | null
+  saving: boolean
+  saveError: string | null
 }
 
 type Action =
@@ -42,6 +47,11 @@ type Action =
   | { type: 'SET_PROJECT'; projectId: string }
   | { type: 'SET_VALUE'; key: string; value: SettingValue }
   | { type: 'RESET_DIRTY' }
+  | { type: 'SAVE_START' }
+  | { type: 'SAVE_OK'; values: Values }
+  | { type: 'SAVE_ERROR'; message: string }
+  | { type: 'DISCARD'; values: Values }
+  | { type: 'APPLY_PRESET'; values: Values }
 
 const initialState: SettingsState = {
   status: 'loading',
@@ -50,18 +60,22 @@ const initialState: SettingsState = {
   projects: [],
   projectId: null,
   dirty: {},
+  baselineValues: null,
+  saving: false,
+  saveError: null,
 }
 
 function reducer(state: SettingsState, action: Action): SettingsState {
   switch (action.type) {
     case 'LOAD_START':
-      return { ...state, status: 'loading' }
+      return { ...state, status: 'loading', saveError: null }
     case 'LOAD_OK':
       return {
         ...state,
         status: 'ready',
         schema: action.schema,
         values: action.values,
+        baselineValues: action.values,
       }
     case 'LOAD_ERROR':
       return { ...state, status: 'error' }
@@ -74,9 +88,37 @@ function reducer(state: SettingsState, action: Action): SettingsState {
         ...state,
         values: { ...(state.values ?? {}), [action.key]: action.value },
         dirty: { ...state.dirty, [action.key]: true },
+        saveError: null,
       }
     case 'RESET_DIRTY':
       return { ...state, dirty: {} }
+    case 'SAVE_START':
+      return { ...state, saving: true, saveError: null }
+    case 'SAVE_OK':
+      return {
+        ...state,
+        saving: false,
+        values: action.values,
+        baselineValues: action.values,
+        dirty: {},
+      }
+    case 'SAVE_ERROR':
+      return { ...state, saving: false, saveError: action.message }
+    case 'DISCARD':
+      return {
+        ...state,
+        values: action.values,
+        dirty: {},
+        saveError: null,
+      }
+    case 'APPLY_PRESET':
+      return {
+        ...state,
+        values: action.values,
+        baselineValues: action.values,
+        dirty: {},
+        saveError: null,
+      }
     default:
       return state
   }
@@ -87,7 +129,9 @@ interface SettingsContextValue extends SettingsState {
   loadProject: (projectId: string) => Promise<void>
   setProject: (projectId: string) => void
   setValue: (key: string, value: SettingValue) => void
-  resetDirty: () => void
+  save: () => Promise<void>
+  discard: () => void
+  applyPresetValues: (values: Values) => void
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null)
@@ -138,13 +182,49 @@ export function SettingsProvider({
     dispatch({ type: 'SET_VALUE', key, value })
   }, [])
 
-  const resetDirty = useCallback(() => {
-    dispatch({ type: 'RESET_DIRTY' })
+  const save = useCallback(async () => {
+    const projectId = state.projectId
+    if (!projectId) return
+    const overrides: Values = {}
+    for (const key of Object.keys(state.dirty)) {
+      if (state.values && state.values[key] !== undefined) {
+        overrides[key] = state.values[key]
+      }
+    }
+    dispatch({ type: 'SAVE_START' })
+    try {
+      const resp = await saveProjectSettings(projectId, overrides)
+      dispatch({ type: 'SAVE_OK', values: resp.values })
+    } catch (err) {
+      dispatch({
+        type: 'SAVE_ERROR',
+        message: "Couldn't save your changes. They're still in the editor — check the backend and try again.",
+      })
+      void err
+    }
+  }, [state.projectId, state.dirty, state.values])
+
+  const discard = useCallback(() => {
+    if (!state.baselineValues) return
+    dispatch({ type: 'DISCARD', values: state.baselineValues })
+  }, [state.baselineValues])
+
+  const applyPresetValues = useCallback((values: Values) => {
+    dispatch({ type: 'APPLY_PRESET', values })
   }, [])
 
   const value = useMemo<SettingsContextValue>(
-    () => ({ ...state, load, loadProject, setProject, setValue, resetDirty }),
-    [state, load, loadProject, setProject, setValue, resetDirty],
+    () => ({
+      ...state,
+      load,
+      loadProject,
+      setProject,
+      setValue,
+      save,
+      discard,
+      applyPresetValues,
+    }),
+    [state, load, loadProject, setProject, setValue, save, discard, applyPresetValues],
   )
 
   return (
