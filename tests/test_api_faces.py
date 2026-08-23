@@ -8,14 +8,25 @@ idiom); router-level cases drive the real app through FastAPI's ``TestClient``
 
 from __future__ import annotations
 
+import io
+
 import pytest
 
 from backend.config import get_settings
 from backend.services import facestore
 
 
-PNG_BYTES = b"\x89PNG\r\n\x1a\nfake-image-bytes"
-OTHER_BYTES = b"\x89PNG\r\n\x1a\ndifferent-image"
+def _png(colour: tuple[int, int, int]) -> bytes:
+    """Real PNG bytes: thumbnails decode them, so fixtures must be real too."""
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 64), colour).save(buf, "PNG")
+    return buf.getvalue()
+
+
+PNG_BYTES = _png((200, 40, 40))
+OTHER_BYTES = _png((40, 200, 40))
 
 
 @pytest.fixture
@@ -80,10 +91,12 @@ def test_store_rejects_non_image_suffixes_naming_them(data_root):
         facestore.store(b"no name", "")
 
 
-def test_face_path_refuses_anything_that_is_not_a_face_id(data_root):
-    for bad in ("..", "../../etc/passwd", "a/b", "0" * 31):
-        with pytest.raises(facestore.UnsafeFaceId):
-            facestore.face_path(bad)
+@pytest.mark.parametrize(
+    "bad", ["..", "../../etc/passwd", "a/b", "0" * 31], ids=["dotdot", "traversal", "separator", "short-hex"]
+)
+def test_face_path_refuses_anything_that_is_not_a_face_id(data_root, bad):
+    with pytest.raises(facestore.UnsafeFaceId):
+        facestore.face_path(bad)
 
 
 def test_list_faces_orders_newest_first_and_never_serves_a_thumbnail(data_root):

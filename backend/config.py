@@ -204,6 +204,13 @@ class Settings(BaseSettings):
     def projects_dir(self) -> Path:
         return self.data_dir / "projects"
 
+    # Machine-global (D-03): one face store shared by every project,
+    # deliberately outside `projects_dir` so deleting a project cannot take
+    # the user's face library with it.
+    @property
+    def faces_dir(self) -> Path:
+        return self.data_dir / "faces"
+
 
 @lru_cache
 def get_settings() -> Settings:
