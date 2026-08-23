@@ -30,6 +30,31 @@ export function SchemaControl({
   const min = entry.minimum ?? (isNumeric ? 0 : undefined)
   const max = entry.maximum ?? (isNumeric ? 100 : undefined)
 
+  /** Parse a numeric input, or null when it is not a usable number.
+   *
+   * A cleared field parses to NaN and JSON.stringify would ship `null`, which
+   * the API rejects (422); a hand-typed value bypasses the input's min/max, so
+   * the parsed number is clamped into the schema bounds — the same contract
+   * store.validate enforces server-side. The change simply doesn't fire when
+   * there is nothing valid to send.
+   */
+  const toValue = (raw: string): SettingValue | null => {
+    const parsed = entry.type === 'int' ? parseInt(raw, 10) : parseFloat(raw)
+    if (!Number.isFinite(parsed)) return null
+    let n = parsed
+    if (min !== undefined) n = Math.max(min, n)
+    if (max !== undefined) n = Math.min(max, n)
+    if (entry.decimals !== undefined) {
+      n = parseFloat(n.toFixed(entry.decimals))
+    }
+    return n
+  }
+
+  const emitNumber = (raw: string) => {
+    const v = toValue(raw)
+    if (v !== null) onChange?.(v)
+  }
+
   const ctl = { 'data-key': keyName, 'data-control-type': entry.type }
 
   return (
@@ -72,13 +97,7 @@ export function SchemaControl({
           />
         )
       case 'int':
-      case 'float': {
-        const toValue = (raw: string): SettingValue =>
-          entry.type === 'int'
-            ? parseInt(raw, 10)
-            : entry.decimals !== undefined
-              ? parseFloat(parseFloat(raw).toFixed(entry.decimals))
-              : parseFloat(raw)
+      case 'float':
         return (
           <div className="flex items-center gap-2">
             <input
@@ -89,7 +108,7 @@ export function SchemaControl({
               step={stepFor()}
               value={Number(value ?? 0)}
               disabled={disabled}
-              onChange={(e) => onChange?.(toValue(e.target.value))}
+              onChange={(e) => emitNumber(e.target.value)}
               aria-label={entry.label}
               className="w-40 accent-blue-600"
             />
@@ -100,13 +119,12 @@ export function SchemaControl({
               step={stepFor()}
               value={Number(value ?? 0)}
               disabled={disabled}
-              onChange={(e) => onChange?.(toValue(e.target.value))}
+              onChange={(e) => emitNumber(e.target.value)}
               aria-label={entry.label}
               className="h-8 w-20 rounded border border-neutral-200 px-2 text-sm text-neutral-900"
             />
           </div>
         )
-      }
       case 'selection': {
         const options = entry.options ?? []
         if (options.length === 0) {

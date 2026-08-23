@@ -178,6 +178,10 @@ status: complete
 ## Issues Encountered
 None beyond the auto-fixed deviations above.
 
+### Post-close addendum (human UAT)
+
+**3. [Blocking] Save failed for hand-edited numeric values** — found during the browser walkthrough after phase close. Two client paths produced the documented save-failure banner: a cleared number input parsed to NaN and shipped JSON `null` (API 422), and hand-typed values bypassed the inputs' min/max so out-of-bounds numbers reached store.validate (400). Fix: `SchemaControl.emitNumber` ignores non-finite parses and clamps into schema bounds before marking dirty; regression test `typed out-of-bounds numbers are clamped and never ship null` pins both. Frontend suite 28 green; rebuilt dist served by the running backend.
+
 ## User Setup Required
 None - no external service configuration required.
 

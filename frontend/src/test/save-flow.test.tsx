@@ -177,4 +177,63 @@ describe('save flow', () => {
     })
     expect(screen.getByRole('button', { name: /Save Changes \(0\)/ })).toBeDisabled()
   })
+
+  it('typed out-of-bounds numbers are clamped and never ship null', async () => {
+    const user = userEvent.setup()
+    const putBodies: Array<{ overrides: Record<string, unknown> }> = []
+    stubWithPut((body) => putBodies.push(body as { overrides: Record<string, unknown> }))
+
+    render(<App />)
+    await waitFor(() => {
+      expect(document.querySelectorAll('[data-key]').length).toBeGreaterThan(0)
+    })
+
+    // ColorBrightnessDecimalSlider: project-tier float, min 0 max 2, gated by
+    // the project-tier toggle ColorEnableToggle (default false) — flip the
+    // parent first so the control unlocks and can be edited.
+    const labeled = screen.getAllByLabelText('Brightness') as HTMLInputElement[]
+    const numberInput = labeled.find((i) => i.type === 'number')
+    expect(numberInput).toBeTruthy()
+    expect(numberInput!.type).toBe('number')
+    expect(numberInput!.disabled).toBe(true)
+
+    const parentToggle = document.querySelector(
+      '[data-key="ColorEnableToggle"]',
+    ) as HTMLInputElement
+    await user.click(parentToggle)
+    await waitFor(() => {
+      expect(
+        (screen.getAllByLabelText('Brightness') as HTMLInputElement[]).find(
+          (i) => i.type === 'number',
+        )!.disabled,
+      ).toBe(false)
+    })
+
+    // Hand-typed values bypass the input's max attribute — the client must
+    // clamp, because the store rejects out-of-bounds values with 400.
+    await user.clear(numberInput!)
+    await user.type(numberInput!, '999')
+
+    // A cleared field must not ship NaN -> JSON null (the API 422s null):
+    // clearing emits no change, so the last valid typed value stays dirty.
+    await user.clear(numberInput!)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Save Changes \(\d+\)/ })).toBeEnabled()
+    })
+    await user.click(screen.getByRole('button', { name: /Save Changes \(\d+\)/ }))
+    await waitFor(() => {
+      expect(putBodies.length).toBe(1)
+    })
+    const overrides = putBodies[0].overrides
+    // Clamped to the schema maximum of 2 despite typing 999.
+    expect(overrides.ColorBrightnessDecimalSlider).toBe(2)
+    // The flipped gate parent persists with it.
+    expect(overrides.ColorEnableToggle).toBe(true)
+    // Nothing null/undefined ever leaves the client.
+    for (const v of Object.values(overrides)) {
+      expect(v).not.toBeNull()
+      expect(v).not.toBeUndefined()
+    }
+  })
 })
