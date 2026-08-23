@@ -1,14 +1,20 @@
-/** Read path: load -> grouped render with sidebar (D-01, D-06). */
+/** Studio shell: one page at `/` (D-01). Header, then a two-column Studio
+ * grid whose right column holds the Controls card containing exactly what the
+ * settings body rendered before (D-02: mini-sidebar + scrolling schema groups,
+ * all controls always mounted). Player and Media are placeholders that plans
+ * 05–07 fill.
+ */
 
 import { useEffect, useMemo, useState } from 'react'
 import { Header } from './components/Header'
 import { GroupSection } from './components/GroupSection'
 import { Sidebar, buildHierarchy } from './components/Sidebar'
+import { StudioCard, StudioGrid } from './components/StudioLayout'
 import { Button, Card, Skeleton } from './components/ui'
 import { isControlEnabled } from './lib/gates'
 import { SettingsProvider, useSettings } from './state/SettingsContext'
 
-function SettingsBody() {
+function StudioBody() {
   const { status, schema, values, setValue, load } = useSettings()
   const [activeGroup, setActiveGroup] = useState<string | null>(null)
 
@@ -51,12 +57,12 @@ function SettingsBody() {
 
   if (status === 'error') {
     return (
-      <div className="flex flex-1 items-center justify-center p-8">
+      <div className="flex min-h-0 flex-1 items-center justify-center p-8">
         <Card className="max-w-md text-center">
-          <p className="mb-2 text-base font-semibold text-neutral-900">
+          <p className="mb-2 text-base font-semibold text-text">
             Couldn't load settings
           </p>
-          <p className="mb-4 text-sm text-neutral-500">
+          <p className="mb-4 text-sm text-muted">
             The backend didn't respond. Check that the server is running, then
             retry.
           </p>
@@ -68,7 +74,7 @@ function SettingsBody() {
 
   if (status === 'loading' || !schema) {
     return (
-      <div className="flex flex-1 gap-6 p-6">
+      <div className="flex min-h-0 flex-1 gap-6 p-6">
         <div className="w-56 shrink-0 space-y-2">
           <Skeleton className="h-8" />
           <Skeleton className="h-8" />
@@ -86,12 +92,12 @@ function SettingsBody() {
   const widgetKeys = Object.keys(schema.widgets)
   if (widgetKeys.length === 0) {
     return (
-      <div className="flex flex-1 items-center justify-center p-8">
+      <div className="flex min-h-0 flex-1 items-center justify-center p-8">
         <Card className="max-w-md text-center">
-          <p className="mb-2 text-base font-semibold text-neutral-900">
+          <p className="mb-2 text-base font-semibold text-text">
             No settings available
           </p>
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-muted">
             The schema returned no controls. Check that the backend is running
             and serving `/api/schema`, then reload.
           </p>
@@ -110,50 +116,72 @@ function SettingsBody() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 gap-6 p-6">
-      <div className="w-56 shrink-0">
-        <Sidebar
-          hierarchy={hierarchy}
-          activeGroup={activeGroup}
-          onSelect={scrollToGroup}
-          loading={false}
-        />
-      </div>
-      <div
-        className="min-w-0 flex-1 space-y-4 overflow-y-auto"
-        onScroll={(e) => {
-          const target = e.currentTarget
-          let current: string | null = null
-          for (const group of allGroups) {
-            const el = document.getElementById(`group-${group}`)
-            if (el && el.offsetTop - target.scrollTop <= 80) current = group
-          }
-          if (current && current !== activeGroup) setActiveGroup(current)
-        }}
-      >
-        {allGroups.map((group) => (
-          <GroupSection
-            key={group}
-            id={`group-${group}`}
-            name={group}
-            keys={groupKeys[group] ?? []}
-            widgets={schema.widgets}
-            values={values}
-            onChange={setValue}
-            disabledKeys={disabledKeys}
-          />
-        ))}
-      </div>
-    </div>
+    <StudioGrid
+      left={
+        <>
+          <StudioCard title="Player" defaultOpen>
+            <p className="p-4 text-sm text-muted">
+              Load a target video to begin. Playback arrives with plan 05.
+            </p>
+          </StudioCard>
+          <StudioCard title="Media" defaultOpen>
+            <p className="p-4 text-sm text-muted">
+              Target video and source faces arrive with plans 06 and 07.
+            </p>
+          </StudioCard>
+        </>
+      }
+      right={
+        <StudioCard title="Controls" defaultOpen>
+          <div className="flex gap-4 p-4">
+            <div className="w-56 shrink-0">
+              <Sidebar
+                hierarchy={hierarchy}
+                activeGroup={activeGroup}
+                onSelect={scrollToGroup}
+                loading={false}
+              />
+            </div>
+            {/* Bounded lane with its own vertical scroll, the way webui2 bounds
+              its tab bodies; the scroll-spy reads scrollTop off this element. */}
+            <div
+              className="min-h-0 min-w-0 max-h-[calc(100vh-198px)] flex-1 space-y-4 overflow-y-auto max-[969px]:max-h-none"
+              onScroll={(e) => {
+                const target = e.currentTarget
+                let current: string | null = null
+                for (const group of allGroups) {
+                  const el = document.getElementById(`group-${group}`)
+                  if (el && el.offsetTop - target.scrollTop <= 80) current = group
+                }
+                if (current && current !== activeGroup) setActiveGroup(current)
+              }}
+            >
+              {allGroups.map((group) => (
+                <GroupSection
+                  key={group}
+                  id={`group-${group}`}
+                  name={group}
+                  keys={groupKeys[group] ?? []}
+                  widgets={schema.widgets}
+                  values={values}
+                  onChange={setValue}
+                  disabledKeys={disabledKeys}
+                />
+              ))}
+            </div>
+          </div>
+        </StudioCard>
+      }
+    />
   )
 }
 
 export default function App() {
   return (
     <SettingsProvider>
-      <div className="flex h-screen flex-col bg-neutral-50 text-neutral-900">
+      <div className="flex h-screen flex-col bg-bg text-text">
         <Header />
-        <SettingsBody />
+        <StudioBody />
       </div>
     </SettingsProvider>
   )

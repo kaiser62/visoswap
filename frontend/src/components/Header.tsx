@@ -31,8 +31,8 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-10 flex h-16 items-center justify-between gap-4 border-b border-neutral-200 bg-white px-6">
-      <h1 className="text-xl font-semibold text-neutral-900">
+    <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-line bg-card px-6">
+      <h1 className="text-xl font-semibold text-text">
         Predictive Video Frame Transformer
       </h1>
 
@@ -42,7 +42,7 @@ export function Header() {
             value={projectId ?? ''}
             onChange={(e) => setProject(e.target.value)}
             aria-label="Project"
-            className="h-8 rounded border border-neutral-200 px-2 text-sm text-neutral-900"
+            className="h-8 rounded border border-line bg-raised px-2 text-sm text-text"
           >
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
@@ -60,7 +60,7 @@ export function Header() {
         />
 
         {justSaved && (
-          <span className="text-sm text-green-600" aria-live="polite">
+          <span className="text-sm text-good" aria-live="polite">
             Saved
           </span>
         )}
@@ -80,10 +80,13 @@ export function Header() {
       </div>
 
       {saveError && (
-        <div className="absolute top-16 left-0 right-0 border-b border-red-200 bg-red-50 px-6 py-2 text-sm text-red-700">
+        <div className="absolute top-16 left-0 right-0 border-b border-bad/40 bg-bad/10 px-6 py-2 text-sm text-bad">
           {saveError}
         </div>
       )}
+
+      {/* The accent underline webui2 gives its chrome. */}
+      <div className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" aria-hidden />
 
       <ConfirmModal
         open={showDiscard}

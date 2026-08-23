@@ -48,26 +48,26 @@ export function PresetDiffModal({
       onClose={onClose}
       title={`Apply preset ${preset.name}`}
     >
-      <p className="mb-2 text-sm text-neutral-700">
+      <p className="mb-2 text-sm text-text">
         Changes {changedKeys.length} setting(s) to this preset's values.
       </p>
       {differsFromUnsaved.length > 0 && (
-        <p className="mb-2 text-sm text-amber-700">
+        <p className="mb-2 text-sm text-muted">
           Note: {differsFromUnsaved.length} of these differ from your unsaved
           edits.
         </p>
       )}
-      <ul className="mb-4 max-h-48 overflow-y-auto rounded border border-neutral-200 p-2 text-sm">
+      <ul className="mb-4 max-h-48 overflow-y-auto rounded border border-line p-2 text-sm">
         {changedKeys.map((key) => (
           <li key={key} className="flex items-center justify-between py-1">
-            <span className="text-neutral-700">{key}</span>
-            <span className="text-neutral-400">
+            <span className="text-text">{key}</span>
+            <span className="text-muted">
               {String(values?.[key])} → {String(preset.project[key])}
             </span>
           </li>
         ))}
       </ul>
-      {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-2 text-sm text-bad">{error}</p>}
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onClose}>
           Cancel
