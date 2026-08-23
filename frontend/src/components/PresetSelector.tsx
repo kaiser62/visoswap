@@ -36,7 +36,7 @@ export function PresetSelector({
         <select
           disabled
           aria-label="Preset"
-          className="h-8 rounded border border-neutral-200 bg-neutral-100 px-2 text-sm text-neutral-400"
+          className="h-8 rounded border border-line bg-raised px-2 text-sm text-muted"
         >
           <option>No presets</option>
         </select>
@@ -45,7 +45,7 @@ export function PresetSelector({
           value=""
           onChange={(e) => handleChange(e.target.value)}
           aria-label="Preset"
-          className="h-8 rounded border border-neutral-200 px-2 text-sm text-neutral-900"
+          className="h-8 rounded border border-line bg-raised px-2 text-sm text-text"
         >
           <option value="" disabled>
             Apply preset…

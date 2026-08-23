@@ -45,19 +45,19 @@ export function Sidebar({
 }) {
   return (
     <nav
-      className="sticky top-0 h-full overflow-y-auto border-r border-neutral-200 bg-white p-4"
+      className="sticky top-0 h-full overflow-y-auto border-r border-line bg-raised p-4"
       aria-label="Settings sections"
     >
       {loading && hierarchy.length === 0 ? (
         <>
-          <div className="mb-2 h-4 w-24 animate-pulse rounded bg-neutral-100" />
-          <div className="mb-2 h-4 w-32 animate-pulse rounded bg-neutral-100" />
-          <div className="mb-2 h-4 w-20 animate-pulse rounded bg-neutral-100" />
+          <div className="mb-2 h-4 w-24 animate-pulse rounded bg-line" />
+          <div className="mb-2 h-4 w-32 animate-pulse rounded bg-line" />
+          <div className="mb-2 h-4 w-20 animate-pulse rounded bg-line" />
         </>
       ) : (
         hierarchy.map((tier) => (
           <div key={tier.name} className="mb-4">
-            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">
               {tier.name}
             </div>
             <ul className="space-y-0.5">
@@ -71,13 +71,13 @@ export function Sidebar({
                       aria-current={active ? 'true' : undefined}
                       className={`flex w-full items-center justify-between rounded px-2 py-1 text-left text-sm ${
                         active
-                          ? 'bg-blue-600 font-semibold text-white'
-                          : 'text-neutral-700 hover:bg-neutral-100'
+                          ? 'bg-active font-semibold text-text'
+                          : 'text-muted hover:bg-card'
                       }`}
                     >
                       <span className="truncate">{group.name}</span>
                       <span
-                        className={`ml-2 text-xs ${active ? 'text-white/80' : 'text-neutral-400'}`}
+                        className={`ml-2 text-xs ${active ? 'text-text/80' : 'text-muted/70'}`}
                       >
                         {group.keys.length}
                       </span>

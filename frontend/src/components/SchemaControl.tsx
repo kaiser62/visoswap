@@ -2,7 +2,8 @@
  *
  * Dispatches exclusively on `entry.type` — never on the settings key string.
  * No per-key mapping, no key-name-substring inference. Every control carries
- * `data-key` and `data-control-type` so the count/type tests can read them.
+ * `data-key` plus its type marker via one shared attribute object so the
+ * count/type tests can read them.
  */
 
 import type { SchemaEntry, SettingValue } from '../types'
@@ -60,7 +61,7 @@ export function SchemaControl({
   return (
     <div className="flex items-center justify-between gap-4 py-2">
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1 text-sm font-semibold text-neutral-900">
+        <div className="flex items-center gap-1 text-sm font-semibold text-text">
           {disabled && (
             <span title="Locked: enable the deciding control to edit this" aria-hidden>
               🔒
@@ -70,7 +71,7 @@ export function SchemaControl({
         </div>
         {entry.help ? (
           <div
-            className="mt-0.5 line-clamp-2 text-sm text-neutral-500"
+            className="mt-0.5 line-clamp-2 text-sm text-muted"
             title={entry.help}
           >
             {entry.help}
@@ -92,7 +93,7 @@ export function SchemaControl({
             checked={Boolean(value)}
             disabled={disabled}
             onChange={(e) => onChange?.(e.target.checked)}
-            className="h-4 w-4 accent-blue-600"
+            className="h-4 w-4 accent-accent"
             aria-label={entry.label}
           />
         )
@@ -110,7 +111,7 @@ export function SchemaControl({
               disabled={disabled}
               onChange={(e) => emitNumber(e.target.value)}
               aria-label={entry.label}
-              className="w-40 accent-blue-600"
+              className="w-40 accent-accent"
             />
             <input
               type="number"
@@ -121,7 +122,7 @@ export function SchemaControl({
               disabled={disabled}
               onChange={(e) => emitNumber(e.target.value)}
               aria-label={entry.label}
-              className="h-8 w-20 rounded border border-neutral-200 px-2 text-sm text-neutral-900"
+              className="h-8 w-20 rounded border border-line bg-raised px-2 text-sm text-text"
             />
           </div>
         )
@@ -133,7 +134,7 @@ export function SchemaControl({
               {...ctl}
               disabled
               aria-label={entry.label}
-              className="h-8 w-40 rounded border border-neutral-200 bg-neutral-100 px-2 text-sm text-neutral-400"
+              className="h-8 w-40 rounded border border-line bg-raised px-2 text-sm text-muted"
             >
               <option>Unavailable</option>
             </select>
@@ -146,7 +147,7 @@ export function SchemaControl({
             disabled={disabled}
             onChange={(e) => onChange?.(e.target.value)}
             aria-label={entry.label}
-            className="h-8 w-40 rounded border border-neutral-200 px-2 text-sm text-neutral-900"
+            className="h-8 w-40 rounded border border-line bg-raised px-2 text-sm text-text"
           >
             {options.map((opt) => (
               <option key={opt} value={opt}>
@@ -166,7 +167,7 @@ export function SchemaControl({
             disabled={disabled}
             onChange={(e) => onChange?.(e.target.value)}
             aria-label={entry.label}
-            className="h-8 w-40 rounded border border-neutral-200 px-2 text-sm text-neutral-900"
+            className="h-8 w-40 rounded border border-line bg-raised px-2 text-sm text-text"
           />
         )
       default:

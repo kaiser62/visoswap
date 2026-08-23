@@ -15,7 +15,7 @@ export function ConfirmModal({
 }) {
   return (
     <Modal open={open} onClose={onCancel} title="Discard changes">
-      <p className="mb-4 text-sm text-neutral-700">
+      <p className="mb-4 text-sm text-text">
         This discards {count} unsaved change(s). This can't be undone.
       </p>
       <div className="flex justify-end gap-2">
