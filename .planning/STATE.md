@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-current_phase: 05
-current_phase_name: Frontend Schema Rendering
-status: complete
-stopped_at: "Phase 5 complete: all five plans (05-01..05-05) done"
-last_updated: "2026-08-23T21:30:00.000Z"
+current_phase: 05.1
+current_phase_name: Studio Frontend Media Workspace
+status: inserted-ready-to-plan
+stopped_at: "Phase 05.1 context gathered (7 decision areas); next: two-tier benchmark per D-11, then /gsd-plan-phase 5.1"
+last_updated: "2026-08-23T16:58:00.327Z"
 last_activity: 2026-08-23
-last_activity_desc: Phase 05 complete (05-01..05-05); settings API + greenfield frontend rendering 201 schema controls; FRONTEND-01 gates green
-state_head: 6f8ae48
+last_activity_desc: "Inserted Phase 05.1 Studio Frontend Media Workspace (complete media UI; look-and-feel reference = user's D:/Visomaster/webui2); verification remains Phase 6, ordered after it"
+state_head: effa4bf2c786b17e19957f7c43568757a3dba8b3
 progress:
-  total_phases: 6
-  completed_phases: 2
+  total_phases: 7
+  completed_phases: 0
   total_plans: 20
   completed_plans: 20
 milestone_name: milestone
@@ -28,12 +28,12 @@ See: .planning/PROJECT.md (updated 2026-08-21)
 
 ## Current Position
 
-Phase: 05 (Frontend Schema Rendering) — COMPLETE
-Plan: 5 of 5 (05-01, 05-02, 05-03, 05-04, 05-05 done)
-Status: Complete — FRONTEND-01 criteria evidenced (201-control render count, preset apply, save/reload round-trip, clean build)
-Last activity: 2026-08-23 — 05-05 executed and verified (frontend 27 vitest green, build clean; backend 369 tests green)
+Phase: 05.1 (Studio Frontend Media Workspace) — INSERTED, not yet planned
+Plan: none yet — discuss then plan (/gsd-discuss-phase 5.1 → /gsd-plan-phase 5.1)
+Status: Phase 5 closed clean (FRONTEND-01 evidenced); 05.1 added so Phase 6 end-to-end verification runs against the completed UI
+Last activity: 2026-08-23 — user redirected next work to completing the frontend; reference locked to D:/Visomaster/webui2 (VisoMaster Studio layout)
 
-Progress: [██████████] 100% (20/20 planned items summarized; Phase 6 is next)
+Progress: [█████████░] 20/20 planned items summarized across phases 1–5; Phase 05.1 added (unplanned); Phase 6 verification follows it
 
 ## Performance Metrics
 
@@ -47,7 +47,11 @@ Progress: [██████████] 100% (20/20 planned items summarized;
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01–03 | 11 | historical data incomplete | historical data incomplete |
+| 01 | 4 | - | - |
+| 02 | 4 | - | - |
+| 03 | 3 | - | - |
+| 04 | 4 | - | - |
+| 05 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -113,6 +117,10 @@ None yet.
 - [Phase 4] visomaster_live's test_recorder.py::test_a_cancelled_run_leaves_a_playable_partial hangs indefinitely. Pre-existing on that repo's master and currently deselected there. Phase 4 is scheduled to fix it rather than carry the deselect forward. Carried over from the 01-03 pause handoff, which is now deleted.
 - [Phase 1] The 01-03 pause handoff warned that plan line numbers 'run one low'. That held for plan 01-02's file lengths but NOT for plan 01-03's edit sites, which matched upstream exactly. Plan 01-04 should assert its line numbers against frame_worker.py rather than pre-emptively offsetting them.
 
+### Roadmap Evolution
+
+- Phase 5.1 inserted after Phase 5: Studio Frontend Media Workspace — complete media UI (video load, source face, playback preview, export) per user's webui2 reference
+
 ## Deferred Items
 
 Items acknowledged and carried forward from previous milestone close:
@@ -123,6 +131,15 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-23T21:30:00Z
-Stopped at: Phase 5 complete (05-01..05-05); all 20 milestone plans done; Phase 6 next
-Resume file: .planning/phases/05-frontend-schema-rendering/05-05-SUMMARY.md
+Last session: 2026-08-23T16:58:00.299Z
+Stopped at: Phase 05.1 context gathered (7 decision areas); next: two-tier benchmark per D-11, then /gsd-plan-phase 5.1
+Resume file: .planning/phases/05.1-studio-frontend-media-workspace/05.1-CONTEXT.md
+
+## Rebuild Log
+
+- timestamp: 2026-08-23T16:05:51.565Z
+  kind: by-phase-table-reconciled
+  section: ## Performance Metrics
+  before: | Phase | Plans | Total | Avg/Plan | \n |-------|-------|-------|----------| \n | 01–03 | 11 | historical data incomplete | historical data incomplete |
+  after: | Phase | Plans | Total | Avg/Plan | \n |-------|-------|-------|----------| \n | 01 | 4 | - | - | \n | 02 | 4 | - | - | \n | 03 | 3 | - | - | \n | 04 | 4 | - | - | \n | 05 | 5 | - | - |
+  reason: phase dirs on disk are canonical; rows for missing phases dropped, missing phases added
