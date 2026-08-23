@@ -255,6 +255,23 @@ class Recorder:
         except Exception:
             pass
 
+    async def _drain_decoder_stdout(self) -> None:
+        """Read the decoder's stdout to EOF so its transport disconnects.
+
+        Raw bgr24 frames can easily outrun a 64 KiB `StreamReader` high-water
+        mark, which makes flow control pause the transport. A paused pipe never
+        reports EOF, and a `Process.wait()` on a process whose output pipe is
+        paused never returns -- even once the child is dead and its returncode
+        is set. Reading the stream lets the reader's own
+        ``_maybe_resume_transport`` un-pause it and observe end-of-stream, which
+        is what wakes the pending exit waiter.
+        """
+        assert self._decoder and self._decoder.stdout
+        # Discard into nothing; the bytes are the output of a process we are
+        # killing and are wanted only for the EOF they bring about.
+        while await self._decoder.stdout.read(65536):
+            pass
+
     def set_frontier(self, ts: float) -> None:
         """Highest video timestamp whose generation has settled."""
         if ts > self._frontier:
@@ -280,7 +297,37 @@ class Recorder:
 
         if self._decoder and self._decoder.returncode is None:
             self._decoder.kill()
-            await self._decoder.wait()
+
+        # Drain the decoder's stdout to end of stream before awaiting it. The
+        # bytes are discarded on purpose: reading them is the only way the
+        # stdout transport observes EOF, and without that observation
+        # `Process.wait()` never returns even though the process is already
+        # dead. asyncio's exit waiter is woken only from `_call_connection_lost`,
+        # which `_try_finish` reaches only once every pipe has disconnected; a
+        # paused pipe (flow control suspended because we stopped reading) has no
+        # read outstanding, so EOF is never seen. Doing this inside the
+        # `returncode is None` guard would leak an undrained pipe for a decoder
+        # that exited on its own, so it lives outside the guard.
+        if self._decoder is not None and self._decoder.stdout is not None:
+            try:
+                await asyncio.wait_for(
+                    self._drain_decoder_stdout(), timeout=READ_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                # A decoder that ignores the kill and keeps producing is bound,
+                # not followed; its wait below will return once the bound trips.
+                pass
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+        if self._decoder is not None:
+            try:
+                await asyncio.wait_for(self._decoder.wait(), timeout=READ_TIMEOUT)
+            except asyncio.TimeoutError:
+                log.warning(
+                    "[RECORDER] project=%s decoder did not exit within %.0fs",
+                    self.project_id, READ_TIMEOUT,
+                )
 
         if self._encoder:
             # Closing stdin is what makes ffmpeg flush its final fragment and
