@@ -108,6 +108,13 @@ PROJECT_AUTHORED = frozenset(
         # every rule it applies is read out of the generated schema at run time,
         # and a test pins that no settings key name appears in it as a literal.
         "settings/validate.py",
+        # Written for this project (plan 04-03). It is the sole reader of the
+        # vendored ``models_data.py`` lists and derives the required/optional
+        # partition from a stated fetchable-and-consumable rule; it copies no
+        # upstream expression, only reads the shape of upstream's data (a list of
+        # names, paths and hashes), which is a measured fact rather than
+        # copyrightable text.
+        "models/manifest.py",
     }
 )
 
