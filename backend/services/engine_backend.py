@@ -97,7 +97,17 @@ class EngineFrameGenerator(FrameGenerator):
         source = self._project.get("source_face_path")
         if not source:
             raise ValueError("project has no source_face_path")
-        frame = self._get_engine().swap(frame_number, str(source))
+        # The worker's helper is the one place the downscale rule lives: an
+        # explicit width wins, otherwise a scale below one applied to the
+        # media's width, otherwise nothing. It never ran for this backend
+        # because it sits on the source-frame extraction branch this generator
+        # skips (`decodes_own_source`), which is what left the knob inert.
+        from backend.workers.generation_worker import _processing_width
+
+        target_width = _processing_width(self._project)
+        frame = self._get_engine().swap(
+            frame_number, str(source), target_width=target_width
+        )
         ok, encoded = cv2.imencode(Path(filename).suffix or ".jpeg", frame)
         if not ok:
             raise RuntimeError(f"could not encode {filename}")

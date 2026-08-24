@@ -124,6 +124,11 @@ SWAPPED_FRAME_ARTIFACT = "smoke_swapped_frame.png"
 FACE_EDIT_FRAME_ARTIFACT = "liveportrait_frame.png"
 VIDEO_ARTIFACT = "smoke_swapped.mp4"
 
+#: How many timed swaps the scale mode runs per rung, keeping the best. One
+#: sample of a GPU pipeline measures whatever else the card was doing; three
+#: costs under a second in total at these frame sizes.
+SCALE_REPEATS = 3
+
 #: The smoke run's settings, applied over the fixture.
 #:
 #: Every key here must already exist in the fixture -- an override introducing a
@@ -1124,6 +1129,209 @@ def mode_source_cache():
     )
 
 
+def mode_scale():
+    """Measure the resolution knob: cost per rung, and the size contract.
+
+    Phase 05.1 plan 08 (D-15b): ``Engine.swap`` accepts a target width, runs
+    the pipeline at that width and returns a frame at the media's native
+    dimensions. Five probes, reported as ``key=value`` tokens on one line:
+
+    * ``native``               the media's dimensions, taken from an untimed
+                               warm-up swap that also warms the embedding memo;
+    * ``*_shape``/``*_seconds`` the returned dimensions and the wall cost of the
+                               timed swaps at full, three-quarter and half width;
+    * ``oversize_upscaled``    whether a target at or above the native width
+                               changed the frame -- it must not;
+    * ``odd_processed_width``  the width an odd target actually reaches the
+                               pipeline as.
+
+    The last two drive ``_processing_frame`` directly rather than through a
+    swap: they are questions about the resize rule, and answering them with two
+    more full model passes would triple the run for nothing.
+
+    Timings, shapes and counts only -- no pixel data and no embedding values
+    (T-02-10).
+    """
+    import time
+
+    mode = "scale"
+
+    preloaded = leaked_roots()
+    if preloaded:
+        return report(
+            EXIT_SEAL_BREACHED,
+            "SEAL_BREACHED",
+            mode,
+            "sealed roots already in sys.modules before the seal armed: "
+            + ", ".join(preloaded),
+        )
+
+    fixture_path = resolve_settings_fixture()
+    settings = load_settings(fixture_path)
+    if settings is None:
+        return report(
+            EXIT_ASSET_MISSING,
+            "ASSET_MISSING",
+            mode,
+            "settings fixture not found at {} -- regenerate with "
+            "tools/dump_engine_settings.py".format(fixture_path),
+        )
+
+    video_path = resolve_media(VIDEO_ENV_VAR, DEFAULT_TEST_VIDEO)
+    source_path = resolve_media(SOURCE_ENV_VAR, DEFAULT_TEST_SOURCE)
+    for label, path, env_var in (
+        ("target video", video_path, VIDEO_ENV_VAR),
+        ("source face", source_path, SOURCE_ENV_VAR),
+    ):
+        if not os.path.isfile(path):
+            return report(
+                EXIT_ASSET_MISSING,
+                "ASSET_MISSING",
+                mode,
+                "{} not found at {} -- point {} at one, or see "
+                "docs/engine-test-assets.md".format(label, path, env_var),
+            )
+
+    models_dir = str(resolve_models_dir())
+    if not os.path.isdir(models_dir):
+        return report(
+            EXIT_ASSET_MISSING,
+            "ASSET_MISSING",
+            mode,
+            "model_assets not reachable at {} -- run tools/link_model_assets.py. "
+            "Without it ModelsProcessor constructs a silently degraded "
+            "processor rather than raising.".format(models_dir),
+        )
+
+    arm_seal()
+
+    started = time.monotonic()
+
+    try:
+        from visoswap.engine import Engine, _processing_frame
+    except SealBroken as exc:
+        return report(EXIT_SEAL_BREACHED, "SEAL_BREACHED", mode, exc)
+    except ModuleNotFoundError as exc:
+        if root_of(getattr(exc, "name", None)) in ALL_SEALED_ROOTS:
+            return report(EXIT_SEAL_BREACHED, "SEAL_BREACHED", mode, exc)
+        return report(EXIT_DEPS_MISSING, "DEPS_MISSING", mode, exc)
+    except BaseException as exc:  # noqa: BLE001 - the runner reports, never raises
+        return report(
+            EXIT_ENGINE_ERROR,
+            "ENGINE_ERROR",
+            mode,
+            "importing visoswap.engine raised {}: {}".format(type(exc).__name__, exc),
+        )
+
+    try:
+        control = apply_overrides(
+            dict(settings.get("global", {})), SMOKE_GLOBAL_OVERRIDES, "global"
+        )
+        parameters = apply_overrides(
+            dict(settings.get("project", {})), SMOKE_PROJECT_OVERRIDES, "project"
+        )
+        engine = Engine(
+            device="cuda", global_settings=control, project_settings=parameters
+        )
+        engine.load(video_path)
+        frame_number = 0
+        cards = engine.detect_faces(frame_number)
+        if not cards:
+            raise RuntimeError(
+                "no target faces detected in {} -- the scale rungs would be "
+                "measured over a no-op swap".format(video_path)
+            )
+
+        # Warm-up: the first swap pays the model load and the source-embedding
+        # computation. Every timed rung below runs against a warm memo, so the
+        # comparison isolates the resize rather than a first-call cost.
+        warm = engine.swap(frame_number, source_path)
+        native_height, native_width = warm.shape[:2]
+
+        timings = {}
+        shapes = {}
+        for rung, target in (
+            ("full", None),
+            ("three_quarter", native_width * 3 // 4 // 2 * 2),
+            ("half", native_width // 2 // 2 * 2),
+        ):
+            # ``perf_counter``, not ``monotonic``: this platform's monotonic
+            # clock ticks every ~15.6 ms and a swap costs a few tens of
+            # milliseconds, so monotonic quantises three different rungs onto
+            # one number. Each rung is the best of ``SCALE_REPEATS`` runs,
+            # because a single sample of a GPU pipeline measures whatever else
+            # the card was doing.
+            best = None
+            for _ in range(SCALE_REPEATS):
+                rung_started = time.perf_counter()
+                result = engine.swap(frame_number, source_path, target_width=target)
+                elapsed = time.perf_counter() - rung_started
+                best = elapsed if best is None else min(best, elapsed)
+            timings[rung] = best
+            shapes[rung] = "{}x{}".format(result.shape[1], result.shape[0])
+
+        # The resize rule itself, asked directly: a target at or above the
+        # native width must hand the frame straight back, and an odd target
+        # must reach the pipeline even.
+        oversize = _processing_frame(warm, native_width)
+        oversize_upscaled = "no" if oversize is warm else "yes"
+        odd_target = native_width // 3 | 1
+        odd_processed_width = _processing_frame(warm, odd_target).shape[1]
+
+        provider = engine.context.models_processor.provider_name
+        engine._release()  # noqa: SLF001 - the decoder holds an OS handle
+    except SealBroken as exc:
+        return report(EXIT_SEAL_BREACHED, "SEAL_BREACHED", mode, exc)
+    except FileNotFoundError as exc:
+        return report(EXIT_ASSET_MISSING, "ASSET_MISSING", mode, exc)
+    except BaseException as exc:  # noqa: BLE001 - the runner reports, never raises
+        import traceback
+
+        return report(
+            EXIT_ENGINE_ERROR,
+            "ENGINE_ERROR",
+            mode,
+            "{}: {} | {}".format(
+                type(exc).__name__, exc, traceback.format_exc().replace("\n", " ~ ")
+            ),
+        )
+
+    leaked = leaked_roots()
+    if leaked:
+        return report(
+            EXIT_SEAL_BREACHED,
+            "SEAL_BREACHED",
+            mode,
+            "sealed roots in sys.modules after probing: " + ", ".join(leaked),
+        )
+
+    return report(
+        EXIT_CLEAN,
+        "CLEAN",
+        mode,
+        "native={native_width}x{native_height} "
+        "full_shape={full_shape} full_seconds={full_seconds:.3f} "
+        "three_quarter_shape={tq_shape} three_quarter_seconds={tq_seconds:.3f} "
+        "half_shape={half_shape} half_seconds={half_seconds:.3f} "
+        "oversize_upscaled={oversize_upscaled} "
+        "odd_processed_width={odd_processed_width} "
+        "provider={provider} elapsed={elapsed:.1f}s".format(
+            native_width=native_width,
+            native_height=native_height,
+            full_shape=shapes["full"],
+            full_seconds=timings["full"],
+            tq_shape=shapes["three_quarter"],
+            tq_seconds=timings["three_quarter"],
+            half_shape=shapes["half"],
+            half_seconds=timings["half"],
+            oversize_upscaled=oversize_upscaled,
+            odd_processed_width=odd_processed_width,
+            provider=provider,
+            elapsed=time.monotonic() - started,
+        ),
+    )
+
+
 def swap_only_baseline_path():
     return os.path.join(ARTIFACTS_DIR, SWAPPED_FRAME_ARTIFACT)
 
@@ -1496,7 +1704,7 @@ def mode_no_visomaster():
 USAGE = (
     "usage: _engine_runner.py "
     "(--selftest | --import DOTTED_NAME | --smoke | --faceedit | --video "
-    "| --source-cache | --no-visomaster)"
+    "| --source-cache | --scale | --no-visomaster)"
 )
 
 
@@ -1511,6 +1719,8 @@ def main(argv):
         return mode_video()
     if argv == ["--source-cache"]:
         return mode_source_cache()
+    if argv == ["--scale"]:
+        return mode_scale()
     if argv == ["--no-visomaster"]:
         return mode_no_visomaster()
     if len(argv) == 2 and argv[0] == "--import":

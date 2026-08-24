@@ -221,6 +221,29 @@ def _apply_overrides(
     return merged
 
 
+def _processing_frame(frame: np.ndarray, target_width: Optional[int]) -> np.ndarray:
+    """``frame`` resized down to ``target_width``, or ``frame`` itself.
+
+    Module level and private: ``tests/test_engine_surface.py`` counts every
+    non-underscore name a *class body* binds, and the resize is not something a
+    caller reaches for anyway -- it is what ``swap`` does at the frame boundary.
+
+    Never upscales. A target at or above the native width returns the identical
+    object, mirroring ``backend.workers.generation_worker._processing_width``'s
+    rule so the two paths cannot disagree about what one project row means.
+    Both dimensions are forced even: odd dimensions break the encoders the
+    recorder feeds.
+    """
+    if not target_width:
+        return frame
+    native_height, native_width = frame.shape[:2]
+    width = int(target_width) // 2 * 2
+    if width <= 0 or width >= native_width:
+        return frame
+    height = max(2, int(round(native_height * width / native_width)) // 2 * 2)
+    return cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
+
+
 class Engine:
     """A loaded video, the faces in it, and the swapper that rewrites them.
 
@@ -383,6 +406,7 @@ class Engine:
         frame_number: int,
         source_path: str,
         settings: Optional[Mapping[str, Any]] = None,
+        target_width: Optional[int] = None,
     ) -> np.ndarray:
         """Swap the source face onto every detected face of one frame.
 
@@ -392,6 +416,14 @@ class Engine:
 
         ``settings`` is applied over the project tier for every card and every
         key must already exist there.
+
+        ``target_width`` runs the whole pipeline -- detection, landmarks,
+        paste-back and the colour stages -- on a frame downscaled to that width,
+        then resizes the result back to the media's native dimensions before
+        returning (D-15b). A caller therefore buys time without changing the
+        size of the frame the recorder and the overlay receive; a target at or
+        above the native width is ignored rather than upscaled. It is a keyword
+        with a default, so the published three-method surface is unchanged.
 
         The frame is driven through ``FrameWorker.process_frame()`` directly
         rather than through ``run()``. Plan 01-04 deleted the display path out of
@@ -412,6 +444,11 @@ class Engine:
             self.context.parameters[face_id] = dict(parameters)
 
         frame_bgr = self._read_frame(frame_number)
+        native_height, native_width = frame_bgr.shape[:2]
+        # The resize happens at the frame boundary and nowhere else: down here,
+        # back up on the way out. Everything in between is the pipeline running
+        # on fewer pixels.
+        frame_bgr = _processing_frame(frame_bgr, target_width)
         # FrameWorker consumes RGB and returns BGR -- see the flip at the top of
         # process_frame and the one on its return. Upstream's headless entry
         # point does this same flip on the way in.
@@ -421,7 +458,14 @@ class Engine:
         )
         worker.parameters = self.context.parameters.copy()
         worker.target_faces = self.context.target_faces
-        return np.ascontiguousarray(worker.process_frame())
+        swapped = worker.process_frame()
+        if swapped.shape[1] != native_width or swapped.shape[0] != native_height:
+            swapped = cv2.resize(
+                swapped,
+                (native_width, native_height),
+                interpolation=cv2.INTER_LANCZOS4,
+            )
+        return np.ascontiguousarray(swapped)
 
     # -- internals --------------------------------------------------------
 
