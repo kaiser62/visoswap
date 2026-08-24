@@ -5,9 +5,15 @@
  */
 
 import type {
+  FrameAtResponse,
+  FramesIndexResponse,
+  GenerationStatusResponse,
+  PlaybackReportRequest,
+  PlaybackReportResponse,
   Preset,
   PresetApplyResponse,
   Project,
+  SchedulerStartRequest,
   SchemaDocument,
   SettingsResponse,
   Values,
@@ -79,5 +85,70 @@ export function applyPreset(
   return request<PresetApplyResponse>(
     `/api/projects/${projectId}/presets/${presetId}`,
     { method: 'POST' },
+  )
+}
+
+// --- Media endpoints (plan 05.1-05) -----------------------------------------
+
+/** The frame index: metadata only, never image payloads (playback.list_frames). */
+export function listFrames(projectId: string): Promise<FramesIndexResponse> {
+  return request<FramesIndexResponse>(`/api/projects/${projectId}/frames`)
+}
+
+/**
+ * Resolve which generated frame belongs at playback time `t`. Present for
+ * completeness; the overlay deliberately uses the local index instead of this
+ * endpoint — one HTTP request per displayed frame would stall the video.
+ */
+export function getFrameAt(projectId: string, t: number): Promise<FrameAtResponse> {
+  return request<FrameAtResponse>(
+    `/api/projects/${projectId}/frame-at?t=${encodeURIComponent(String(t))}`,
+  )
+}
+
+/** Start the scheduler. Fails fast server-side on unusable configuration. */
+export function startScheduler(
+  projectId: string,
+  body: SchedulerStartRequest,
+): Promise<GenerationStatusResponse> {
+  return request<GenerationStatusResponse>(
+    `/api/projects/${projectId}/scheduler/start`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  )
+}
+
+/** Stop the scheduler; returns the resulting status. */
+export function stopScheduler(projectId: string): Promise<GenerationStatusResponse> {
+  return request<GenerationStatusResponse>(
+    `/api/projects/${projectId}/scheduler/stop`,
+    { method: 'POST' },
+  )
+}
+
+/**
+ * Report the playhead position so the scheduler can move its generation
+ * window. Advisory — the backend documents that the video never waits for it.
+ */
+export function reportPlayback(
+  projectId: string,
+  body: PlaybackReportRequest,
+): Promise<PlaybackReportResponse> {
+  return request<PlaybackReportResponse>(`/api/projects/${projectId}/playback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+/** Read the scheduler/generation status payload (generation._status). */
+export function getGenerationStatus(
+  projectId: string,
+): Promise<GenerationStatusResponse> {
+  return request<GenerationStatusResponse>(
+    `/api/projects/${projectId}/generation/status`,
   )
 }

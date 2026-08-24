@@ -48,7 +48,9 @@ describe('frameAtOrBefore', () => {
     expect(frameAtOrBefore(index, 2.5)?.timestamp).toBe(2)
     // Boundary is inclusive: exactly on a frame means that frame.
     expect(frameAtOrBefore(index, 3)?.timestamp).toBe(3)
-    expect(frameAtOrBefore(index, 0.999)?.timestamp).toBe(1)
+    expect(frameAtOrBefore(index, 1)?.timestamp).toBe(1)
+    // Strictly before every entry -> nothing behind the playhead yet.
+    expect(frameAtOrBefore(index, 0.999)).toBeNull()
   })
 
   it('returns null when every entry is in the future, and null on an empty index', () => {
@@ -58,9 +60,10 @@ describe('frameAtOrBefore', () => {
   })
 
   it('is a binary search: correct on ten thousand entries, not a scan with a wrong branch', () => {
-    const index = Array.from({ length: 10_000 }, (_, i) =>
-      entry(i, `u${i}`),
-    )
+    const index = Array.from({ length: 10_000 }, (_, i) => ({
+      timestamp: i,
+      url: `u${i}`,
+    }))
     expect(frameAtOrBefore(index, 5000.5)?.timestamp).toBe(5000)
     expect(frameAtOrBefore(index, 0)?.timestamp).toBe(0)
     expect(frameAtOrBefore(index, 9999.99)?.timestamp).toBe(9999)
