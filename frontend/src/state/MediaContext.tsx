@@ -245,6 +245,8 @@ interface MediaContextValue extends MediaState {
   selectMode: (mode: MediaMode) => void
   selectFace: (faceId: string) => Promise<void>
   updateInterval: (seconds: number) => Promise<void>
+  /** Persist the fraction of native width the engine processes (D-15b). */
+  updateScale: (scale: number) => Promise<void>
   /** Refetch the project payload and adopt it — the one refresh path every
    *  media mutation shares, so player, card and library read one truth. */
   refreshProject: () => Promise<void>
@@ -487,6 +489,26 @@ export function MediaProvider({
     [projectId],
   )
 
+  /** The processing scale persists the same way the interval does: the row is
+   *  what the generator reads, so a value that never reached the row would be
+   *  a knob that changes nothing. Above 1.0 is refused — upscaling is not a
+   *  quality setting, it is wasted work (see docs/benchmark-baseline.md). */
+  const updateScale = useCallback(
+    async (scale: number) => {
+      if (!projectId || !Number.isFinite(scale) || scale <= 0 || scale > 1) return
+      try {
+        const project = await updateProject(projectId, { processing_scale: scale })
+        dispatch({ type: 'PROJECT_LOADED', project })
+      } catch (err) {
+        dispatch({
+          type: 'MEDIA_ERROR',
+          message: `Saving the processing scale failed: ${describeError(err)}`,
+        })
+      }
+    },
+    [projectId],
+  )
+
   /** Activate a library face for the open project, then adopt the refreshed
    *  payload so the strip's active mark follows the row's truth (D-03). */
   const selectFace = useCallback(
@@ -558,6 +580,7 @@ export function MediaProvider({
       selectMode,
       selectFace,
       updateInterval,
+      updateScale,
       refreshProject,
       reportPlayhead,
       getPlayhead,
@@ -578,6 +601,7 @@ export function MediaProvider({
       selectMode,
       selectFace,
       updateInterval,
+      updateScale,
       refreshProject,
       reportPlayhead,
       getPlayhead,

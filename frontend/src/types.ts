@@ -57,6 +57,8 @@ export interface Project {
   interval?: number | null
   generation_mode?: 'stream' | 'interval' | null
   full_video_mode?: boolean | null
+  /** Fraction of native width the engine actually processes (1.0 = native). */
+  processing_scale?: number | null
 }
 
 export interface Preset {

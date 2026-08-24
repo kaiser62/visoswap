@@ -164,3 +164,48 @@ recorded run:
    `processing_scale`/`processing_width` downsizing (plumbed scheduler-side, unmeasured
    here), TensorRT behind an absolute cache path (the T-02-09 refusal made safe),
    and honest cadence (interval modes + nearest-previous) instead of promising parity.
+
+## Rung b — processing scale (Phase 05.1 plan 08)
+
+**Date:** 2026-08-24 · **Provider:** CUDA · **Clip:** the committed 1080p test clip
+(1920×1080, 23.976 fps, 2 faces) · **Window:** 20 timed swaps per rung, GPU idle
+(the mode refuses to run without the acknowledgement).
+
+```
+.venv-clean/Scripts/python.exe tools/benchmark_engine.py --scale --idle-gpu
+```
+
+Full width is measured twice, first and last-but-two, so the run-to-run spread bounds
+what any difference between rungs is allowed to mean.
+
+| Rung | processing width | mean ms | p50 ms | fps from mean | ratio to full |
+|------|------------------|---------|--------|---------------|---------------|
+| full | 1920 | 56.07 | 54.64 | 17.84 | 1.000 |
+| full (repeat) | 1920 | 55.32 | 54.59 | 18.08 | 0.987 |
+| three-quarter | 1440 | 54.00 | 51.71 | 18.52 | 0.976 |
+| half | 960 | 47.59 | 45.65 | 21.01 | 0.860 |
+
+Two-run spread on full: **1.36%** (limit 25%) · verdict **measured**.
+
+### Verdict
+
+**The scale knob is a real but weak lever, and only at half width.** Halving the
+processing width costs 86% of the full-width time — a **14% saving**, 56.1 ms down to
+47.6 ms, 17.8 up to 21.0 swap fps. Three-quarter width lands at 97.6% of full, which
+is inside the run-to-run spread of the full-width rung measured twice in the same
+process; it is **not** a lever and must not be sold as one.
+
+The shape is not surprising once the pipeline is read: detection and the swap model
+run at their own fixed input sizes, so shrinking the frame only cheapens decode,
+resize, and the paste-back — the fixed cost dominates. That is why quartering the
+pixel count buys 14% rather than anything near 4×.
+
+This gets the D-14 treatment the thread slider got: the control ships, honestly
+labelled with the measured number, and no badge implies a speedup that was not
+measured. It does not change the D-06 verdict — 21 fps at 1080p is still short of
+23.976 playback, so the overlay still never waits on generation.
+
+The label carried by the UI control, quoted from this section:
+
+> Half width measured 14% faster on this machine (17.8 to 21.0 swap fps at 1080p).
+> Three-quarter width was within noise of full. Quality drops with width.

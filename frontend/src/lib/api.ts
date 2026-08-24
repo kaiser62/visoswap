@@ -232,6 +232,7 @@ export function updateProject(
     interval?: number | null
     generation_mode?: 'stream' | 'interval' | null
     full_video_mode?: boolean | null
+    processing_scale?: number | null
   },
 ): Promise<Project> {
   return request<Project>(`/api/projects/${projectId}`, {
