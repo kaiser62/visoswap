@@ -22,6 +22,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { reportPlayback } from '../lib/api'
 import { frameAtOrBefore } from '../lib/frameindex'
 import { useMedia } from '../state/MediaContext'
+import { ModeSelector } from './ModeSelector'
+import { PreviewControls } from './PreviewControls'
 import { StudioCard } from './StudioLayout'
 import { Transport } from './Transport'
 
@@ -29,7 +31,23 @@ import { Transport } from './Transport'
 export const PLAYBACK_THROTTLE_MS = 500
 
 export function PlayerCard() {
-  const { projectId, project, index, range, setStartMark, setEndMark, clearRange } = useMedia()
+  const {
+    projectId,
+    project,
+    index,
+    range,
+    error: mediaError,
+    running,
+    previewUrl,
+    startRun,
+    stopRun,
+    setStartMark,
+    setEndMark,
+    clearRange,
+    reportPlayhead,
+    setVideoPaused,
+    clearPreview,
+  } = useMedia()
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
   const [markMessage, setMarkMessage] = useState<string | null>(null)
@@ -59,6 +77,7 @@ export function PlayerCard() {
 
     const onTimeUpdate = () => {
       const t = video.currentTime
+      reportPlayhead(t)
       const entry = frameAtOrBefore(indexRef.current, t)
       setOverlayUrl(entry?.url ?? null)
       const now = Date.now()
@@ -69,24 +88,40 @@ export function PlayerCard() {
     }
     const onSeeked = () => {
       lastReportRef.current = Date.now()
+      reportPlayhead(video.currentTime)
       report(video.currentTime, true)
     }
+    const onPlay = () => {
+      setVideoPaused(false)
+      // Playback invalidates a held preview: the live index lookup below owns
+      // the overlay again from here on.
+      clearPreview()
+    }
+    const onPause = () => setVideoPaused(true)
 
+    setVideoPaused(video.paused)
     video.addEventListener('timeupdate', onTimeUpdate)
     video.addEventListener('seeked', onSeeked)
+    video.addEventListener('play', onPlay)
+    video.addEventListener('pause', onPause)
     return () => {
       video.removeEventListener('timeupdate', onTimeUpdate)
       video.removeEventListener('seeked', onSeeked)
+      video.removeEventListener('play', onPlay)
+      video.removeEventListener('pause', onPause)
     }
     // Re-run once the video element actually mounts (it only renders after the
     // project payload arrives), otherwise the listeners are never attached.
-  }, [report, project?.video_src])
+  }, [report, project?.video_src, reportPlayhead, setVideoPaused, clearPreview])
 
   // A new run wipes the previous run's frames; an index that no longer holds
   // the displayed url must not keep showing it (T-05.1-05-06). Derived during
   // render, not stored: a stale frame must never survive even one paint.
-  const displayedUrl =
+  // A rendered preview outranks the index while it exists — it is cleared on
+  // play, on start, and by rendering a new one.
+  const indexedUrl =
     overlayUrl !== null && index.some((e) => e.url === overlayUrl) ? overlayUrl : null
+  const displayedUrl = previewUrl ?? indexedUrl
 
   const currentTime = () => videoRef.current?.currentTime ?? 0
 
@@ -110,6 +145,12 @@ export function PlayerCard() {
   const handleClear = () => {
     setMarkMessage(null)
     clearRange()
+  }
+
+  const handleStartRun = () => {
+    setMarkMessage(null)
+    reportPlayhead(currentTime())
+    void startRun()
   }
 
   const seekTo = (t: number) => {
@@ -153,6 +194,38 @@ export function PlayerCard() {
         onSeekSeconds={seekTo}
         onSeekFrame={(f) => seekTo(fps && fps > 0 ? f / fps : f)}
       />
+      <div
+        className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3"
+        data-testid="player-actions"
+      >
+        <ModeSelector />
+        <PreviewControls />
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            data-testid="btn-start-run"
+            onClick={handleStartRun}
+            disabled={running || !projectId}
+            className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-bg hover:bg-accent/90 disabled:pointer-events-none disabled:opacity-50"
+          >
+            Start
+          </button>
+          <button
+            type="button"
+            data-testid="btn-stop-run"
+            onClick={() => void stopRun()}
+            disabled={!running}
+            className="rounded border border-line bg-raised px-3 py-1.5 text-xs font-semibold text-text hover:bg-active disabled:pointer-events-none disabled:opacity-50"
+          >
+            Stop
+          </button>
+        </div>
+      </div>
+      {mediaError !== null && (
+        <p role="alert" className="px-4 pb-3 text-xs text-bad" data-testid="media-error">
+          {mediaError}
+        </p>
+      )}
     </StudioCard>
   )
 }

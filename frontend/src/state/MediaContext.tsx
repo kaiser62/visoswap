@@ -21,14 +21,17 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   type ReactNode,
 } from 'react'
 import {
+  activateFace,
   getGenerationStatus,
   getProject,
   listFrames,
   startScheduler as postSchedulerStart,
   stopScheduler as postSchedulerStop,
+  updateProject,
 } from '../lib/api'
 import { buildIndex, type FrameIndexEntry } from '../lib/frameindex'
 import { openProjectSocket } from '../lib/ws'
@@ -55,6 +58,7 @@ export interface MediaState {
   status: LoadStatus
   projectId: string | null
   project: Project | null
+  sourceFaceId: string | null
   index: FrameIndexEntry[]
   running: boolean
   fullVideoMode: boolean
@@ -66,6 +70,13 @@ export interface MediaState {
   range: RangeMarks
   mode: MediaMode
   error: string | null
+  /** The last rendered preview frame's url (D-09); null when none is shown. */
+  previewUrl: string | null
+  /** Automatic preview toggle — off by default (D-09). */
+  automaticPreview: boolean
+  /** The video element's paused state, reported by the player card. Auto-
+   *  preview gates on this at fire time, not only at subscribe time. */
+  videoPaused: boolean
 }
 
 export type MediaAction =
@@ -85,11 +96,17 @@ export type MediaAction =
   | { type: 'RANGE_CLEARED' }
   | { type: 'MODE_SELECTED'; mode: MediaMode }
   | { type: 'MEDIA_ERROR'; message: string }
+  | { type: 'SOURCE_FACE_SET'; sourceFaceId: string }
+  | { type: 'PREVIEW_SET'; url: string }
+  | { type: 'PREVIEW_CLEAR' }
+  | { type: 'AUTO_PREVIEW_TOGGLE' }
+  | { type: 'VIDEO_PAUSED'; paused: boolean }
 
 export const initialMediaState: MediaState = {
   status: 'loading',
   projectId: null,
   project: null,
+  sourceFaceId: null,
   index: [],
   running: false,
   fullVideoMode: false,
@@ -101,6 +118,9 @@ export const initialMediaState: MediaState = {
   range: { start: null, end: null },
   mode: 'live',
   error: null,
+  previewUrl: null,
+  automaticPreview: false,
+  videoPaused: true,
 }
 
 function normalizeCounts(counts: Partial<GenerationCounts> | undefined): GenerationCounts {
@@ -126,7 +146,7 @@ export function mediaReducer(state: MediaState, action: MediaAction): MediaState
         projectId: action.projectId,
       }
     case 'PROJECT_LOADED':
-      return { ...state, project: action.project }
+      return { ...state, project: action.project, sourceFaceId: action.project.source_face_id ?? null }
     case 'INDEX_LOADED':
       return { ...state, index: action.entries, status: 'ready' }
     case 'INDEX_UPSERTED': {
@@ -166,8 +186,16 @@ export function mediaReducer(state: MediaState, action: MediaAction): MediaState
       return { ...state, mode: action.mode }
     case 'MEDIA_ERROR':
       return { ...state, status: 'error', error: action.message }
-    default:
-      return state
+    case 'SOURCE_FACE_SET':
+      return { ...state, sourceFaceId: action.sourceFaceId }
+    case 'PREVIEW_SET':
+      return { ...state, previewUrl: action.url }
+    case 'PREVIEW_CLEAR':
+      return { ...state, previewUrl: null }
+    case 'AUTO_PREVIEW_TOGGLE':
+      return { ...state, automaticPreview: !state.automaticPreview }
+    case 'VIDEO_PAUSED':
+      return { ...state, videoPaused: action.paused }
   }
 }
 
@@ -179,6 +207,20 @@ interface MediaContextValue extends MediaState {
   setEndMark: (t: number) => void
   clearRange: () => void
   selectMode: (mode: MediaMode) => void
+  selectFace: (faceId: string) => Promise<void>
+  updateInterval: (seconds: number) => Promise<void>
+  /** Refetch the project payload and adopt it — the one refresh path every
+   *  media mutation shares, so player, card and library read one truth. */
+  refreshProject: () => Promise<void>
+  /** Record the playhead so start/preview bodies carry the real position
+   *  without re-rendering on every timeupdate. */
+  reportPlayhead: (t: number) => void
+  /** Read the last reported playhead (0 before the first report). */
+  getPlayhead: () => number
+  setPreviewUrl: (url: string) => void
+  clearPreview: () => void
+  toggleAutoPreview: () => void
+  setVideoPaused: (paused: boolean) => void
 }
 
 const MediaContext = createContext<MediaContextValue | null>(null)
@@ -196,6 +238,11 @@ export function MediaProvider({
   children: ReactNode
 }) {
   const [state, dispatch] = useReducer(mediaReducer, initialMediaState)
+
+  // The playhead lives in a ref: it changes sixty times a second while
+  // playing, and no render should depend on it — only the start/preview body
+  // assembly reads it, at click time.
+  const playheadRef = useRef(0)
 
   // Bootstrap: one pass per project — frame index, generation status, and the
   // project payload (video_src/fps feed the player card).
@@ -290,24 +337,56 @@ export function MediaProvider({
     }
   }, [projectId])
 
+  const refreshProject = useCallback(async () => {
+    if (!projectId) return
+    try {
+      const project = await getProject(projectId)
+      dispatch({ type: 'PROJECT_LOADED', project })
+    } catch (err) {
+      dispatch({
+        type: 'MEDIA_ERROR',
+        message: `Refreshing the project failed: ${describeError(err)}`,
+      })
+    }
+  }, [projectId])
+
   const startRun = useCallback(async () => {
     if (!projectId) return
+    // The mode→flags mapping lives here, in one place (D-07/D-08): streaming
+    // and interval follow the playhead; export covers the marked span, or the
+    // whole video when no marks exist. One mark alone is refused before any
+    // request — a half-marked range is a user mistake, not a run shape.
     let body: SchedulerStartRequest
     if (state.mode === 'export') {
-      if (state.range.end !== null) {
-        const duration = state.range.end - (state.range.start ?? 0)
-        if (duration <= 0) return // inverted ranges are refused at the UI layer
+      const { start, end } = state.range
+      if (start === null && end === null) {
+        body = { full_video: true, current_time: playheadRef.current }
+      } else if (start !== null && end !== null) {
+        const duration = end - start
+        if (duration <= 0) {
+          dispatch({ type: 'MEDIA_ERROR', message: 'End mark must come after the start mark.' })
+          return
+        }
+        // The marks are sent alongside the same explicit flags every start body
+        // carries, so the shape plan 05 pinned holds for every mode.
         body = {
           full_video: false,
-          current_time: 0,
-          range_start: state.range.start ?? 0,
+          current_time: playheadRef.current,
+          range_start: start,
           range_duration: duration,
         }
       } else {
-        body = { full_video: true, current_time: 0 }
+        dispatch({
+          type: 'MEDIA_ERROR',
+          message:
+            start === null
+              ? 'Export needs a start mark — set one from the transport.'
+              : 'Export needs an end mark — set one from the transport.',
+        })
+        return
       }
     } else {
-      body = { full_video: false, current_time: 0 }
+      body = { current_time: playheadRef.current }
     }
     try {
       await postSchedulerStart(projectId, body)
@@ -315,6 +394,7 @@ export function MediaProvider({
       dispatch({ type: 'MEDIA_ERROR', message: `Starting the run failed: ${describeError(err)}` })
       return
     }
+    dispatch({ type: 'PREVIEW_CLEAR' })
     await refreshStatus()
   }, [projectId, state.mode, state.range, refreshStatus])
 
@@ -329,6 +409,62 @@ export function MediaProvider({
     await refreshStatus()
   }, [projectId, refreshStatus])
 
+  /**
+   * Selecting a mode is a UI choice that also persists the row's generation
+   * grid: live maps to `stream`, interval to `interval`. Export changes no
+   * row field — it is a span choice resolved at start time from the marks.
+   */
+  const selectMode = useCallback(
+    (mode: MediaMode) => {
+      dispatch({ type: 'MODE_SELECTED', mode })
+      if (!projectId || mode === 'export') return
+      const generation_mode = mode === 'live' ? 'stream' : 'interval'
+      void updateProject(projectId, { generation_mode })
+        .then((project) => dispatch({ type: 'PROJECT_LOADED', project }))
+        .catch(() => {
+          /* persistence is best-effort; the mode still governs this session */
+        })
+    },
+    [projectId],
+  )
+
+  /** The interval N persists through the project update endpoint because the
+   *  scheduler reads it from the row, never from the start body. */
+  const updateInterval = useCallback(
+    async (seconds: number) => {
+      if (!projectId || !Number.isFinite(seconds) || seconds <= 0) return
+      try {
+        const project = await updateProject(projectId, { interval: seconds })
+        dispatch({ type: 'PROJECT_LOADED', project })
+      } catch (err) {
+        dispatch({
+          type: 'MEDIA_ERROR',
+          message: `Saving the interval failed: ${describeError(err)}`,
+        })
+      }
+    },
+    [projectId],
+  )
+
+  /** Activate a library face for the open project, then adopt the refreshed
+   *  payload so the strip's active mark follows the row's truth (D-03). */
+  const selectFace = useCallback(
+    async (faceId: string) => {
+      if (!projectId) return
+      try {
+        await activateFace(projectId, faceId)
+        dispatch({ type: 'SOURCE_FACE_SET', sourceFaceId: faceId })
+        await refreshProject()
+      } catch (err) {
+        dispatch({
+          type: 'MEDIA_ERROR',
+          message: `Activating the face failed: ${describeError(err)}`,
+        })
+      }
+    },
+    [projectId, refreshProject],
+  )
+
   const setStartMark = useCallback((t: number) => {
     dispatch({ type: 'RANGE_MARK', which: 'start', t })
   }, [])
@@ -341,8 +477,26 @@ export function MediaProvider({
     dispatch({ type: 'RANGE_CLEARED' })
   }, [])
 
-  const selectMode = useCallback((mode: MediaMode) => {
-    dispatch({ type: 'MODE_SELECTED', mode })
+  const reportPlayhead = useCallback((t: number) => {
+    playheadRef.current = t
+  }, [])
+
+  const getPlayhead = useCallback(() => playheadRef.current, [])
+
+  const setPreviewUrl = useCallback((url: string) => {
+    dispatch({ type: 'PREVIEW_SET', url })
+  }, [])
+
+  const clearPreview = useCallback(() => {
+    dispatch({ type: 'PREVIEW_CLEAR' })
+  }, [])
+
+  const toggleAutoPreview = useCallback(() => {
+    dispatch({ type: 'AUTO_PREVIEW_TOGGLE' })
+  }, [])
+
+  const setVideoPaused = useCallback((paused: boolean) => {
+    dispatch({ type: 'VIDEO_PAUSED', paused })
   }, [])
 
   const value = useMemo<MediaContextValue>(
@@ -355,8 +509,35 @@ export function MediaProvider({
       setEndMark,
       clearRange,
       selectMode,
+      selectFace,
+      updateInterval,
+      refreshProject,
+      reportPlayhead,
+      getPlayhead,
+      setPreviewUrl,
+      clearPreview,
+      toggleAutoPreview,
+      setVideoPaused,
     }),
-    [state, startRun, stopRun, refreshStatus, setStartMark, setEndMark, clearRange, selectMode],
+    [
+      state,
+      startRun,
+      stopRun,
+      refreshStatus,
+      setStartMark,
+      setEndMark,
+      clearRange,
+      selectMode,
+      selectFace,
+      updateInterval,
+      refreshProject,
+      reportPlayhead,
+      getPlayhead,
+      setPreviewUrl,
+      clearPreview,
+      toggleAutoPreview,
+      setVideoPaused,
+    ],
   )
 
   return <MediaContext.Provider value={value}>{children}</MediaContext.Provider>

@@ -135,7 +135,9 @@ interface SettingsContextValue extends SettingsState {
   applyPresetValues: (values: Values) => void
 }
 
-const SettingsContext = createContext<SettingsContextValue | null>(null)
+/** Exported for tests that need to inject a settings value identity change
+ *  without booting the whole provider (schema + values fetches). */
+export const SettingsContext = createContext<SettingsContextValue | null>(null)
 
 export function SettingsProvider({
   children,
@@ -259,4 +261,13 @@ export function useSettings(): SettingsContextValue {
   const ctx = useContext(SettingsContext)
   if (!ctx) throw new Error('useSettings must be used within SettingsProvider')
   return ctx
+}
+
+/**
+ * Nullable variant for media components that must render inside a bare
+ * MediaProvider too (unit tests, the player action row). Outside a provider
+ * there are no settings values, so auto-preview simply has one fewer trigger.
+ */
+export function useSettingsOptional(): SettingsContextValue | null {
+  return useContext(SettingsContext)
 }
