@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 05.1
 current_phase_name: Studio Frontend Media Workspace
 status: executing
-stopped_at: "Completed 05.1-05 (live overlay: frame index, informational socket, media container, non-stalling player); next: /gsd-execute-phase 5.1 -> plan 05.1-06"
-last_updated: "2026-08-24T06:55:00.000+06:00"
+stopped_at: "Completed 05.1-06 (media card, face library UI, run modes, debounced auto-preview); next: /gsd-execute-phase 5.1 -> plan 05.1-07"
+last_updated: "2026-08-24T17:35:00.000+06:00"
 last_activity: 2026-08-24
-last_activity_desc: "Plan 05.1-05 complete: React-free frame index with nearest-previous binary search, informational socket with bounded backoff and refetch-on-open, MediaContext reducer owning run/index/socket, PlayerCard positioned-image overlay with throttled advisory position reporting; 66 vitest + 5 playwright green"
-state_head: 1b77bd2c8a4e3a53d25466a3390c9f83b083d071
+last_activity_desc: "Plan 05.1-06 complete: video ingest card with an 8 GB client-side guard and verbatim 413, global face library with a usage-first cascade delete, three run modes with persisted interval, and an auto-preview that re-checks running/paused at fire time; 99 vitest + 5 playwright green"
+state_head: 7d03034
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 28
-  completed_plans: 25
+  completed_plans: 26
 milestone_name: milestone
 ---
 
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-08-21)
 ## Current Position
 
 Phase: 05.1 (Studio Frontend Media Workspace) — EXECUTING
-Plan: 05.1-05 complete (SUMMARY committed); next 05.1-06 — Media card, face library UI, generation modes + auto-preview
-Status: The overlay is live — generated frames swap over the playing video from an in-memory index, and no overlay path can touch the video clock; plans 06-07 build the remaining media UI on MediaContext
-Last activity: 2026-08-24 — plan 05.1-05 shipped: frameindex.ts, ws.ts, MediaContext.tsx, PlayerCard.tsx, Transport.tsx; 66 vitest (incl. the 201-control DOM gate) + 5 playwright against a real backend green
+Plan: 05.1-06 complete (SUMMARY committed); next 05.1-07 — Periphery: jobs/cadence card, results card, gallery toggle
+Status: The media workspace is usable end to end in the UI — load a video, pick a library face, choose a run mode, preview a frame; auto-preview cannot fire behind a playing video or an active run
+Last activity: 2026-08-24 — plan 05.1-06 shipped: MediaCard.tsx, FaceLibrary.tsx, FaceDeleteDialog.tsx, ModeSelector.tsx, PreviewControls.tsx; 99 vitest (incl. the 201-control DOM gate) + 5 playwright against a real backend green
 
-Progress: [█████████░] 25/28 planned items summarized across phases 1–5.1; Phase 05.1 at 5/8 plans; Phase 6 verification follows it
+Progress: [█████████░] 26/28 planned items summarized across phases 1–5.1; Phase 05.1 at 6/8 plans; Phase 6 verification follows it
 
 ## Performance Metrics
 
@@ -52,7 +52,7 @@ Progress: [█████████░] 25/28 planned items summarized across
 | 03 | 3 | - | - |
 | 04 | 4 | - | - |
 | 05 | 5 | - | - |
-| 05.1 | 5 | - | - |
+| 05.1 | 6 | - | - |
 
 **Recent Trend:**
 
@@ -73,6 +73,7 @@ Progress: [█████████░] 25/28 planned items summarized across
 | Phase 5.1 P04 | ~11 min | 3 tasks | 12 files |
 | Phase 5.1 P03 | ~27 min | 3 tasks | 11 files |
 | Phase 5.1 P05 | ~35 min | 3 tasks | 12 files |
+| Phase 5.1 P06 | ~40 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,8 @@ Recent decisions affecting current work:
 - [Phase 5.1]: The overlay is a positioned <img> swapped on timeupdate, never canvas compositing: decoding stays on the browser path, there is no per-frame draw, and no code path can touch the video clock. The displayed url is derived during render from index membership, so a per-start wipe drops a stale frame without surviving one paint.
 - [Phase 5.1]: The socket is informational — every open (including the first) refetches the frame index and replaces it wholesale; reconnect backoff resets on a received frame, not on open, so a flapping socket cannot spin.
 - [Phase 5.1]: MediaContext owns the range marks and the generation mode, not PlayerCard: plans 06 and 07 read them, and lifting them later would mean touching three components.
+- [Phase 5.1]: Auto-preview evaluates its gates (active run, video paused) inside the FIRED closure via a ref, never at arm time — state captured when the debounce started can never authorize a request that is no longer allowed. Off by default; one request per drag at rest.
+- [Phase 5.1]: Component tests stub global fetch and render inside the real providers; context modules are never vi.mock'ed. The two dead-session test files that mocked hooks asserted nothing and were rewritten.
 - [Phase 5.1]: Takes names must survive sanitize_filename unchanged — collision-numbered "(2)" exports list but won't serve/delete over HTTP until renamed (accepted sharp edge). Slash-bearing traversal names are unreachable as {name} on any ASGI stack (%2F decodes before route matching) and are refused by routing itself; backslash/drive-relative shapes die in the validator.
 
 ### Pending Todos
@@ -151,9 +154,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-24T06:55:00+06:00
-Stopped at: Completed 05.1-05-PLAN.md — frame index + socket (cb6a377/ef98e81), media container (9ba4d7d/92670af), player overlay (84e6131/e312682)
-Resume file: .planning/phases/05.1-studio-frontend-media-workspace/05.1-06-PLAN.md
+Last session: 2026-08-24T17:35:00+06:00
+Stopped at: Completed 05.1-06-PLAN.md — video ingest card (cbe7701), face library + cascade delete (86c1ddb), modes + preview controls (7d03034)
+Resume file: .planning/phases/05.1-studio-frontend-media-workspace/05.1-07-PLAN.md
 
 ## Rebuild Log
 

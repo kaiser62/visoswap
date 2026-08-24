@@ -214,7 +214,7 @@ workspace exists. Inserted before Phase 6 so system-level checks cover the compl
 **Requirements**: None (v1 Active) — re-proves "Real-time playback with asynchronous predictive frame
 generation" and "Single-face targeting" from PROJECT.md's Validated section on the new stack.
 **Depends on:** Phase 5
-**Plans:** 5/8 plans executed
+**Plans:** 6/8 plans executed
 
 Plans:
 
@@ -223,7 +223,7 @@ Plans:
 - [x] 05.1-03-PLAN.md — Backend media surface II: single-frame preview endpoint, timestamped take naming, takes gallery API with range streaming (D-09/D-12/D-10)
 - [x] 05.1-04-PLAN.md — Studio shell: dark theme tokens + retheme of all schema controls; one-page card grid with the 201 controls CSS-hidden, never unmounted (D-01/D-02)
 - [x] 05.1-05-PLAN.md — Live overlay: client frame index + binary search, informational WebSocket with refetch-on-open, player with nearest-previous overlay that never stalls the video (D-06/D-08/D-15d)
-- [ ] 05.1-06-PLAN.md — Media card, face library UI, generation modes + auto-preview (D-03/D-04/D-05/D-07/D-08/D-09)
+- [x] 05.1-06-PLAN.md — Media card, face library UI, generation modes + auto-preview (D-03/D-04/D-05/D-07/D-08/D-09)
 - [ ] 05.1-07-PLAN.md — Periphery: jobs/cadence card with honest coverage metric, results card, gallery view as a CSS-hidden toggle (D-10/D-15d/D-01)
 - [ ] 05.1-08-PLAN.md — Perf ladder rung b: make processing_scale/width reach the engine, bench it on an idle card, e2e spec + phase-close human verify (D-15b/D-15c)
 
@@ -270,5 +270,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Settings Schema & Three-Tier Resolution | 3/3 | Complete | 2026-08-22 |
 | 4. Backend Integration & Model Bootstrap | 4/4 | Complete | 2026-08-23 |
 | 5. Frontend Schema Rendering | 5/5 | Complete | 2026-08-23 |
-| 05.1. Studio Frontend Media Workspace | 5/8 | In Progress | - |
+| 05.1. Studio Frontend Media Workspace | 6/8 | In Progress | - |
 | 6. End-to-End Verification | 0/TBD | Not started | - |
