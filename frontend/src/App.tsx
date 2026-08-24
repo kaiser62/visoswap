@@ -1,13 +1,14 @@
 /** Studio shell: one page at `/` (D-01). Header, then a two-column Studio
  * grid whose right column holds the Controls card containing exactly what the
  * settings body rendered before (D-02: mini-sidebar + scrolling schema groups,
- * all controls always mounted). Player and Media are placeholders that plans
- * 05–07 fill.
+ * all controls always mounted). The left column holds the player card (plan
+ * 05); Media stays a placeholder until plans 06–07.
  */
 
 import { useEffect, useMemo, useState } from 'react'
 import { Header } from './components/Header'
 import { GroupSection } from './components/GroupSection'
+import { PlayerCard } from './components/PlayerCard'
 import { Sidebar, buildHierarchy } from './components/Sidebar'
 import { StudioCard, StudioGrid } from './components/StudioLayout'
 import { Button, Card, Skeleton } from './components/ui'
@@ -120,11 +121,7 @@ function StudioBody() {
     <StudioGrid
       left={
         <>
-          <StudioCard title="Player" defaultOpen>
-            <p className="p-4 text-sm text-muted">
-              Load a target video to begin. Playback arrives with plan 05.
-            </p>
-          </StudioCard>
+          <PlayerCard />
           <StudioCard title="Media" defaultOpen>
             <p className="p-4 text-sm text-muted">
               Target video and source faces arrive with plans 06 and 07.
