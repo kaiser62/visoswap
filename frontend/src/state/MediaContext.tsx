@@ -77,6 +77,14 @@ export interface MediaState {
   /** The video element's paused state, reported by the player card. Auto-
    *  preview gates on this at fire time, not only at subscribe time. */
   videoPaused: boolean
+  /** Overlay coverage as the player actually measured it (D-15d): how many
+   *  playhead lookups found a generated frame at or before the playhead, out
+   *  of how many were taken. Two integers only — the ratio is a render-time
+   *  concern, and `lookups === 0` is the honest "not yet measured" state. */
+  coverage: { hits: number; lookups: number }
+  /** Timestamps of the frames the backend says it is generating right now,
+   *  oldest first. Purely informational; playback never waits on it. */
+  inFlight: number[]
 }
 
 export type MediaAction =
@@ -101,6 +109,9 @@ export type MediaAction =
   | { type: 'PREVIEW_CLEAR' }
   | { type: 'AUTO_PREVIEW_TOGGLE' }
   | { type: 'VIDEO_PAUSED'; paused: boolean }
+  | { type: 'COVERAGE_SAMPLE'; hit: boolean }
+  | { type: 'INFLIGHT_STARTED'; timestamp: number }
+  | { type: 'INFLIGHT_SETTLED'; timestamp: number }
 
 export const initialMediaState: MediaState = {
   status: 'loading',
@@ -121,7 +132,11 @@ export const initialMediaState: MediaState = {
   previewUrl: null,
   automaticPreview: false,
   videoPaused: true,
+  coverage: { hits: 0, lookups: 0 },
+  inFlight: [],
 }
+
+const NO_COVERAGE: MediaState['coverage'] = { hits: 0, lookups: 0 }
 
 function normalizeCounts(counts: Partial<GenerationCounts> | undefined): GenerationCounts {
   return {
@@ -162,6 +177,9 @@ export function mediaReducer(state: MediaState, action: MediaAction): MediaState
     case 'STATUS_LOADED':
       return {
         ...state,
+        // A ratio only means something about one run, so a run starting wipes
+        // whatever the previous one measured.
+        coverage: action.status.running && !state.running ? NO_COVERAGE : state.coverage,
         running: action.status.running,
         fullVideoMode: action.status.full_video_mode,
         counts: normalizeCounts(action.status.counts),
@@ -169,7 +187,11 @@ export function mediaReducer(state: MediaState, action: MediaAction): MediaState
         recording: action.status.recording,
       }
     case 'RUNNING_SET':
-      return { ...state, running: action.running }
+      return {
+        ...state,
+        coverage: action.running && !state.running ? NO_COVERAGE : state.coverage,
+        running: action.running,
+      }
     case 'COUNTS_UPDATED':
       return { ...state, counts: normalizeCounts(action.counts) }
     case 'GENERATION_FAILED':
@@ -196,6 +218,20 @@ export function mediaReducer(state: MediaState, action: MediaAction): MediaState
       return { ...state, automaticPreview: !state.automaticPreview }
     case 'VIDEO_PAUSED':
       return { ...state, videoPaused: action.paused }
+    case 'COVERAGE_SAMPLE':
+      return {
+        ...state,
+        coverage: {
+          hits: state.coverage.hits + (action.hit ? 1 : 0),
+          lookups: state.coverage.lookups + 1,
+        },
+      }
+    case 'INFLIGHT_STARTED':
+      return state.inFlight.includes(action.timestamp)
+        ? state
+        : { ...state, inFlight: [...state.inFlight, action.timestamp] }
+    case 'INFLIGHT_SETTLED':
+      return { ...state, inFlight: state.inFlight.filter((t) => t !== action.timestamp) }
   }
 }
 
@@ -221,6 +257,8 @@ interface MediaContextValue extends MediaState {
   clearPreview: () => void
   toggleAutoPreview: () => void
   setVideoPaused: (paused: boolean) => void
+  /** Record one overlay lookup outcome, hit or miss (D-15d). */
+  recordCoverage: (hit: boolean) => void
 }
 
 const MediaContext = createContext<MediaContextValue | null>(null)
@@ -311,15 +349,18 @@ export function MediaProvider({
           })
           break
         case 'generation_started':
+          dispatch({ type: 'INFLIGHT_STARTED', timestamp: event.timestamp })
           break
         case 'generation_completed':
           dispatch({
             type: 'INDEX_UPSERTED',
             entry: { timestamp: event.timestamp, url: event.path },
           })
+          dispatch({ type: 'INFLIGHT_SETTLED', timestamp: event.timestamp })
           break
         case 'generation_failed':
           dispatch({ type: 'GENERATION_FAILED' })
+          dispatch({ type: 'INFLIGHT_SETTLED', timestamp: event.timestamp })
           break
       }
     }
@@ -499,6 +540,12 @@ export function MediaProvider({
     dispatch({ type: 'VIDEO_PAUSED', paused })
   }, [])
 
+  /** Called by the player with the result of the overlay lookup it already
+   *  performed — never a second lookup, never anything the handler must await. */
+  const recordCoverage = useCallback((hit: boolean) => {
+    dispatch({ type: 'COVERAGE_SAMPLE', hit })
+  }, [])
+
   const value = useMemo<MediaContextValue>(
     () => ({
       ...state,
@@ -518,6 +565,7 @@ export function MediaProvider({
       clearPreview,
       toggleAutoPreview,
       setVideoPaused,
+      recordCoverage,
     }),
     [
       state,
@@ -537,6 +585,7 @@ export function MediaProvider({
       clearPreview,
       toggleAutoPreview,
       setVideoPaused,
+      recordCoverage,
     ],
   )
 

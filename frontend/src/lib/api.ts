@@ -171,6 +171,17 @@ export function getGenerationStatus(
   )
 }
 
+/** Requeue every failed frame job. The response carries the resulting status
+ *  plus how many jobs were actually reset — the count the UI reports back. */
+export function retryFailed(
+  projectId: string,
+): Promise<GenerationStatusResponse & { requeued: number }> {
+  return request<GenerationStatusResponse & { requeued: number }>(
+    `/api/projects/${projectId}/generation/retry-failed`,
+    { method: 'POST' },
+  )
+}
+
 // --- Media endpoints (plan 05.1-06) -----------------------------------------
 //
 // Upload helpers send a FormData body and deliberately set NO content-type

@@ -47,6 +47,7 @@ export function PlayerCard() {
     reportPlayhead,
     setVideoPaused,
     clearPreview,
+    recordCoverage,
   } = useMedia()
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
@@ -80,6 +81,10 @@ export function PlayerCard() {
       reportPlayhead(t)
       const entry = frameAtOrBefore(indexRef.current, t)
       setOverlayUrl(entry?.url ?? null)
+      // The coverage figure is measured from this lookup, using the result
+      // already in hand: no second lookup, nothing awaited, nothing that can
+      // make playback wait on generation.
+      recordCoverage(entry !== null)
       const now = Date.now()
       if (now - lastReportRef.current >= PLAYBACK_THROTTLE_MS) {
         lastReportRef.current = now
@@ -112,7 +117,7 @@ export function PlayerCard() {
     }
     // Re-run once the video element actually mounts (it only renders after the
     // project payload arrives), otherwise the listeners are never attached.
-  }, [report, project?.video_src, reportPlayhead, setVideoPaused, clearPreview])
+  }, [report, project?.video_src, reportPlayhead, setVideoPaused, clearPreview, recordCoverage])
 
   // A new run wipes the previous run's frames; an index that no longer holds
   // the displayed url must not keep showing it (T-05.1-05-06). Derived during

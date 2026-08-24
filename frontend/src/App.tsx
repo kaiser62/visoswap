@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Header } from './components/Header'
 import { GroupSection } from './components/GroupSection'
+import { JobsCard } from './components/JobsCard'
 import { MediaCard } from './components/MediaCard'
 import { PlayerCard } from './components/PlayerCard'
 import { Sidebar, buildHierarchy } from './components/Sidebar'
@@ -127,6 +128,7 @@ function StudioBody() {
         </>
       }
       right={
+        <>
         <StudioCard title="Controls" defaultOpen>
           <div className="flex gap-4 p-4">
             <div className="w-56 shrink-0">
@@ -166,6 +168,10 @@ function StudioBody() {
             </div>
           </div>
         </StudioCard>
+        {/* Beneath the controls: what the backend is doing right now, and how
+          well the overlay is actually keeping up. */}
+        <JobsCard />
+        </>
       }
     />
   )
