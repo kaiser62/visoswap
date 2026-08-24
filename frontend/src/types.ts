@@ -232,3 +232,14 @@ export interface RenderPreviewResponse {
   timestamp: number
   url: string
 }
+
+/** One exported take (schemas.TakeOut, backend/api/gallery.py list response).
+ *  `modified` is a POSIX timestamp in seconds; `url` is the server-built read
+ *  path, already percent-encoded. */
+export interface Take {
+  name: string
+  bytes: number
+  modified: number
+  partial: boolean
+  url: string
+}

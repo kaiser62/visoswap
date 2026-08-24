@@ -21,6 +21,7 @@ import type {
   SchedulerStartRequest,
   SchemaDocument,
   SettingsResponse,
+  Take,
   Values,
 } from '../types'
 
@@ -267,6 +268,25 @@ export async function getFaceUsage(faceId: string): Promise<FaceUsageProject[]> 
 export function deleteFace(faceId: string, force = false): Promise<undefined> {
   const path = force ? `/api/faces/${faceId}?force=true` : `/api/faces/${faceId}`
   return request<undefined>(path, { method: 'DELETE' })
+}
+
+// --- Takes / gallery (plan 05.1-07) -----------------------------------------
+
+/** Every exported take, newest-first as the server sorts them (D-12). */
+export function listTakes(): Promise<Take[]> {
+  return request<Take[]>('/api/takes')
+}
+
+/** Remove one take. The name must be one the list response supplied — the
+ *  server re-validates it against its derived-name rule regardless. */
+export function deleteTake(name: string): Promise<undefined> {
+  return request<undefined>(`/api/takes/${encodeURIComponent(name)}`, { method: 'DELETE' })
+}
+
+/** A take's read URL — a builder, not a fetch, so the video element's own
+ *  Range requests reach the endpoint directly. */
+export function takeUrl(name: string): string {
+  return `/api/takes/${encodeURIComponent(name)}`
 }
 
 /** Bind a library face to the open project (D-03); assignment list per D-04. */

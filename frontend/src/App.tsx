@@ -7,6 +7,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Header } from './components/Header'
+import { GalleryView } from './components/GalleryView'
 import { GroupSection } from './components/GroupSection'
 import { JobsCard } from './components/JobsCard'
 import { MediaCard } from './components/MediaCard'
@@ -184,9 +185,42 @@ function StudioBody() {
  * is open, never a second resolution path. */
 function MediaBoundary() {
   const { projectId } = useSettings()
+  const [view, setView] = useState<'studio' | 'gallery'>('studio')
   return (
     <MediaProvider projectId={projectId}>
-      <StudioBody />
+      <div className="flex items-center gap-2 border-b border-line px-4 py-2">
+        <Button
+          variant={view === 'studio' ? 'primary' : 'ghost'}
+          onClick={() => setView('studio')}
+          data-testid="view-studio"
+        >
+          Studio
+        </Button>
+        <Button
+          variant={view === 'gallery' ? 'primary' : 'ghost'}
+          onClick={() => setView('gallery')}
+          data-testid="view-gallery"
+        >
+          Takes
+        </Button>
+      </div>
+      {/* Both views stay mounted and the inactive one is hidden with CSS, the
+        same rule StudioCard applies to a collapsed body — at page scale. The
+        studio holds every gated control, and unmounting it to look at takes
+        would empty the control set the moment the user switched. */}
+      <div
+        hidden={view !== 'studio'}
+        className={view === 'studio' ? 'contents' : ''}
+        data-testid="studio-view"
+      >
+        <StudioBody />
+      </div>
+      <div
+        hidden={view !== 'gallery'}
+        className={view === 'gallery' ? 'min-h-0 flex-1 overflow-y-auto' : ''}
+      >
+        <GalleryView />
+      </div>
     </MediaProvider>
   )
 }
