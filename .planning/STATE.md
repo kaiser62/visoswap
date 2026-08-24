@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 05.1
 current_phase_name: Studio Frontend Media Workspace
 status: executing
-stopped_at: "Completed 05.1-06 (media card, face library UI, run modes, debounced auto-preview); next: /gsd-execute-phase 5.1 -> plan 05.1-07"
-last_updated: "2026-08-24T17:35:00.000+06:00"
+stopped_at: "Completed 05.1-07 (jobs card with measured coverage, results card, takes gallery); next: /gsd-execute-phase 5.1 -> plan 05.1-08"
+last_updated: "2026-08-24T19:10:00.000+06:00"
 last_activity: 2026-08-24
-last_activity_desc: "Plan 05.1-06 complete: video ingest card with an 8 GB client-side guard and verbatim 413, global face library with a usage-first cascade delete, three run modes with persisted interval, and an auto-preview that re-checks running/paused at fire time; 99 vitest + 5 playwright green"
-state_head: 7d03034
+last_activity_desc: "Plan 05.1-07 complete: overlay coverage measured from the player's own lookups with an honest not-yet-measured state, queue and in-flight from socket events, a results card that never calls a partial recording finished, and a takes gallery that hides the studio without unmounting a control; 125 vitest + 5 playwright green"
+state_head: 6f47ed9
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 28
-  completed_plans: 26
+  completed_plans: 27
 milestone_name: milestone
 ---
 
@@ -33,7 +33,7 @@ Plan: 05.1-06 complete (SUMMARY committed); next 05.1-07 — Periphery: jobs/cad
 Status: The media workspace is usable end to end in the UI — load a video, pick a library face, choose a run mode, preview a frame; auto-preview cannot fire behind a playing video or an active run
 Last activity: 2026-08-24 — plan 05.1-06 shipped: MediaCard.tsx, FaceLibrary.tsx, FaceDeleteDialog.tsx, ModeSelector.tsx, PreviewControls.tsx; 99 vitest (incl. the 201-control DOM gate) + 5 playwright against a real backend green
 
-Progress: [█████████░] 26/28 planned items summarized across phases 1–5.1; Phase 05.1 at 6/8 plans; Phase 6 verification follows it
+Progress: [█████████░] 27/28 planned items summarized across phases 1–5.1; Phase 05.1 at 7/8 plans; Phase 6 verification follows it
 
 ## Performance Metrics
 
@@ -52,7 +52,7 @@ Progress: [█████████░] 26/28 planned items summarized across
 | 03 | 3 | - | - |
 | 04 | 4 | - | - |
 | 05 | 5 | - | - |
-| 05.1 | 6 | - | - |
+| 05.1 | 7 | - | - |
 
 **Recent Trend:**
 
@@ -74,6 +74,7 @@ Progress: [█████████░] 26/28 planned items summarized across
 | Phase 5.1 P03 | ~27 min | 3 tasks | 11 files |
 | Phase 5.1 P05 | ~35 min | 3 tasks | 12 files |
 | Phase 5.1 P06 | ~40 min | 3 tasks | 14 files |
+| Phase 5.1 P07 | ~50 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -128,6 +129,9 @@ Recent decisions affecting current work:
 - [Phase 5.1]: Auto-preview evaluates its gates (active run, video paused) inside the FIRED closure via a ref, never at arm time — state captured when the debounce started can never authorize a request that is no longer allowed. Off by default; one request per drag at rest.
 - [Phase 5.1]: Component tests stub global fetch and render inside the real providers; context modules are never vi.mock'ed. The two dead-session test files that mocked hooks asserted nothing and were rewritten.
 - [Phase 5.1]: Takes names must survive sanitize_filename unchanged — collision-numbered "(2)" exports list but won't serve/delete over HTTP until renamed (accepted sharp edge). Slash-bearing traversal names are unreachable as {name} on any ASGI stack (%2F decodes before route matching) and are refused by routing itself; backslash/drive-relative shapes die in the validator.
+- [Phase 5.1]: Overlay coverage is measured, never modelled: PlayerCard samples the lookup it already performed (hit when frameAtOrBefore returned an entry), the context stores hits/lookups as integers, and the percentage is computed at render — so "not yet measured" is a representable state instead of a rendered 0%. The tally resets on any transition into running, in the reducer, so every start path resets identically.
+- [Phase 5.1]: Partial-vs-finished recording labelling follows the backend `complete` flag and never the running flag: a run can stop before the recorder promotes its `.part`. ResultsCard polls the status endpoint directly rather than through the context's refreshStatus, because that thunk swallows failures and staleness must be visible.
+- [Phase 5.1]: The gallery is a page-level view, not a route (D-01): both views stay mounted and the inactive one is hidden with the `hidden` attribute (a class alone loses to `display: contents` on the studio wrapper), so the 201 gated controls survive the toggle.
 
 ### Pending Todos
 
@@ -154,9 +158,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-24T17:35:00+06:00
-Stopped at: Completed 05.1-06-PLAN.md — video ingest card (cbe7701), face library + cascade delete (86c1ddb), modes + preview controls (7d03034)
-Resume file: .planning/phases/05.1-studio-frontend-media-workspace/05.1-07-PLAN.md
+Last session: 2026-08-24T19:10:00+06:00
+Stopped at: Completed 05.1-07-PLAN.md — jobs card + coverage tally (93ba28f), results card (a256984), takes gallery + view toggle (6f47ed9)
+Resume file: .planning/phases/05.1-studio-frontend-media-workspace/05.1-08-PLAN.md
 
 ## Rebuild Log
 
