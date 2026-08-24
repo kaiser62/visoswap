@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 05.1
 current_phase_name: Studio Frontend Media Workspace
 status: executing
-stopped_at: "Completed 05.1-03 (backend media surface II: preview endpoint, take naming, takes API); next: /gsd-execute-phase 5.1 -> plan 05.1-05"
-last_updated: "2026-08-24T00:10:00.000+06:00"
+stopped_at: "Completed 05.1-05 (live overlay: frame index, informational socket, media container, non-stalling player); next: /gsd-execute-phase 5.1 -> plan 05.1-06"
+last_updated: "2026-08-24T06:55:00.000+06:00"
 last_activity: 2026-08-24
-last_activity_desc: "Plan 05.1-03 complete: POST/GET one-shot preview with throwaway generator and cache.preview_dir isolation; Recorder._stem timestamped take naming ported from the predecessor + face kwarg wired from the scheduler; /api/takes listing/Range-streaming/delete behind validate-then-join; playback.range_response extracted"
+last_activity_desc: "Plan 05.1-05 complete: React-free frame index with nearest-previous binary search, informational socket with bounded backoff and refetch-on-open, MediaContext reducer owning run/index/socket, PlayerCard positioned-image overlay with throttled advisory position reporting; 66 vitest + 5 playwright green"
 state_head: 1b77bd2c8a4e3a53d25466a3390c9f83b083d071
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 28
-  completed_plans: 24
+  completed_plans: 25
 milestone_name: milestone
 ---
 
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-08-21)
 ## Current Position
 
 Phase: 05.1 (Studio Frontend Media Workspace) — EXECUTING
-Plan: 05.1-03 complete (SUMMARY committed); next 05.1-05 — Live overlay: client frame index + informational WebSocket, player with nearest-previous overlay that never stalls the video
-Status: Backend media surface complete — preview without a run, timestamped accumulating takes, takes gallery API with Range streaming; plans 05-07 build the UI on it
-Last activity: 2026-08-24 — plan 05.1-03 shipped: preview router + cache.preview_dir, Recorder._stem/face port, /api/takes router, range_response extraction, 41+27+22 tests green
+Plan: 05.1-05 complete (SUMMARY committed); next 05.1-06 — Media card, face library UI, generation modes + auto-preview
+Status: The overlay is live — generated frames swap over the playing video from an in-memory index, and no overlay path can touch the video clock; plans 06-07 build the remaining media UI on MediaContext
+Last activity: 2026-08-24 — plan 05.1-05 shipped: frameindex.ts, ws.ts, MediaContext.tsx, PlayerCard.tsx, Transport.tsx; 66 vitest (incl. the 201-control DOM gate) + 5 playwright against a real backend green
 
-Progress: [█████████░] 24/28 planned items summarized across phases 1–5.1; Phase 05.1 at 4/8 plans; Phase 6 verification follows it
+Progress: [█████████░] 25/28 planned items summarized across phases 1–5.1; Phase 05.1 at 5/8 plans; Phase 6 verification follows it
 
 ## Performance Metrics
 
@@ -52,7 +52,7 @@ Progress: [█████████░] 24/28 planned items summarized across
 | 03 | 3 | - | - |
 | 04 | 4 | - | - |
 | 05 | 5 | - | - |
-| 05.1 | 4 | - | - |
+| 05.1 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -72,6 +72,7 @@ Progress: [█████████░] 24/28 planned items summarized across
 | Phase 5.1 P02 | ~25 min | 3 tasks | 9 files |
 | Phase 5.1 P04 | ~11 min | 3 tasks | 12 files |
 | Phase 5.1 P03 | ~27 min | 3 tasks | 11 files |
+| Phase 5.1 P05 | ~35 min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,9 @@ Recent decisions affecting current work:
 - [Phase 5.1]: D-02 enforcement is structural: StudioCard always mounts its body and hides with display:none, so collapsing any card can never drop a `[data-key]` node; shell.test.tsx asserts the count across a collapse click. Plans 05-07 must keep using StudioCard for new cards.
 - [Phase 5.1]: Preview floors its reported timestamp exactly like EngineFrameGenerator.generate_at (int(t*fps)/fps) so preview and overlay can never disagree about which frame a time means; previews live in cache.preview_dir, kept out of the generated listing Recorder._generated_for bisects.
 - [Phase 5.1]: Take naming is the predecessor's _stem verbatim-in-spirit — {project}_{local stamp}_{face}.mp4[.partial], sanitized parts, empties dropped; exports accumulate because clear_output touches only the working output.mp4(.part). Recorder.face comes from the fresh project row at start.
+- [Phase 5.1]: The overlay is a positioned <img> swapped on timeupdate, never canvas compositing: decoding stays on the browser path, there is no per-frame draw, and no code path can touch the video clock. The displayed url is derived during render from index membership, so a per-start wipe drops a stale frame without surviving one paint.
+- [Phase 5.1]: The socket is informational — every open (including the first) refetches the frame index and replaces it wholesale; reconnect backoff resets on a received frame, not on open, so a flapping socket cannot spin.
+- [Phase 5.1]: MediaContext owns the range marks and the generation mode, not PlayerCard: plans 06 and 07 read them, and lifting them later would mean touching three components.
 - [Phase 5.1]: Takes names must survive sanitize_filename unchanged — collision-numbered "(2)" exports list but won't serve/delete over HTTP until renamed (accepted sharp edge). Slash-bearing traversal names are unreachable as {name} on any ASGI stack (%2F decodes before route matching) and are refused by routing itself; backslash/drive-relative shapes die in the validator.
 
 ### Pending Todos
@@ -147,9 +151,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-24T00:10:00+06:00
-Stopped at: Completed 05.1-03-PLAN.md — preview endpoint (79b9630), take-naming port (9e105da), takes API + range_response extraction (c283d58)
-Resume file: .planning/phases/05.1-studio-frontend-media-workspace/05.1-05-PLAN.md
+Last session: 2026-08-24T06:55:00+06:00
+Stopped at: Completed 05.1-05-PLAN.md — frame index + socket (cb6a377/ef98e81), media container (9ba4d7d/92670af), player overlay (84e6131/e312682)
+Resume file: .planning/phases/05.1-studio-frontend-media-workspace/05.1-06-PLAN.md
 
 ## Rebuild Log
 
