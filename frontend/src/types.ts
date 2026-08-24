@@ -46,6 +46,12 @@ export interface SchemaDocument {
 export interface Project {
   id: string
   name: string
+  // Fields from the backend's `_public` payload that media components read.
+  // Optional because list/create responses are typed minimally elsewhere.
+  has_video?: boolean
+  video_src?: string | null
+  effective_interval?: number
+  fps?: number | null
 }
 
 export interface Preset {

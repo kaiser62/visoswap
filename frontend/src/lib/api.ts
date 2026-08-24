@@ -90,6 +90,11 @@ export function applyPreset(
 
 // --- Media endpoints (plan 05.1-05) -----------------------------------------
 
+/** One project's public payload (projects._public): video_src/has_video/fps. */
+export function getProject(projectId: string): Promise<Project> {
+  return request<Project>(`/api/projects/${projectId}`)
+}
+
 /** The frame index: metadata only, never image payloads (playback.list_frames). */
 export function listFrames(projectId: string): Promise<FramesIndexResponse> {
   return request<FramesIndexResponse>(`/api/projects/${projectId}/frames`)

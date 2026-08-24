@@ -166,9 +166,14 @@ async function bootstrapped(fetchMock: ReturnType<typeof installFetch>) {
       <Probe />
     </MediaProvider>,
   )
-  // Flush the bootstrap fetches, then the socket-open refetch chain.
+  // Flush the bootstrap fetches...
   await act(async () => {})
   await act(async () => {})
+  // ...then simulate the server accepting the connection so the client's
+  // refetch-on-open fires (backend/api/ws.py informational contract).
+  act(() => {
+    FakeSocket.instances[0]?.serverOpen()
+  })
   await act(async () => {})
   expect(screen.getByTestId('project-id').textContent).toBe('t')
   expect(callsTo(fetchMock, '/frames')).toBeGreaterThan(0)
@@ -298,7 +303,7 @@ describe('media context', () => {
 
   it('a reconnect refetches the index and replaces it wholesale rather than merging', async () => {
     vi.useFakeTimers()
-    const fetchMock = installFetch()
+    installFetch()
     render(
       <MediaProvider projectId="t">
         <Probe />

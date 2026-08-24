@@ -12,6 +12,7 @@ import { Sidebar, buildHierarchy } from './components/Sidebar'
 import { StudioCard, StudioGrid } from './components/StudioLayout'
 import { Button, Card, Skeleton } from './components/ui'
 import { isControlEnabled } from './lib/gates'
+import { MediaProvider } from './state/MediaContext'
 import { SettingsProvider, useSettings } from './state/SettingsContext'
 
 function StudioBody() {
@@ -176,12 +177,24 @@ function StudioBody() {
   )
 }
 
+/** MediaProvider sits INSIDE SettingsProvider and takes the already-resolved
+ * project id from it — there is exactly one place that decides which project
+ * is open, never a second resolution path. */
+function MediaBoundary() {
+  const { projectId } = useSettings()
+  return (
+    <MediaProvider projectId={projectId}>
+      <StudioBody />
+    </MediaProvider>
+  )
+}
+
 export default function App() {
   return (
     <SettingsProvider>
       <div className="flex h-screen flex-col bg-bg text-text">
         <Header />
-        <StudioBody />
+        <MediaBoundary />
       </div>
     </SettingsProvider>
   )
