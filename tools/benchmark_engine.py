@@ -347,6 +347,167 @@ def _micro_window(engine, source_path, window, total_frames):
     return latencies
 
 
+def _scale_window(engine, source_path, window, total_frames, target_width):
+    """A measurement window at one processing width, on a warm engine.
+
+    ``perf_counter``, not ``monotonic``: this platform's monotonic clock ticks
+    every ~15.6 ms, and half-width swaps land close enough to that to be
+    quantised onto the neighbouring rung's number.
+    """
+    import time
+
+    total = max(1, int(total_frames or 1))
+    latencies = []
+    for i in range(window):
+        started = time.perf_counter()
+        engine.swap(i % total, source_path, target_width=target_width)
+        latencies.append(time.perf_counter() - started)
+    return latencies
+
+
+def mode_scale(frames=None, idle_gpu=False):
+    """Rung b: what the processing-scale knob actually costs (CONTEXT D-15b).
+
+    Four windows on one warm engine with the source-embedding cache already
+    populated, so the comparison isolates the resize rather than re-measuring
+    plan 01's rung: full width **twice** (their spread certifies the card, the
+    same way the gate's does), then three-quarter width, then half width.
+
+    The verdict is the numbers, not an expectation. A rung that does not move
+    the number is a non-lever and gets the thread slider's treatment (D-14), so
+    this mode reports the measured ratio and leaves the wording to whoever
+    writes it into the evidence file.
+
+    Idle-GPU discipline is enforced, not assumed (D-11).
+    """
+    if not idle_gpu:
+        bench(
+            "SCALE REFUSED",
+            "no --idle-gpu acknowledgement. Performance numbers from a "
+            "contended card are noise: the same commands measured 201.55 "
+            "ms/swap contended and 147.65 ms idle "
+            "(docs/benchmark-baseline.md). Reproduce on an idle GPU with: "
+            ".venv-clean/Scripts/python.exe tools/benchmark_engine.py "
+            "--scale --idle-gpu [--frames N]",
+        )
+        return EXIT_ENGINE_ERROR
+
+    window = max(1, int(frames or MICRO_MEASURED))
+    settings = load_settings_pair()
+    video_path, source_path = resolve_media_pair(pipeline=False)
+
+    arm_seal()
+
+    engine = build_engine(settings)
+    try:
+        media = engine.load(video_path)
+        cards = engine.detect_faces(0)
+        if not cards:
+            raise RuntimeError(
+                "no faces detected in {}".format(os.path.basename(video_path))
+            )
+        probe = engine._read_frame(0)  # noqa: SLF001 - sealed-runner convention
+        height, width = probe.shape[:2]
+
+        # Warm the models and the source-embedding memo before anything is timed.
+        for _ in range(MICRO_WARMUP):
+            engine.swap(0, source_path)
+
+        rungs = [
+            ("full", None),
+            ("full_repeat", None),
+            ("three_quarter", width * 3 // 4 // 2 * 2),
+            ("half", width // 2 // 2 * 2),
+        ]
+        measured = {}
+        for label, target in rungs:
+            measured[label] = stats(
+                _scale_window(
+                    engine, source_path, window, media["frame_count"], target
+                )
+            )
+
+        provider = engine.context.models_processor.provider_name
+    finally:
+        engine._release()  # noqa: SLF001 - the decoder holds an OS handle
+
+    full_a = measured["full"]["mean_ms"]
+    full_b = measured["full_repeat"]["mean_ms"]
+    fastest_full = min(full_a, full_b)
+    spread = (
+        abs(full_a - full_b) / fastest_full if fastest_full > 0 else float("inf")
+    )
+
+    reasons = []
+    if spread > GATE_SPREAD_LIMIT:
+        reasons.append("contended")
+    verdict = "measured" if not reasons else "fail"
+
+    def ratio(label):
+        return (
+            round(measured[label]["mean_ms"] / fastest_full, 4)
+            if fastest_full > 0
+            else None
+        )
+
+    result = {
+        "mode": "scale",
+        "provider": provider,
+        "resolution": "{}x{}".format(width, height),
+        "media_fps": round(float(media["fps"]), 3),
+        "frames_per_window": window,
+        "faces": len(cards),
+        "widths": {
+            "full": width,
+            "three_quarter": width * 3 // 4 // 2 * 2,
+            "half": width // 2 // 2 * 2,
+        },
+        "mean_ms": {label: measured[label]["mean_ms"] for label, _ in rungs},
+        "p50_ms": {label: measured[label]["p50_ms"] for label, _ in rungs},
+        "fps_from_mean": {
+            label: measured[label]["fps_from_mean"] for label, _ in rungs
+        },
+        "ratio_to_full": {
+            "three_quarter": ratio("three_quarter"),
+            "half": ratio("half"),
+        },
+        "spread": round(spread, 4),
+        "spread_limit": GATE_SPREAD_LIMIT,
+        "verdict": verdict,
+        "reasons": reasons,
+        "idle_gpu": True,
+    }
+    for label, _ in rungs:
+        bench(
+            "SCALE",
+            "provider={} res={} rung={} width={} frames={} mean_ms={} "
+            "p50_ms={} fps={}".format(
+                provider,
+                result["resolution"],
+                label,
+                result["widths"].get(label.replace("_repeat", ""), width),
+                window,
+                measured[label]["mean_ms"],
+                measured[label]["p50_ms"],
+                measured[label]["fps_from_mean"],
+            ),
+        )
+    bench(
+        "SCALE",
+        "spread={} limit={} ratio_three_quarter={} ratio_half={} "
+        "verdict={} reason={}".format(
+            result["spread"],
+            GATE_SPREAD_LIMIT,
+            result["ratio_to_full"]["three_quarter"],
+            result["ratio_to_full"]["half"],
+            verdict,
+            "+".join(reasons) if reasons else "none",
+        ),
+    )
+    print("BENCH_JSON:{}".format(result), flush=True)
+    return EXIT_CLEAN if verdict == "measured" else EXIT_ENGINE_ERROR
+
+
 def mode_gate(frames=None, idle_gpu=False):
     """Certify the real source-embedding cache against the embed-once control.
 
@@ -480,7 +641,7 @@ def mode_gate(frames=None, idle_gpu=False):
 
 USAGE = (
     "usage: benchmark_engine.py (--micro | --pipeline [--frames N] "
-    "| --gate --idle-gpu [--frames N])"
+    "| --gate --idle-gpu [--frames N] | --scale --idle-gpu [--frames N])"
     "  # run on the engine interpreter"
 )
 
@@ -512,7 +673,8 @@ def main(argv):
             return mode_pipeline(DEFAULT_PIPELINE_FRAMES)
         if len(argv) == 3 and argv[0] == "--pipeline" and argv[1] == "--frames":
             return mode_pipeline(max(1, int(argv[2])))
-        if argv and argv[0] == "--gate":
+        if argv and argv[0] in ("--gate", "--scale"):
+            chosen = argv[0]
             frames = None
             idle_gpu = False
             rest = argv[1:]
@@ -526,6 +688,8 @@ def main(argv):
                 else:
                     bench("ENGINE_ERROR", USAGE)
                     return EXIT_ENGINE_ERROR
+            if chosen == "--scale":
+                return mode_scale(frames=frames, idle_gpu=idle_gpu)
             return mode_gate(frames=frames, idle_gpu=idle_gpu)
     except SealBroken as exc:
         bench("SEAL_BREACHED", exc)
