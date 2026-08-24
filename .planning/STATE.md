@@ -4,11 +4,11 @@ milestone: v1.0
 current_phase: 05.1
 current_phase_name: Studio Frontend Media Workspace
 status: executing
-stopped_at: "Plan 05.1-08 Tasks 1 and 3 complete (scale reaches the engine; workspace e2e green). Task 2 blocked on an idle CUDA device, Task 4 is a blocking human checkpoint"
-last_updated: "2026-08-24T20:35:00.000+06:00"
+stopped_at: "Plan 05.1-08 Tasks 1-3 complete (scale reaches the engine, measured at 14% for half width, labelled from the numbers; workspace e2e green). Task 4 is a blocking human checkpoint — backend running on http://127.0.0.1:8000 awaiting the eleven-item verification"
+last_updated: "2026-08-25T05:30:00.000+06:00"
 last_activity: 2026-08-24
 last_activity_desc: "Plan 05.1-07 complete: overlay coverage measured from the player's own lookups with an honest not-yet-measured state, queue and in-flight from socket events, a results card that never calls a partial recording finished, and a takes gallery that hides the studio without unmounting a control; 125 vitest + 5 playwright green"
-state_head: 1285a1e
+state_head: 2f628d0
 progress:
   total_phases: 7
   completed_phases: 0
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-08-21)
 ## Current Position
 
 Phase: 05.1 (Studio Frontend Media Workspace) — EXECUTING
-Plan: 05.1-06 complete (SUMMARY committed); next 05.1-07 — Periphery: jobs/cadence card, results card, gallery toggle
+Plan: 05.1-08 Tasks 1-3 complete (SUMMARY committed); Task 4 open — blocking human verification of the whole workspace
 Status: The media workspace is usable end to end in the UI — load a video, pick a library face, choose a run mode, preview a frame; auto-preview cannot fire behind a playing video or an active run
 Last activity: 2026-08-24 — plan 05.1-06 shipped: MediaCard.tsx, FaceLibrary.tsx, FaceDeleteDialog.tsx, ModeSelector.tsx, PreviewControls.tsx; 99 vitest (incl. the 201-control DOM gate) + 5 playwright against a real backend green
 
-Progress: [█████████░] 27/28 planned items summarized across phases 1–5.1; Phase 05.1 at 7/8 plans; Phase 6 verification follows it
+Progress: [█████████░] 27/28 planned items summarized across phases 1–5.1; Phase 05.1 at 8/8 plans built, the last awaiting human sign-off; Phase 6 verification follows it
 
 ## Performance Metrics
 
@@ -52,7 +52,7 @@ Progress: [█████████░] 27/28 planned items summarized across
 | 03 | 3 | - | - |
 | 04 | 4 | - | - |
 | 05 | 5 | - | - |
-| 05.1 | 7 | - | - |
+| 05.1 | 8 | - | - |
 
 **Recent Trend:**
 
@@ -159,8 +159,8 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-08-24T19:10:00+06:00
-Stopped at: Completed 05.1-07-PLAN.md — jobs card + coverage tally (93ba28f), results card (a256984), takes gallery + view toggle (6f47ed9)
-Resume file: .planning/phases/05.1-studio-frontend-media-workspace/05.1-08-PLAN.md
+Stopped at: 05.1-08-PLAN.md Tasks 1-3 — engine scale (fefcc47), workspace e2e + gallery re-list fix (1285a1e), benchmark scale mode (9706899), scale control labelled from the measurement (2f628d0). Task 4 human checkpoint open
+Resume file: .planning/phases/05.1-studio-frontend-media-workspace/05.1-08-PLAN.md (Task 4)
 
 ## Rebuild Log
 
