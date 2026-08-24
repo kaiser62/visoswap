@@ -219,7 +219,7 @@ function MediaBoundary() {
         hidden={view !== 'gallery'}
         className={view === 'gallery' ? 'min-h-0 flex-1 overflow-y-auto' : ''}
       >
-        <GalleryView />
+        <GalleryView active={view === 'gallery'} />
       </div>
     </MediaProvider>
   )

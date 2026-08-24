@@ -24,7 +24,7 @@ function formatModified(seconds: number): string {
   return new Date(seconds * 1000).toLocaleString()
 }
 
-export function GalleryView() {
+export function GalleryView({ active = true }: { active?: boolean }) {
   const [takes, setTakes] = useState<Take[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [playing, setPlaying] = useState<string | null>(null)
@@ -42,9 +42,13 @@ export function GalleryView() {
     }
   }, [])
 
+  // Re-list every time the view becomes the visible one. Both views stay
+  // mounted (the control set must survive the toggle), so a mount-only fetch
+  // would show the list as it stood when the page opened — and the whole point
+  // of a take is that it did not exist yet when the user arrived.
   useEffect(() => {
-    void load()
-  }, [load])
+    if (active) void load()
+  }, [active, load])
 
   const confirmDelete = async () => {
     if (!pendingDelete) return
