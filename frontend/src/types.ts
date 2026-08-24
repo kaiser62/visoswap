@@ -52,6 +52,11 @@ export interface Project {
   video_src?: string | null
   effective_interval?: number
   fps?: number | null
+  source_face_id?: string | null
+  video_filename?: string | null
+  interval?: number | null
+  generation_mode?: 'stream' | 'interval' | null
+  full_video_mode?: boolean | null
 }
 
 export interface Preset {
@@ -186,3 +191,44 @@ export type SocketEvent =
   | { type: 'generation_started'; timestamp: number }
   | { type: 'generation_completed'; timestamp: number; path: string; duration: number }
   | { type: 'generation_failed'; timestamp: number; error: string }
+
+// ---------------------------------------------------------------------------
+// Media types (plan 05.1-06) — mirrors backend/api/faces.py and related
+// endpoints. Field names follow the backend models exactly (FaceOut,
+// AffectedProject); the UI never sends or receives a stored path.
+// ---------------------------------------------------------------------------
+
+/** One face in the global face library (schemas.FaceOut). */
+export interface Face {
+  face_id: string
+  display_name: string | null
+  bytes: number
+  url: string
+  thumbnail_url: string | null
+}
+
+/** One project affected by a face deletion (schemas.AffectedProject). */
+export interface FaceUsageProject {
+  id: string
+  name: string
+}
+
+/** Response of GET /api/faces/{id}/usage — `{"projects": [...]}`. */
+export interface FaceUsageResponse {
+  projects: FaceUsageProject[]
+}
+
+/**
+ * The activation response's assignment list (schemas.FaceAssignments). Typed
+ * to the fields the UI reads; the backend may carry more per element, and the
+ * list shape is what keeps a future multi-target response non-breaking (D-04).
+ */
+export interface ActivateFaceResponse {
+  assignments: { face_id: string; thumbnail_url: string | null }[]
+}
+
+/** Response of POST /api/projects/{id}/preview (schemas.PreviewResponse). */
+export interface RenderPreviewResponse {
+  timestamp: number
+  url: string
+}

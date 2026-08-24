@@ -5,6 +5,10 @@
  */
 
 import type {
+  ActivateFaceResponse,
+  Face,
+  FaceUsageProject,
+  FaceUsageResponse,
   FrameAtResponse,
   FramesIndexResponse,
   GenerationStatusResponse,
@@ -13,11 +17,16 @@ import type {
   Preset,
   PresetApplyResponse,
   Project,
+  RenderPreviewResponse,
   SchedulerStartRequest,
   SchemaDocument,
   SettingsResponse,
   Values,
 } from '../types'
+
+/** Re-exported so face UI can import the usage row alongside the calls that
+ *  produce it. */
+export type { FaceUsageProject } from '../types'
 
 export class ApiError extends Error {
   status: number
@@ -30,11 +39,15 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(path, init)
+  if (resp.status === 204) return undefined as T
   if (!resp.ok) {
     let detail = resp.statusText
     try {
       const body = await resp.json()
+      // A structured 409 (FaceUsageConflict) carries its message inside the
+      // detail object; surface that message rather than "[object Object]".
       if (body && typeof body.detail === 'string') detail = body.detail
+      else if (body && typeof body.detail?.message === 'string') detail = body.detail.message
     } catch {
       /* non-JSON error body — keep statusText */
     }
@@ -156,4 +169,105 @@ export function getGenerationStatus(
   return request<GenerationStatusResponse>(
     `/api/projects/${projectId}/generation/status`,
   )
+}
+
+// --- Media endpoints (plan 05.1-06) -----------------------------------------
+//
+// Upload helpers send a FormData body and deliberately set NO content-type
+// header: the browser writes the multipart boundary itself, and a hand-set
+// header silently breaks the server's parse.
+
+/** The upload ceiling the server enforces (backend.config max_upload_bytes).
+ *  Mirrored here so an oversize pick is refused instantly instead of after a
+ *  long upload the server will only reject with a 413. */
+export const MAX_UPLOAD_BYTES = 8 * 1024 ** 3
+
+/**
+ * Upload a video file as the project's source. Both source endpoints answer
+ * with the full refreshed `_public` project payload, so callers can adopt it
+ * directly instead of refetching.
+ */
+export function uploadSource(projectId: string, file: File): Promise<Project> {
+  const form = new FormData()
+  form.append('file', file)
+  return request<Project>(`/api/projects/${projectId}/source`, {
+    method: 'POST',
+    body: form,
+  })
+}
+
+/** Point the project's video at a remote URL; returns the refreshed payload. */
+export function setSourceUrl(projectId: string, url: string): Promise<Project> {
+  return request<Project>(`/api/projects/${projectId}/url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  })
+}
+
+/** Persist editable project fields (interval, generation mode, ...). */
+export function updateProject(
+  projectId: string,
+  patch: {
+    name?: string
+    interval?: number | null
+    generation_mode?: 'stream' | 'interval' | null
+    full_video_mode?: boolean | null
+  },
+): Promise<Project> {
+  return request<Project>(`/api/projects/${projectId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+}
+
+/** The whole global library, newest-first — no project id in the request,
+ *  which is exactly what makes the store machine-global (D-03). */
+export function listFaces(): Promise<Face[]> {
+  return request<Face[]>('/api/faces')
+}
+
+/** Upload an image into the global store under its content digest. */
+export function uploadFace(file: File): Promise<Face> {
+  const form = new FormData()
+  form.append('file', file)
+  return request<Face>('/api/faces', { method: 'POST', body: form })
+}
+
+/** Which projects point at this face — what the delete dialog reads first. */
+export async function getFaceUsage(faceId: string): Promise<FaceUsageProject[]> {
+  const resp = await request<FaceUsageResponse>(`/api/faces/${faceId}/usage`)
+  return resp.projects
+}
+
+/**
+ * Delete a face. Without `force` the server answers 409 with the affected
+ * project list when anything still points at it; `force` performs the cascade
+ * (stop runs → release rows → unlink). A plain delete carries NO query string.
+ */
+export function deleteFace(faceId: string, force = false): Promise<undefined> {
+  const path = force ? `/api/faces/${faceId}?force=true` : `/api/faces/${faceId}`
+  return request<undefined>(path, { method: 'DELETE' })
+}
+
+/** Bind a library face to the open project (D-03); assignment list per D-04. */
+export function activateFace(
+  projectId: string,
+  faceId: string,
+): Promise<ActivateFaceResponse> {
+  return request<ActivateFaceResponse>(`/api/projects/${projectId}/face`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ face_id: faceId }),
+  })
+}
+
+/** One-shot swapped frame at playhead `t` (D-09); never touches the scheduler. */
+export function renderPreview(projectId: string, t: number): Promise<RenderPreviewResponse> {
+  return request<RenderPreviewResponse>(`/api/projects/${projectId}/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ t }),
+  })
 }

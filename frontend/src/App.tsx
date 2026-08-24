@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Header } from './components/Header'
 import { GroupSection } from './components/GroupSection'
+import { MediaCard } from './components/MediaCard'
 import { PlayerCard } from './components/PlayerCard'
 import { Sidebar, buildHierarchy } from './components/Sidebar'
 import { StudioCard, StudioGrid } from './components/StudioLayout'
@@ -122,11 +123,7 @@ function StudioBody() {
       left={
         <>
           <PlayerCard />
-          <StudioCard title="Media" defaultOpen>
-            <p className="p-4 text-sm text-muted">
-              Target video and source faces arrive with plans 06 and 07.
-            </p>
-          </StudioCard>
+          <MediaCard />
         </>
       }
       right={
