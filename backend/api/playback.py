@@ -32,40 +32,25 @@ RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 STREAM_CHUNK = 512 * 1024
 
 
-@router.get("/{project_id}/video")
-async def stream_video(
-    request: Request, project: dict[str, Any] = Depends(get_project)
+def range_response(
+    request: Request, path: Path, media_type: str, *, cache_control: str
 ):
-    """Serve the local source file with Range support.
+    """Serve `path` honouring the request's Range header.
 
-    Remote direct URLs are redirected instead of proxied: the browser can range
-    -request them itself, and proxying would waste the backend's bandwidth.
+    Extracted from `stream_video` so other file surfaces (the takes router)
+    reuse the exact same semantics instead of carrying their own copy: no
+    Range is a plain `FileResponse`, a malformed header is 400, a
+    satisfiable range streams 206 with `Content-Range`, and an unsatisfiable
+    one answers 416 with the canonical `bytes */<size>`.
     """
-    if project.get("video_url") and not project.get("video_path"):
-        return RedirectResponse(project["video_url"])
-
-    raw_path = project.get("video_path")
-    if not raw_path:
-        raise HTTPException(status_code=404, detail="project has no video")
-
-    path = Path(raw_path)
-    # The path came from our own upload/download code; verify anyway.
-    try:
-        path = cache.assert_within_project(path, project["id"])
-    except cache.UnsafePathError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="video file is missing")
-
     file_size = path.stat().st_size
-    media_type = mimetypes.guess_type(path.name)[0] or "video/mp4"
     range_header = request.headers.get("range")
 
     if not range_header:
         return FileResponse(
             path,
             media_type=media_type,
-            headers={"Accept-Ranges": "bytes", "Cache-Control": "no-cache"},
+            headers={"Accept-Ranges": "bytes", "Cache-Control": cache_control},
         )
 
     match = RANGE_RE.fullmatch(range_header.strip())
@@ -109,9 +94,38 @@ async def stream_video(
             "Content-Range": f"bytes {start}-{end}/{file_size}",
             "Content-Length": str(end - start + 1),
             "Accept-Ranges": "bytes",
-            "Cache-Control": "no-cache",
+            "Cache-Control": cache_control,
         },
     )
+
+
+@router.get("/{project_id}/video")
+async def stream_video(
+    request: Request, project: dict[str, Any] = Depends(get_project)
+):
+    """Serve the local source file with Range support.
+
+    Remote direct URLs are redirected instead of proxied: the browser can range
+    -request them itself, and proxying would waste the backend's bandwidth.
+    """
+    if project.get("video_url") and not project.get("video_path"):
+        return RedirectResponse(project["video_url"])
+
+    raw_path = project.get("video_path")
+    if not raw_path:
+        raise HTTPException(status_code=404, detail="project has no video")
+
+    path = Path(raw_path)
+    # The path came from our own upload/download code; verify anyway.
+    try:
+        path = cache.assert_within_project(path, project["id"])
+    except cache.UnsafePathError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="video file is missing")
+
+    media_type = mimetypes.guess_type(path.name)[0] or "video/mp4"
+    return range_response(request, path, media_type, cache_control="no-cache")
 
 
 @router.get("/{project_id}/output")

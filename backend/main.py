@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.api import (
     backends,
     faces,
+    gallery,
     generation,
     playback,
     preview,
@@ -218,6 +219,7 @@ def create_app() -> FastAPI:
     app.include_router(faces.router)
     app.include_router(preview.router)
     app.include_router(playback.router)
+    app.include_router(gallery.router)
     app.include_router(generation.router)
     app.include_router(backends.router)
     app.include_router(settings_api.router)

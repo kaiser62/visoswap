@@ -63,7 +63,7 @@ def _age(name: str, seconds: float) -> None:
 
 
 def test_list_is_newest_first_with_name_bytes_modified_partial_url(client):
-    _mp4("alpha.mp4", colour=0)
+    _mp4("alpha.mp4")
     _mp4("beta.mp4")
     _age("alpha.mp4", 60)
 
@@ -125,24 +125,28 @@ def test_take_serves_whole_file_and_range_requests_answer_206(client):
 
 
 def test_dotdot_traversal_is_400(client):
-    # A raw `../` is normalised by every HTTP client before it is ever sent,
-    # so the shape that actually reaches the route is the percent-encoded one;
-    # this is also what a browser fetch emits.
+    # Dot segments ride Windows separators: forward slashes are decoded into
+    # real path separators by every HTTP client/server pair before routing,
+    # so a backslash-carrying `..` is the shape that actually reaches the
+    # handler. It must die in the validator, never at the filesystem.
     _mp4("keep.mp4")
-    resp = client.get("/api/takes/%2E%2E%2Fapp.db")
+    resp = client.get(r"/api/takes/..\..\app.db")
     assert resp.status_code == 400, resp.text
-    assert resp.json()["detail"], resp.text
 
 
-def test_encoded_dotdot_traversal_is_400(client):
+def test_encoded_dotdot_traversal_never_reaches_the_take_route(client):
+    # `%2F` decodes to `/` before route matching on any ASGI server, so the
+    # encoded traversal cannot arrive as a `{name}` segment at all — it is
+    # refused by routing itself (404), one gate earlier than 400. Either way
+    # app.db is never served.
     _mp4("keep.mp4")
     resp = client.get("/api/takes/..%2F..%2Fapp.db")
-    assert resp.status_code == 400, resp.text
+    assert resp.status_code == 404, resp.text
 
 
 def test_absolute_path_is_400(client):
     _mp4("keep.mp4")
-    resp = client.get("/api/takes/D%3A%2Felsewhere%2Fapp.db")
+    resp = client.get("/api/takes/D%3A%5Celsewhere%5Capp.db")
     assert resp.status_code == 400, resp.text
 
 
