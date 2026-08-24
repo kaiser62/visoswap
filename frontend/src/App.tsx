@@ -11,6 +11,7 @@ import { GroupSection } from './components/GroupSection'
 import { JobsCard } from './components/JobsCard'
 import { MediaCard } from './components/MediaCard'
 import { PlayerCard } from './components/PlayerCard'
+import { ResultsCard } from './components/ResultsCard'
 import { Sidebar, buildHierarchy } from './components/Sidebar'
 import { StudioCard, StudioGrid } from './components/StudioLayout'
 import { Button, Card, Skeleton } from './components/ui'
@@ -125,6 +126,7 @@ function StudioBody() {
         <>
           <PlayerCard />
           <MediaCard />
+          <ResultsCard />
         </>
       }
       right={

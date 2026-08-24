@@ -171,6 +171,13 @@ export function getGenerationStatus(
   )
 }
 
+/** The composed recording's URL — a builder, not a fetch: both the download
+ *  link and the inline player hand this to the browser, which streams the file
+ *  (and its Range requests) on its own path instead of through this module. */
+export function outputUrl(projectId: string): string {
+  return `/api/projects/${projectId}/output`
+}
+
 /** Requeue every failed frame job. The response carries the resulting status
  *  plus how many jobs were actually reset — the count the UI reports back. */
 export function retryFailed(
