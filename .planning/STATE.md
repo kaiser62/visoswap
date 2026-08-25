@@ -4,11 +4,11 @@ milestone: v1.0
 current_phase: 05.1
 current_phase_name: Studio Frontend Media Workspace
 status: executing
-stopped_at: "Plan 05.1-08 Tasks 1-3 complete (scale reaches the engine, measured at 14% for half width, labelled from the numbers; workspace e2e green). Task 4 is a blocking human checkpoint — backend running on http://127.0.0.1:8000 awaiting the eleven-item verification"
-last_updated: "2026-08-25T05:30:00.000+06:00"
-last_activity: 2026-08-24
-last_activity_desc: "Plan 05.1-07 complete: overlay coverage measured from the player's own lookups with an honest not-yet-measured state, queue and in-flight from socket events, a results card that never calls a partial recording finished, and a takes gallery that hides the studio without unmounting a control; 125 vitest + 5 playwright green"
-state_head: 2f628d0
+stopped_at: "Plan 05.1-08 Tasks 1-3 complete. Task 4 is a blocking human checkpoint — the eleven-item verification, still unreported. Backend stopped; Start_Studio.bat brings the whole studio up on http://127.0.0.1:8000"
+last_updated: "2026-08-25T14:05:00.000+06:00"
+last_activity: 2026-08-25
+last_activity_desc: "Recorder fixes verified live: a 10s range run wrote all 2167 source frames (was 2025, a 142-frame tail loss) and finalized itself to complete with no stop at all (was parked on a .part forever). Also shipped this session: the overlay painting inside the frame callback, force stop end to end, the engine swap moved off the event loop, and a double-click launcher"
+state_head: caa2152
 progress:
   total_phases: 7
   completed_phases: 0
