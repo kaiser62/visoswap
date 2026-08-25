@@ -1,46 +1,45 @@
 {
   "version": "1.0",
-  "timestamp": "2026-08-23T20:40:01.800Z",
+  "timestamp": "2026-08-25T12:43:14+06:00",
   "phase": "05.1",
-  "phase_name": "studio-frontend-media-workspace",
+  "phase_name": "Studio Frontend Media Workspace",
   "phase_dir": ".planning/phases/05.1-studio-frontend-media-workspace",
-  "plan": null,
-  "task": null,
-  "total_tasks": null,
+  "plan": 8,
+  "task": 4,
+  "total_tasks": 4,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "Mandatory benchmark + VisoMaster comparison + lever matrix recorded in docs/benchmark-baseline.md", "status": "done", "commit": "f4cde9a"},
-    {"id": 2, "name": "Discuss-phase complete: CONTEXT D-01..D-15 + Canonical References committed", "status": "done", "commit": "48cfca2"},
-    {"id": 3, "name": "Roadmap insert + STATE current_phase=05.1 + progress report routing", "status": "done", "commit": "8f25161"},
-    {"id": 4, "name": "plan-phase init: research disabled by config (skipped legitimately), hooks rendered, planner prompt fully composed and staged on disk", "status": "in_progress", "progress": "05.1-PLANNER-PROMPT.staged.md written; pattern-mapper attempted twice -> failed (outage)"}
+    {"id": 1, "name": "05.1-08 plan tasks 1-3", "status": "done", "commit": "64b4ebf"},
+    {"id": 2, "name": "Ad-hoc: overlay paints inside the frame callback", "status": "done", "commit": "80323c2"},
+    {"id": 3, "name": "Ad-hoc: force stop button, API flag, scheduler force path", "status": "done", "commit": "9a64bc4"},
+    {"id": 4, "name": "Ad-hoc: engine swap/encode off the event loop", "status": "done", "commit": "dca042c"},
+    {"id": 5, "name": "Ad-hoc: recorder tail + self-finalize fixes", "status": "done", "commit": "1cbb24a"},
+    {"id": 6, "name": "Ad-hoc: Start_Studio.bat launcher", "status": "done", "commit": "900b27b"}
   ],
   "remaining_tasks": [
-    {"id": 5, "name": "Spawn gsd-pattern-mapper (optional/non-blocking) then gsd-planner from staged prompt", "status": "not_started"},
-    {"id": 6, "name": "gsd-plan-checker loop (max 3 iterations) until pass", "status": "not_started"},
-    {"id": 7, "name": "Gates: decision-coverage (blocking), state.planned-phase, roadmap.annotate-dependencies, commit plans", "status": "not_started"},
-    {"id": 8, "name": "Execute all plans atomically; gates green (backend suite, vitest 201-control gate, build, Playwright); SUMMARYs; STATE/ROADMAP updates", "status": "not_started"}
+    {"id": 4, "name": "05.1-08 Task 4 - eleven-item blocking human verification", "status": "not_started"},
+    {"id": 7, "name": "Live end-to-end verification of the recorder fixes in 1cbb24a", "status": "in_progress", "progress": "backend restarted and a 10s range run started; interrupted before the ffprobe comparison"},
+    {"id": 8, "name": "Phase 6 discuss-phase", "status": "blocked", "progress": "two user decisions still unanswered"}
   ],
   "blockers": [
-    {
-      "description": "Harness background-agent delegation is down: subagent, workflow agent(), and subagent_fork all fail a trivial 'reply OK' probe (3 consecutive goal rounds, rounds 1-3 of goal-2eee7b30). GSD contract forbids collapsing planner/checker roles inline.",
-      "type": "external",
-      "workaround": "Re-probe with trivial subagent call; on first success resume from the staged prompt file. User explicitly chose wait-and-retry over orchestrator-direct fallback."
-    }
+    {"description": "05.1-08 Task 4 is a blocking human verification of eleven items; ROADMAP deliberately holds 05.1 at 7/8", "type": "human_action", "workaround": "none - it is a look-at-the-screen check"},
+    {"description": "Phase 6 discuss-phase needs two decisions the user declined to answer", "type": "human_action", "workaround": "none"},
+    {"description": "Recorder fixes are proven by unit tests (445 pass) but not yet re-proven against a live GPU run", "type": "technical", "workaround": "reproduction steps recorded in .continue-here.md"}
   ],
   "async_jobs": [],
-  "human_actions_pending": [],
+  "human_actions_pending": [
+    {"action": "Run the 05.1-08 Task 4 eleven-item verification in the browser", "context": "last gate before 05.1 can be marked 8/8", "blocking": true},
+    {"action": "Answer the two Phase 6 discuss-phase decisions", "context": "phase 6 planning cannot start without them", "blocking": true}
+  ],
   "decisions": [
-    {"decision": "Embedding cache sequenced as Plan 01 with idle-GPU re-bench gate", "rationale": "Measured +52% (147.7->96.9ms, 10.3fps floor @1080p); docs/benchmark-baseline.md Decision recorded mandates it before overlay work", "phase": "05.1"},
-    {"decision": "Nearest-previous-swapped-frame overlay confirmed as THE design", "rationale": "Even pristine upstream VisoMaster reaches only 8.26fps today; no config reaches 23.976 playback", "phase": "05.1"},
-    {"decision": "Save-on-stop takes ported from predecessor recorder._export/_stem", "rationale": "User's real workflow evidenced by D:/Dev/visomaster_live/output filenames; {project}_{stamp}_{face}.mp4[.partial] accumulates, never wiped by next start", "phase": "05.1"},
-    {"decision": "Threads stay exposed but no perf claims", "rationale": "Measured dead lever (8 vs 1 threads within noise)", "phase": "05.1"},
-    {"decision": "Research skipped in plan-phase", "rationale": "workflow.research=false in project config; Nyquist artifacts not required this run", "phase": "05.1"}
+    {"decision": "Overlay writes the img src directly in the rVFC callback and keeps the state update as a no-op commit", "rationale": "React commit latency cost one whole video frame; excess lag went from p50 0.030/p99 0.312 to 0 across the board", "phase": "05.1"},
+    {"decision": "engine.swap and cv2.imencode run under asyncio.to_thread", "rationale": "they starved the event loop; a status read measured 4.3s during a run against 6ms idle, which is what a client timeout turns into a 500", "phase": "05.1"},
+    {"decision": "Forced stop cancels and returns without awaiting, reaping in the background, and settles abandoned processing rows as cancelled", "rationale": "an unsettled row pins the recording watermark under it forever", "phase": "05.1"},
+    {"decision": "drain_to waits for, rather than bounds, a pump already released by finish()", "rationale": "the stop's bound is the last generated timestamp, which on a range run is behind where the full drain has reached, so it truncated the tail", "phase": "05.1"},
+    {"decision": "The pump finalizes itself on end-of-source, with aclose lock-guarded", "rationale": "a run nobody stopped parked on a .part forever; the lock stops the later stop racing the promote/export", "phase": "05.1"},
+    {"decision": "Start_Studio.bat serves everything from uvicorn on one port instead of running vite", "rationale": "vite only proxies /api, not /ws", "phase": "05.1"}
   ],
-  "uncommitted_files": [
-    ".planning/phases/05.1-studio-frontend-media-workspace/05.1-PLANNER-PROMPT.staged.md (delete after successful planner spawn)",
-    ".planning/config.json (_auto_chain_active bookkeeping key added by gsd handler - benign)",
-    ".planning/milestone.lock, tools/dashboard.py, package-lock.json, .agents/, phase-04 PLAN files (long-standing untracked, NOT this session's changes)"
-  ],
-  "next_action": "Probe delegation with trivial subagent call ('Reply OK'). If it succeeds: optionally run pattern-mapper, then spawn gsd-planner with the exact content of .planning/phases/05.1-studio-frontend-media-workspace/05.1-PLANNER-PROMPT.staged.md, then checker loop, then gates 13a-13d per plan-phase workflow. Delete the staged prompt after successful spawn. If probe still fails, report instead of degrading.",
-  "context_notes": "Goal tool active: goal-2eee7b30 rev with max 12 rounds, currently round 3. Outage persistence across 3 rounds satisfies blocked-condition threshold, but user chose wait-and-retry, so goal stays active rather than marked blocked. All planning inputs are decision-complete: CONTEXT D-01..D-15 binding, benchmark evidence authoritative, webui2 look-and-feel reference read-only at D:/Visomaster/webui2."
+  "uncommitted_files": [],
+  "next_action": "Re-run the live recorder verification: start the backend, run a 10s range on project 4a09544b8fa34b01957bd3bbd280f33d, let it complete, stop it, then ffprobe the downloaded output against the source and expect nb_read_packets 2167 rather than the 2025 seen before 1cbb24a.",
+  "context_notes": "Everything the user asked for in this stretch is shipped and committed; the tree is clean apart from the pre-existing untracked noise the user told me to leave alone. What remains is verification, not implementation. A ScheduleWakeup for '/loop go' was armed before the pause and may still fire once - if it does and the session is idle, ignoring it or letting it re-run the verification is harmless."
 }
