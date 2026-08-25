@@ -15,6 +15,7 @@ import {
 } from 'react'
 import {
   createProject,
+  deleteProject,
   getProjectSettings,
   getSchema,
   listProjects,
@@ -129,6 +130,9 @@ interface SettingsContextValue extends SettingsState {
   load: () => Promise<void>
   loadProject: (projectId: string) => Promise<void>
   setProject: (projectId: string) => void
+  refreshProjects: () => Promise<void>
+  newProject: (name?: string) => Promise<string>
+  removeProject: (projectId: string) => Promise<void>
   setValue: (key: string, value: SettingValue) => void
   save: () => Promise<void>
   discard: () => void
@@ -155,9 +159,22 @@ export function SettingsProvider({
       // create the first. A settings surface with no selected project cannot
       // save (writes are per-project), so leaving projectId null would turn
       // every Save into a silent no-op — edits lost on reload with no error.
+      // The list is fetched unconditionally. Fetching it only on the fallback
+      // path left `projects` empty whenever the URL named a project, and the
+      // header picker renders nothing when the list is empty — opening a
+      // project by URL silently removed the only way to reach the others.
+      // Failing to list projects is not failing to load: with a project named
+      // in the URL the studio is fully usable, it just cannot offer the
+      // picker. Only the fallback path below actually needs the list, and it
+      // reports its own failure by throwing.
+      let projects: Project[] = []
+      try {
+        projects = await listProjects()
+      } catch {
+        if (!fromUrl) throw new Error('cannot resolve a project without the list')
+      }
       let target = fromUrl
       if (!target) {
-        const projects = await listProjects()
         if (projects[0]) {
           target = projects[0].id
         } else {
@@ -165,8 +182,8 @@ export function SettingsProvider({
           target = created.id
           projects.unshift(created)
         }
-        dispatch({ type: 'SET_PROJECTS', projects })
       }
+      dispatch({ type: 'SET_PROJECTS', projects })
       const values = (await getProjectSettings(target)).values
       dispatch({ type: 'SET_PROJECT', projectId: target })
       // Keep the URL in sync so a plain reload reopens the same project.
@@ -185,11 +202,49 @@ export function SettingsProvider({
       const schema = await getSchema()
       const values = (await getProjectSettings(projectId)).values
       dispatch({ type: 'SET_PROJECT', projectId })
+      // Switching projects rewrites the URL too, so a reload reopens what is
+      // on screen rather than whatever the address bar still remembers.
+      window.history.replaceState({}, '', `/?project=${projectId}`)
       dispatch({ type: 'LOAD_OK', schema, values })
     } catch {
       dispatch({ type: 'LOAD_ERROR' })
     }
   }, [])
+
+  const refreshProjects = useCallback(async () => {
+    dispatch({ type: 'SET_PROJECTS', projects: await listProjects() })
+  }, [])
+
+  /** Create a project and open it. Returns the new id so a caller can react. */
+  const newProject = useCallback(
+    async (name?: string) => {
+      const created = await createProject(name)
+      await refreshProjects()
+      await loadProject(created.id)
+      return created.id
+    },
+    [loadProject, refreshProjects],
+  )
+
+  /** Delete a project. Deleting the open one falls through to whatever remains,
+   *  and to a freshly created project when it was the last: the studio has no
+   *  meaningful state with no project selected, and every Save would no-op. */
+  const removeProject = useCallback(
+    async (projectId: string) => {
+      await deleteProject(projectId)
+      const remaining = await listProjects()
+      dispatch({ type: 'SET_PROJECTS', projects: remaining })
+      if (state.projectId !== projectId) return
+      if (remaining[0]) {
+        await loadProject(remaining[0].id)
+      } else {
+        const created = await createProject('My project')
+        dispatch({ type: 'SET_PROJECTS', projects: [created] })
+        await loadProject(created.id)
+      }
+    },
+    [loadProject, state.projectId],
+  )
 
   const setProject = useCallback((projectId: string) => {
     void loadProject(projectId)
@@ -244,12 +299,27 @@ export function SettingsProvider({
       load,
       loadProject,
       setProject,
+      refreshProjects,
+      newProject,
+      removeProject,
       setValue,
       save,
       discard,
       applyPresetValues,
     }),
-    [state, load, loadProject, setProject, setValue, save, discard, applyPresetValues],
+    [
+      state,
+      load,
+      loadProject,
+      setProject,
+      refreshProjects,
+      newProject,
+      removeProject,
+      setValue,
+      save,
+      discard,
+      applyPresetValues,
+    ],
   )
 
   return (

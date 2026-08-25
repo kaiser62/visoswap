@@ -12,6 +12,7 @@ import { GroupSection } from './components/GroupSection'
 import { JobsCard } from './components/JobsCard'
 import { MediaCard } from './components/MediaCard'
 import { PlayerCard } from './components/PlayerCard'
+import { ProjectsView } from './components/ProjectsView'
 import { ResultsCard } from './components/ResultsCard'
 import { Sidebar, buildHierarchy } from './components/Sidebar'
 import { StudioCard, StudioGrid } from './components/StudioLayout'
@@ -185,7 +186,7 @@ function StudioBody() {
  * is open, never a second resolution path. */
 function MediaBoundary() {
   const { projectId } = useSettings()
-  const [view, setView] = useState<'studio' | 'gallery'>('studio')
+  const [view, setView] = useState<'studio' | 'gallery' | 'projects'>('studio')
   return (
     <MediaProvider projectId={projectId}>
       <div className="flex items-center gap-2 border-b border-line px-4 py-2">
@@ -202,6 +203,13 @@ function MediaBoundary() {
           data-testid="view-gallery"
         >
           Takes
+        </Button>
+        <Button
+          variant={view === 'projects' ? 'primary' : 'ghost'}
+          onClick={() => setView('projects')}
+          data-testid="view-projects"
+        >
+          Projects
         </Button>
       </div>
       {/* Both views stay mounted and the inactive one is hidden with CSS, the
@@ -220,6 +228,12 @@ function MediaBoundary() {
         className={view === 'gallery' ? 'min-h-0 flex-1 overflow-y-auto' : ''}
       >
         <GalleryView active={view === 'gallery'} />
+      </div>
+      <div
+        hidden={view !== 'projects'}
+        className={view === 'projects' ? 'min-h-0 flex-1 overflow-y-auto' : ''}
+      >
+        <ProjectsView active={view === 'projects'} />
       </div>
     </MediaProvider>
   )

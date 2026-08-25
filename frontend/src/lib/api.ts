@@ -77,6 +77,12 @@ export function createProject(name?: string): Promise<Project> {
   })
 }
 
+/** Delete a project: the row, its cached frames and its source file all go.
+ *  204, so `request` resolves undefined — there is nothing to read back. */
+export function deleteProject(projectId: string): Promise<void> {
+  return request<void>(`/api/projects/${projectId}`, { method: 'DELETE' })
+}
+
 export function getPresets(): Promise<{ presets: Preset[] }> {
   return request<{ presets: Preset[] }>('/api/presets')
 }

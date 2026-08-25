@@ -59,6 +59,13 @@ export interface Project {
   full_video_mode?: boolean | null
   /** Fraction of native width the engine actually processes (1.0 = native). */
   processing_scale?: number | null
+  // Source metadata the projects overview shows; absent until a video is bound.
+  duration?: number | null
+  width?: number | null
+  height?: number | null
+  /** Epoch seconds, as the backend stores it — not an ISO string. */
+  updated_at?: number | null
+  status?: string | null
 }
 
 export interface Preset {

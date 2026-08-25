@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useSettings } from '../state/SettingsContext'
 import { ConfirmModal } from './ConfirmModal'
 import { PresetSelector } from './PresetSelector'
+import { ProjectDeleteDialog } from './ProjectDeleteDialog'
 import { Button } from './ui'
 
 export function Header() {
@@ -11,6 +12,8 @@ export function Header() {
     projects,
     projectId,
     setProject,
+    newProject,
+    removeProject,
     values,
     dirty,
     saving,
@@ -20,9 +23,27 @@ export function Header() {
     applyPresetValues,
   } = useSettings()
   const [showDiscard, setShowDiscard] = useState(false)
+  const [showDelete, setShowDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [justSaved, setJustSaved] = useState(false)
 
   const dirtyCount = Object.keys(dirty).length
+  const openProject = projects.find((p) => p.id === projectId) ?? null
+
+  const handleDelete = async () => {
+    if (!projectId) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await removeProject(projectId)
+      setShowDelete(false)
+    } catch {
+      setDeleteError("Couldn't delete that project. Check the backend and try again.")
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const handleSave = async () => {
     await save()
@@ -51,6 +72,25 @@ export function Header() {
             ))}
           </select>
         )}
+
+        <Button
+          variant="ghost"
+          onClick={() => void newProject('Untitled project')}
+          data-testid="btn-new-project"
+        >
+          New
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setDeleteError(null)
+            setShowDelete(true)
+          }}
+          disabled={!projectId}
+          data-testid="btn-delete-project"
+        >
+          Delete
+        </Button>
 
         <PresetSelector
           projectId={projectId}
@@ -87,6 +127,15 @@ export function Header() {
 
       {/* The accent underline webui2 gives its chrome. */}
       <div className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" aria-hidden />
+
+      <ProjectDeleteDialog
+        open={showDelete}
+        name={openProject?.name ?? 'this project'}
+        busy={deleting}
+        error={deleteError}
+        onCancel={() => setShowDelete(false)}
+        onConfirm={() => void handleDelete()}
+      />
 
       <ConfirmModal
         open={showDiscard}
