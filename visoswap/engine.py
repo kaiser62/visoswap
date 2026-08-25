@@ -64,6 +64,12 @@ RECOGNITION_MODELS = (
     "CSCSArcFace",
 )
 
+#: How far ahead `_read_frame` will walk the decoder rather than seek. A seek
+#: measured ~230ms against ~2ms for a `grab()`, so stepping stays cheaper than
+#: seeking well past a hundred frames; the limit is set below the break-even so
+#: a genuine jump (a seek in the UI) still seeks.
+GRAB_FORWARD_LIMIT = 96
+
 #: Providers that write nothing to disk. ``switch_providers_priority`` also
 #: accepts ``TensorRT`` and ``TensorRT-Engine``; both are refused here because
 #: their options carry relative cache paths -- see the module docstring.
@@ -514,7 +520,23 @@ class Engine:
         with self._reader_lock:
             if self._reader is None:
                 raise RuntimeError("engine is not bound to a video; call load() first")
-            if wanted != self._reader_pos:
+            # A negative position means "nothing decoded yet", not frame -1, so
+            # the first read of a bind always seeks.
+            ahead = wanted - self._reader_pos if self._reader_pos >= 0 else -1
+            if 0 < ahead <= GRAB_FORWARD_LIMIT:
+                # Walk the decoder forward instead of seeking. `grab()` decodes
+                # without handing the frame back, which costs a couple of
+                # milliseconds against a seek's ~230ms -- and a generation pool
+                # never asks for the frame it is sitting on. Four workers
+                # sharing one decoder interleave their targets, so every single
+                # read missed `_reader_pos` by a few frames and paid a full
+                # seek: one thread benchmarked 42 gen fps on a clip where four
+                # managed 14.3.
+                for _ in range(ahead):
+                    if not self._reader.grab():
+                        break
+                self._reader_pos = wanted
+            elif wanted != self._reader_pos:
                 self._reader.set(cv2.CAP_PROP_POS_FRAMES, wanted)
                 self._reader_pos = wanted
             ok, frame = self._reader.read()
