@@ -50,6 +50,9 @@ COLD_FRAME_COST = 0.5
 # couple of seconds between swapped frames the held face no longer matches the
 # scene under it.
 MIN_STREAM_RATE = 0.5
+# Ladder stop for `snap_rate`. At 60fps this is one generated frame every ~2.1s,
+# which is already `MIN_STREAM_RATE` territory.
+_MAX_GRID_DIVISOR = 128
 
 
 # --- pure timestamp math -----------------------------------------------------
@@ -76,7 +79,7 @@ def grid_rate(project: dict[str, Any], observed_rate: float | None = None) -> fl
     if (project.get("generation_mode") or MODE_INTERVAL) == MODE_STREAM:
         fps = float(project.get("fps") or 0.0)
         fps = fps if fps > 0 else FALLBACK_FPS
-        return min(fps, sustainable_rate(project, observed_rate))
+        return snap_rate(fps, min(fps, sustainable_rate(project, observed_rate)))
     interval = float(project.get("interval") or 0.0)
     if interval <= 0:
         raise ValueError("interval must be > 0")
@@ -106,6 +109,34 @@ def sustainable_rate(
     cost = float(project.get("measured_frame_cost") or 0.0) or COLD_FRAME_COST
     workers = max(1, get_settings().generation_concurrency)
     return max(MIN_STREAM_RATE, workers / cost)
+
+
+def snap_rate(fps: float, rate: float) -> float:
+    """Snap a throughput estimate onto the `fps / n` ladder.
+
+    Targets are `k / rate`, so the rate does not only decide HOW MANY frames get
+    made — it decides WHICH timestamps exist. `sustainable_rate` is a live
+    measurement and drifts by a few percent every planning tick, which moved the
+    whole grid a millisecond or two each time. Nothing lined up: work already
+    completed sat off the new grid so it counted for nothing, a fresh near
+    duplicate was queued a millisecond away, and the playhead passed most of
+    them before a worker got there. A real run ended 9557 cancelled against 2364
+    completed, those completions bunched into clusters 1-2ms apart covering ten
+    seconds of a two-minute video -- dense where nobody needed it and empty
+    everywhere else. That is the choppiness, in playback and in the take alike.
+
+    `n` doubles rather than taking any integer, because only a doubling ladder
+    NESTS: `fps/4` is a subset of `fps/2`, while `fps/7` shares nothing with it
+    but the origin. Stepping the rate up or down therefore keeps every frame
+    already made exactly on-grid, so a slowdown coarsens the grid by dropping
+    targets rather than by moving them.
+    """
+    if fps <= 0:
+        raise ValueError("fps must be > 0")
+    n = 1
+    while fps / n > rate and n < _MAX_GRID_DIVISOR:
+        n *= 2
+    return fps / n
 
 
 def effective_interval(project: dict[str, Any]) -> float:
