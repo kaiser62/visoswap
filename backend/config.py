@@ -92,11 +92,10 @@ class Settings(BaseSettings):
     # The composed video is muxed continuously while generation runs, so a
     # cancel, an error or a hard kill all still leave a playable mp4.
     recorder_enabled: bool = True
-    # Seconds the recorder trails the generation frontier before committing a
-    # timestamp. Generation is asynchronous, so a frame for t can land after the
-    # recorder has passed t; this is the grace window it gets. Larger keeps more
-    # late frames, at the cost of the recording lagging further behind playback.
-    recorder_grace: float = Field(default=15.0, ge=0)
+    # There is deliberately no grace/trail setting here. The recorder waits on
+    # the generation watermark and nothing else; a trail expressed in video
+    # seconds is a permanent offset rather than a delay, and it truncated every
+    # recording by exactly that many seconds.
     # veryfast, not a slower preset: this encode runs alongside the swap
     # pipeline and competes with it for CPU. `recorder_enabled=False` reclaims it.
     recorder_preset: str = "veryfast"

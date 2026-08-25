@@ -64,10 +64,10 @@ def _source(tmp_path, *, audio: bool = True):
     return dest
 
 
-def _make(project_id, source, *, grace: float = 0.0, **kw):
+def _make(project_id, source, **kw):
     return recorder.Recorder(
         project_id, source,
-        width=SIZE[0], height=SIZE[1], fps=FPS, grace=grace, **kw,
+        width=SIZE[0], height=SIZE[1], fps=FPS, **kw,
     )
 
 
@@ -495,34 +495,43 @@ def test_an_unwritable_output_folder_leaves_aclose_normal_and_export_none(
     ), "the run's frames are intact"
 
 
-# -- the grace window ---------------------------------------------------------
+# -- the generation watermark -------------------------------------------------
 
 
-def test_it_waits_for_the_frontier_then_commits(project):
-    """The deadline releases once generation has moved `grace` past `t`."""
+def test_it_waits_for_the_watermark_then_commits(project):
+    """The deadline releases as soon as the watermark passes `t`, not later.
+
+    There is no cushion on top of the watermark, and there must not be: a
+    cushion expressed in video seconds is a permanent offset the writer can
+    never make up, so the recording would end that many seconds short of what
+    was generated. That is the whole of the truncation bug.
+    """
 
     async def run():
-        rec = _make(project, "unused.mp4", grace=5.0)
+        rec = _make(project, "unused.mp4")
         rec.set_frontier(10.0)
-        # 4.0 + 5.0 <= 10.0, so this must not block.
+        # Everything below 10.0 has settled, so nothing here waits.
         await asyncio.wait_for(rec._await_deadline(4.0), timeout=1.0)
+        await asyncio.wait_for(rec._await_deadline(9.999), timeout=1.0)
 
-        # 8.0 + 5.0 > 10.0: blocked until the frontier moves.
-        pending = asyncio.ensure_future(rec._await_deadline(8.0))
+        # At the watermark itself the frame is not settled yet: blocked.
+        pending = asyncio.ensure_future(rec._await_deadline(10.0))
         await asyncio.sleep(0.05)
         assert not pending.done()
 
-        rec.set_frontier(13.0)
+        # Moving it by the smallest amount is enough — no extra trail.
+        rec.set_frontier(10.001)
         await asyncio.wait_for(pending, timeout=2.0)
 
     asyncio.run(run())
 
 
-def test_finishing_releases_a_frame_still_inside_its_grace_window(project):
+def test_finishing_releases_a_frame_still_above_the_watermark(project):
     """Nothing more is coming, so the recorder must stop waiting and drain."""
 
     async def run():
-        rec = _make(project, "unused.mp4", grace=60.0)
+        rec = _make(project, "unused.mp4")
+        rec.set_frontier(1.0)
         pending = asyncio.ensure_future(rec._await_deadline(30.0))
         await asyncio.sleep(0.05)
         assert not pending.done()
@@ -531,3 +540,31 @@ def test_finishing_releases_a_frame_still_inside_its_grace_window(project):
         await asyncio.wait_for(pending, timeout=2.0)
 
     asyncio.run(run())
+
+
+def test_a_fully_generated_span_is_written_whole(project, tmp_path):
+    """The reported symptom: a run that generated N seconds exported ~1.
+
+    The frame at the very end of the generated span must still be committed.
+    With a trail of `g` seconds every recording stopped `g` seconds early, and
+    at the shipped default of 15.0 a 16-second run exported one second.
+    """
+
+    source = _source(tmp_path, audio=False)
+
+    async def run():
+        rec = _make(project, source)
+        await rec.start()
+        # The whole source has settled: the watermark sits just past its last
+        # frame, which is exactly what `db.recording_watermark` reports once
+        # every job is done. Not 1e9 — the point is that the boundary itself
+        # is inclusive of everything generated.
+        rec.set_frontier(DURATION)
+        rec.finish()
+        await asyncio.wait_for(rec._pump, timeout=120)
+        await rec.aclose()
+        return rec
+
+    rec = asyncio.run(run())
+    # Every source frame, not merely the ones outside a trailing window.
+    assert rec.frames_written == int(DURATION * FPS), rec.frames_written

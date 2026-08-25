@@ -409,15 +409,15 @@ class ProjectScheduler:
     async def _advance_recorder(
         self, counts: dict[str, int], project: dict[str, Any]
     ) -> None:
-        """Feed the recorder the settled frontier, and tell it when work is done.
+        """Feed the recorder the generation watermark, and say when work is done.
 
         With nothing left pending or processing, no further generated frame can
-        arrive, so the recorder stops waiting out its grace window and drains the
+        arrive, so the recorder stops waiting on the watermark and drains the
         remaining source frames at full speed.
         """
         if self.recorder is None:
             return
-        self.recorder.set_frontier(await self.db.settled_frontier(self.project_id))
+        self.recorder.set_frontier(await self.db.recording_watermark(self.project_id))
         outstanding = counts.get(STATUS_PENDING, 0) + counts.get(STATUS_PROCESSING, 0)
         if outstanding == 0 and counts.get(STATUS_COMPLETED, 0) > 0:
             self.recorder.finish()

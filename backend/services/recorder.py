@@ -16,9 +16,9 @@ all produce garbage.
 
 **The recorder is off the playback path.** It may lag, stall or block without
 violating the central principle, because nothing about playback waits on it. It
-trails the generation frontier by `recorder_grace` seconds and then commits
-whatever exists — a generated frame arriving after its deadline is dropped from
-the recording rather than stalling it.
+trails the generation watermark — the timestamp below which every job has
+settled — and commits whatever exists at each frame. A generated frame arriving
+after its deadline is dropped from the recording rather than stalling it.
 
 Unlike `ffmpeg.extract_frame`, this decodes the source sequentially from end to
 end. `CLAUDE.md` invariant 5 names this module as the sole component permitted a
@@ -131,7 +131,6 @@ class Recorder:
         height: int,
         fps: float,
         duration: float | None = None,
-        grace: float | None = None,
         name: str = "",
         face: str = "",
     ) -> None:
@@ -148,7 +147,6 @@ class Recorder:
         self.face = face
         # Set once the finished recording has been copied to the output folder.
         self.exported_to: Path | None = None
-        self.grace = s.recorder_grace if grace is None else float(grace)
         self.frame_bytes = self.width * self.height * BYTES_PER_PIXEL
 
         self._decoder: asyncio.subprocess.Process | None = None
@@ -243,8 +241,8 @@ class Recorder:
             self._run(), name=f"recorder:{self.project_id}"
         )
         log.info(
-            "[RECORDER] project=%s started size=%dx%d fps=%.3f grace=%.1f",
-            self.project_id, self.width, self.height, self.fps, self.grace,
+            "[RECORDER] project=%s started size=%dx%d fps=%.3f",
+            self.project_id, self.width, self.height, self.fps,
         )
 
     async def _drain_stderr(self) -> None:
@@ -463,13 +461,21 @@ class Recorder:
             index += 1
 
     async def _await_deadline(self, t: float) -> None:
-        """Hold at `t` until generation has moved `grace` seconds past it.
+        """Hold at `t` until every job at or below `t` has settled.
+
+        The frontier is a watermark (`db.recording_watermark`): everything below
+        it is done, one way or another. There is no additional cushion on top of
+        it, and there must not be. A cushion expressed in video seconds is not a
+        delay — it is a permanent offset the writer can never make up, so the
+        recording ends that many seconds short of what was generated and the
+        tail is lost at every stop. `recorder_grace` was 15.0, which is why a
+        run that generated a 15-second span exported roughly one second.
 
         Blocking here is safe — playback does not wait on the recorder. Once the
-        frontier clears the deadline the frame is committed with whatever exists,
-        so a slow backend delays the recording but never deadlocks it.
+        watermark clears `t` the frame is committed with whatever exists, so a
+        slow backend delays the recording but never deadlocks it.
         """
-        while not self._finished and t + self.grace > self._frontier:
+        while not self._finished and t >= self._frontier:
             self._advance.clear()
             try:
                 await asyncio.wait_for(self._advance.wait(), timeout=2.0)

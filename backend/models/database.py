@@ -431,21 +431,39 @@ class Database:
             out[row["status"]] = int(row["n"])
         return out
 
-    async def settled_frontier(self, project_id: str) -> float:
-        """Highest timestamp whose job will not change again.
+    async def recording_watermark(self, project_id: str) -> float:
+        """Timestamp below which every job has settled — what the recorder trails.
 
-        The recorder trails this. `failed` and `cancelled` count as settled just
-        as `completed` does: no generated frame is coming for those timestamps
-        either, so holding the recording for them would stall it forever on a
-        run where one frame permanently fails.
+        A true watermark, not a maximum. `MAX(timestamp)` over settled rows was
+        wrong: workers finish out of order, so a high completed timestamp says
+        nothing about the pending rows underneath it, and the recorder would
+        commit a span whose frames had not been generated yet.
+
+        `failed` and `cancelled` count as settled just as `completed` does — no
+        generated frame is coming for those timestamps either, so waiting on
+        them would stall the recording forever on a run where one frame
+        permanently fails.
+
+        With nothing outstanding the watermark clears the highest settled
+        timestamp, so the frame sitting exactly on it is writable rather than
+        held one tick short.
         """
+        cur = await self.conn.execute(
+            "SELECT MIN(timestamp) FROM frames WHERE project_id = ? "
+            "AND status IN (?, ?)",
+            (project_id, STATUS_PENDING, STATUS_PROCESSING),
+        )
+        row = await cur.fetchone()
+        if row and row[0] is not None:
+            return float(row[0])
+
         cur = await self.conn.execute(
             "SELECT MAX(timestamp) FROM frames WHERE project_id = ? "
             "AND status IN (?, ?, ?)",
             (project_id, STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED),
         )
         row = await cur.fetchone()
-        return float(row[0]) if row and row[0] is not None else 0.0
+        return float(row[0]) + 1e-6 if row and row[0] is not None else 0.0
 
     async def average_duration(self, project_id: str, limit: int = 20) -> float | None:
         cur = await self.conn.execute(
