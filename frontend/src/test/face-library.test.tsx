@@ -180,14 +180,23 @@ describe('face library', () => {
           .length,
       ).toBe(2),
     )
-    // One entry per content id after both uploads (the delete affordances share
-    // the `face-` prefix, so they are excluded from the count).
+    // One entry per content id after both uploads (the delete and name
+    // affordances share the `face-` prefix, so they are excluded).
     const strip = screen.getByTestId('face-strip')
-    const entries = Array.from(strip.querySelectorAll('[data-testid^="face-"]')).filter(
-      (el) => !(el.getAttribute('data-testid') ?? '').startsWith('face-delete-'),
-    )
+    const entries = Array.from(strip.querySelectorAll('[data-testid^="face-"]')).filter((el) => {
+      const id = el.getAttribute('data-testid') ?? ''
+      return !id.startsWith('face-delete-') && !id.startsWith('face-name-')
+    })
     expect(entries.length).toBe(1)
     expect(entries[0].getAttribute('data-testid')).toBe(`face-${FACE_A}`)
+  })
+
+  it('labels each face with its original upload name, not its digest', async () => {
+    faces = [face(FACE_A), face(FACE_B)]
+    await mounted(installFetch())
+    expect(screen.getByTestId(`face-name-${FACE_A}`).textContent).toBe('Alice')
+    expect(screen.getByTestId(`face-name-${FACE_B}`).textContent).toBe('Bob')
+    expect(screen.getByTestId('face-count').textContent).toContain('2 faces')
   })
 
   it('clicking a face activates it for the open project and marks it active', async () => {

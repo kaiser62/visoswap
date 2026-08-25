@@ -32,6 +32,12 @@ log = logging.getLogger(__name__)
 FACE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 #: Companion thumbnail suffix; never listed as a face in its own right.
 THUMB_SUFFIX = ".thumb.jpg"
+#: Companion original-name sidecar. The id stays the only path segment the
+#: caller influences -- the name they chose is file *content*, never a name --
+#: so a library of a hundred digests can still be read by a human.
+NAME_SUFFIX = ".name.txt"
+#: A display name longer than this is stored truncated; the UI shows one line.
+NAME_MAX = 120
 THUMB_SIZE = (112, 112)
 ALLOWED_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
@@ -100,6 +106,46 @@ def thumb_path(face_id: str) -> Path:
     return faces_dir() / f"{face_id}{THUMB_SUFFIX}"
 
 
+def name_path(face_id: str) -> Path:
+    """The companion original-name sidecar path under the same id rule."""
+    _validate(face_id)
+    return faces_dir() / f"{face_id}{NAME_SUFFIX}"
+
+
+def read_name(face_id: str) -> str | None:
+    """The stored original name, or None when no sidecar was ever written.
+
+    Faces stored before sidecars existed have none, and a sidecar is never
+    required: callers fall back to the id, which is always available.
+    """
+    path = name_path(face_id)
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    return text or None
+
+
+def write_name(face_id: str, filename: str | None) -> None:
+    """Record an upload's original name beside its face, first name winning.
+
+    Content addressing means the same picture uploaded twice under two names is
+    one face; keeping the first keeps the library stable rather than letting a
+    later duplicate rename an entry the user already recognises. Failure is
+    never fatal -- the name is a convenience, the id is the identity.
+    """
+    safe = cache.sanitize_filename(filename or "", "face").strip()
+    if not safe:
+        return
+    path = name_path(face_id)
+    if path.exists():
+        return
+    try:
+        path.write_text(safe[:NAME_MAX], encoding="utf-8")
+    except OSError as exc:  # noqa: BLE001 - names are never fatal
+        log.warning("[FACES] name sidecar for %s failed: %s", face_id, exc)
+
+
 def _make_thumbnail(data: bytes, dest: Path) -> None:
     with Image.open(io.BytesIO(data)) as img:
         img = img.convert("RGB")
@@ -130,6 +176,8 @@ def store(data: bytes, filename: str | None) -> dict[str, Any]:
     finally:
         tmp.unlink(missing_ok=True)
 
+    write_name(face_id, filename)
+
     thumbnail_url: str | None = f"/api/faces/{face_id}/thumbnail"
     if not thumb.exists():
         try:
@@ -140,7 +188,7 @@ def store(data: bytes, filename: str | None) -> dict[str, Any]:
 
     return {
         "face_id": face_id,
-        "display_name": cache.sanitize_filename(filename or "", "face"),
+        "display_name": read_name(face_id) or face_id,
         "bytes": len(data),
         "url": f"/api/faces/{face_id}/image",
         "thumbnail_url": thumbnail_url,
@@ -151,20 +199,19 @@ def list_faces() -> list[dict[str, Any]]:
     """Every stored face, newest-first. Thumbnails are never faces."""
     records: list[dict[str, Any]] = []
     for path in sorted(faces_dir().glob("*")):
-        if not path.is_file() or path.name.endswith(THUMB_SUFFIX):
+        if not path.is_file() or path.name.endswith((THUMB_SUFFIX, NAME_SUFFIX)):
             continue
         match = FACE_ID_RE.fullmatch(path.stem)
         if not match:
             continue
         face_id = match.group(0)
         thumb = thumb_path(face_id)
-        # The original upload name does not survive in a two-file-per-face
-        # layout (no sidecar may exist), so listing derives a stable display
-        # name from the content id itself.
+        # The upload name lives in a sidecar, which faces stored before
+        # sidecars existed do not have; those still list, named by their id.
         records.append(
             {
                 "face_id": face_id,
-                "display_name": face_id,
+                "display_name": read_name(face_id) or face_id,
                 "bytes": path.stat().st_size,
                 "url": f"/api/faces/{face_id}/image",
                 "thumbnail_url": (
@@ -180,9 +227,10 @@ def list_faces() -> list[dict[str, Any]]:
 
 
 def delete(face_id: str) -> None:
-    """Remove both files; an unknown id is a no-op."""
+    """Remove the file, its thumbnail and its name sidecar; unknown id is a no-op."""
     face_path(face_id).unlink(missing_ok=True)
     thumb_path(face_id).unlink(missing_ok=True)
+    name_path(face_id).unlink(missing_ok=True)
 
 
 def face_id_for_path(path: str | Path) -> str | None:

@@ -98,9 +98,22 @@ export function FaceLibrary() {
       )}
       {loadError && <p role="alert" className="text-xs text-bad">{loadError}</p>}
 
-      <div className="flex flex-wrap gap-3" data-testid="face-strip">
+      {faces.length > 0 && (
+        <p className="text-xs text-muted" data-testid="face-count">
+          {faces.length} {faces.length === 1 ? 'face' : 'faces'} — scroll for more
+        </p>
+      )}
+
+      {/* A library of a hundred-plus faces cannot be a strip: the grid is
+          height-capped and scrolls, so the rest of the panel stays reachable
+          however many faces the store holds. */}
+      <div
+        className="grid max-h-[340px] grid-cols-[repeat(auto-fill,minmax(88px,1fr))] gap-3 overflow-y-auto rounded border border-line bg-raised/30 p-2"
+        data-testid="face-strip"
+      >
         {faces.map((face) => {
           const active = face.face_id === sourceFaceId
+          const label = face.display_name ?? face.face_id
           return (
             <div key={face.face_id} className="flex w-[88px] flex-col items-center gap-1">
               <button
@@ -108,7 +121,8 @@ export function FaceLibrary() {
                 data-testid={`face-${face.face_id}`}
                 data-active={active || undefined}
                 aria-pressed={active}
-                aria-label={`Activate face ${face.display_name ?? face.face_id}`}
+                aria-label={`Activate face ${label}`}
+                title={label}
                 onClick={() => void selectFace(face.face_id)}
                 className={`overflow-hidden rounded border-2 ${active ? 'border-accent' : 'border-line'}`}
               >
@@ -120,6 +134,16 @@ export function FaceLibrary() {
                   </span>
                 )}
               </button>
+              {/* `title` carries the untruncated name: a face called
+                  `some_very_long_export_name_02.png` is unrecognisable when
+                  cut, and there is no room for two lines in a grid cell. */}
+              <span
+                className="w-full truncate text-center text-[10px] text-muted"
+                title={label}
+                data-testid={`face-name-${face.face_id}`}
+              >
+                {label}
+              </span>
               {active && (
                 <span className="rounded-full bg-accent px-1.5 py-0.5 text-[9px] font-semibold text-bg">
                   active
@@ -127,7 +151,7 @@ export function FaceLibrary() {
               )}
               <button
                 type="button"
-                aria-label={`Delete face ${face.display_name ?? face.face_id}`}
+                aria-label={`Delete face ${label}`}
                 data-testid={`face-delete-${face.face_id}`}
                 onClick={() => void openDelete(face.face_id)}
                 className="text-[10px] font-semibold text-bad hover:underline"

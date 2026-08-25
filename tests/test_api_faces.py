@@ -73,15 +73,39 @@ def test_store_writes_digest_named_pair_and_dedupes_identical_bytes(data_root):
     assert record["thumbnail_url"] == f"/api/faces/{record['face_id']}/thumbnail"
 
     entries = sorted(p.name for p in facestore.faces_dir().iterdir())
-    assert len(entries) == 2, entries
-    assert any(name.startswith(record["face_id"]) for name in entries)
+    assert len(entries) == 3, entries
+    assert all(name.startswith(record["face_id"]) for name in entries)
     assert any(name.endswith(facestore.THUMB_SUFFIX) for name in entries)
-    # The stored name is derived, never the caller's string.
+    assert any(name.endswith(facestore.NAME_SUFFIX) for name in entries)
+    # Every path segment is the digest; the caller's string is only ever the
+    # sidecar's *content*.
     assert "me.png" not in entries
+    assert facestore.read_name(record["face_id"]) == "me.png"
 
     again = facestore.store(PNG_BYTES, "copy.png")
     assert again["face_id"] == record["face_id"]
-    assert len(list(facestore.faces_dir().iterdir())) == 2
+    assert len(list(facestore.faces_dir().iterdir())) == 3
+    # First name wins: a duplicate must not rename an entry already on screen.
+    assert again["display_name"] == "me.png"
+    assert facestore.read_name(record["face_id"]) == "me.png"
+
+
+def test_listing_shows_the_upload_name_and_falls_back_to_the_id(data_root):
+    record = facestore.store(PNG_BYTES, "aunt_may.png")
+    assert [f["display_name"] for f in facestore.list_faces()] == ["aunt_may.png"]
+
+    # A face stored before sidecars existed has no name to show.
+    facestore.name_path(record["face_id"]).unlink()
+    listed = facestore.list_faces()
+    assert [f["display_name"] for f in listed] == [record["face_id"]]
+    # The sidecar itself is never a face in its own right.
+    assert len(listed) == 1
+
+
+def test_delete_removes_the_name_sidecar_too(data_root):
+    record = facestore.store(PNG_BYTES, "gone.png")
+    facestore.delete(record["face_id"])
+    assert list(facestore.faces_dir().iterdir()) == []
 
 
 def test_store_rejects_non_image_suffixes_naming_them(data_root):
