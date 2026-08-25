@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import shutil
 from bisect import bisect_right
 from datetime import datetime
@@ -74,6 +75,13 @@ def _free_path(folder: Path, stem: str, ext: str) -> Path:
     return candidate
 
 
+#: What marks a recording as still in progress.
+PART_SUFFIX = ".part"
+#: The names a working recording can carry: the plain pair, and the dated pair
+#: a run falls back to when the plain one is held open by another process.
+RECORDING_RE = re.compile(r"output(-\d{8}-\d{6})?\.mp4(\.part)?")
+
+
 def output_path(project_id: str) -> Path:
     return cache.project_dir(project_id) / "output.mp4"
 
@@ -83,19 +91,90 @@ def partial_path(project_id: str) -> Path:
     return output_path(project_id).with_suffix(".mp4.part")
 
 
+def recordings(project_id: str) -> list[Path]:
+    """Every working recording this project has on disk, newest first.
+
+    Covers the plain `output.mp4`/`.part` pair and the dated names a run falls
+    back to when the plain pair is held open — see `free_recording_pair`.
+    """
+    folder = cache.project_dir(project_id)
+    if not folder.is_dir():
+        return []
+    found = [
+        path for path in folder.iterdir()
+        if path.is_file() and RECORDING_RE.fullmatch(path.name)
+    ]
+    found.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    return found
+
+
+def current_recording(project_id: str) -> tuple[Path, bool] | None:
+    """The recording to serve, and whether it is finished.
+
+    Newest wins, and a finished file beats a partial of the same age: a run
+    promotes `.part` to `.mp4` at the same instant, and serving the `.part`
+    there would report a complete take as still in progress.
+    """
+    found = recordings(project_id)
+    if not found:
+        return None
+    finished = [path for path in found if not path.name.endswith(PART_SUFFIX)]
+    if finished and finished[0] is found[0]:
+        return finished[0], True
+    newest = found[0]
+    if finished and finished[0].stat().st_mtime >= newest.stat().st_mtime:
+        return finished[0], True
+    return newest, not newest.name.endswith(PART_SUFFIX)
+
+
 def clear_output(project_id: str) -> int:
-    """Drop any recording from a previous run.
+    """Drop the recordings from previous runs. Best-effort, never fatal.
 
     Called alongside `cache.clear_frames`. A run may use a different face, model
     or resolution, so an old recording is as stale as an old frame — and leaving
     it would let a new run silently extend someone else's video.
+
+    A file another process holds open is SKIPPED rather than raised on. Windows
+    refuses to unlink an open file, and the commonest holder is this very app
+    serving the previous take to a `<video>` element that is still pointed at
+    it. Refusing to start a run because the last one is being WATCHED is not a
+    trade worth making: the new run takes a free name instead (see
+    `free_recording_pair`) and the leftover is swept on a later start, or by
+    the release endpoint.
     """
     removed = 0
-    for path in (output_path(project_id), partial_path(project_id)):
-        if path.exists():
-            path.unlink(missing_ok=True)
-            removed += 1
+    for path in recordings(project_id):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:  # noqa: PERF203 - one message per stuck file
+            log.info(
+                "[RECORDER] project=%s kept %s: %s", project_id, path.name, exc
+            )
+            continue
+        removed += 1
     return removed
+
+
+def free_recording_pair(project_id: str) -> tuple[Path, Path]:
+    """`(working, finished)` paths this run may safely use.
+
+    The plain pair when nothing holds it, and a dated pair when something does.
+    The alternative -- waiting for a handle we do not own, or failing the start
+    -- makes someone else's open file this run's problem.
+    """
+    working, finished = partial_path(project_id), output_path(project_id)
+    if not working.exists() and not finished.exists():
+        return working, finished
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    folder = cache.project_dir(project_id)
+    alternate = folder / f"output-{stamp}.mp4"
+    log.info(
+        "[RECORDER] project=%s previous recording is held; recording to %s",
+        project_id, alternate.name,
+    )
+    return alternate.with_suffix(".mp4.part"), alternate
 
 
 def _decode_jpeg(path: Path, size: tuple[int, int]) -> bytes:
@@ -155,6 +234,10 @@ class Recorder:
         self.swap_range = swap_range
         # Set once the finished recording has been copied to the output folder.
         self.exported_to: Path | None = None
+        # Chosen at `start`, not here: whether the plain pair is free depends on
+        # who is holding it at the moment the run actually begins.
+        self.working = partial_path(project_id)
+        self.finished = output_path(project_id)
         self.frame_bytes = self.width * self.height * BYTES_PER_PIXEL
 
         self._decoder: asyncio.subprocess.Process | None = None
@@ -190,8 +273,9 @@ class Recorder:
 
     async def start(self) -> None:
         s = get_settings()
-        dest = partial_path(self.project_id)
-        dest.parent.mkdir(parents=True, exist_ok=True)
+        cache.project_dir(self.project_id).mkdir(parents=True, exist_ok=True)
+        self.working, self.finished = free_recording_pair(self.project_id)
+        dest = self.working
         dest.unlink(missing_ok=True)
 
         self._decoder = await asyncio.create_subprocess_exec(
@@ -425,10 +509,10 @@ class Recorder:
         playable fragmented mp4, and the suffix is what tells the API (and the
         user) that the recording stopped early.
         """
-        part = partial_path(self.project_id)
+        part = self.working
         if not self._finished or not part.exists() or part.stat().st_size == 0:
             return
-        part.replace(output_path(self.project_id))
+        part.replace(self.finished)
 
     def _stem(self) -> str:
         """`project_datetime_face`, each part sanitized and empties dropped.
@@ -459,12 +543,12 @@ class Recorder:
         finished recording into a failed run.
         """
         s = get_settings()
-        source = output_path(self.project_id)
+        source = self.finished
         suffix = ""
         if not source.is_file():
-            if not (s.output_include_partial and partial_path(self.project_id).is_file()):
+            if not (s.output_include_partial and self.working.is_file()):
                 return
-            source = partial_path(self.project_id)
+            source = self.working
             suffix = ".partial"
 
         try:

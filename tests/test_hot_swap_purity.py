@@ -427,6 +427,57 @@ def test_starting_a_running_scheduler_restarts_it_rather_than_racing_it(
     ).status_code == 200
 
 
+def test_releasing_deletes_what_it_can_and_names_what_it_cannot(client, tmp_path):
+    """The release control's contract: sweep, then report the stragglers.
+
+    Whatever is left is held by a process this app cannot reach into, so the
+    only useful answer is to name the file and let the user close whatever has
+    it open."""
+    c, _built = client
+    project_id = c.post("/api/projects", json={"name": "release"}).json()["id"]
+    recorder.output_path(project_id).parent.mkdir(parents=True, exist_ok=True)
+    recorder.output_path(project_id).write_bytes(b"held open")
+    recorder.partial_path(project_id).write_bytes(b"free")
+
+    handle = recorder.output_path(project_id).open("rb")
+    try:
+        response = c.post(f"/api/projects/{project_id}/recording/release")
+    finally:
+        handle.close()
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["removed"] == 1
+    assert body["held"] == ["output.mp4"]
+
+    # Closed now, so a second press finishes the job.
+    again = c.post(f"/api/projects/{project_id}/recording/release").json()
+    assert again["removed"] == 1
+    assert again["held"] == []
+    assert again["recording"]["available"] is False
+
+
+def test_releasing_is_refused_while_the_run_that_owns_it_is_going(client, tmp_path):
+    c, _built = client
+    project_id = c.post("/api/projects", json={"name": "release busy"}).json()["id"]
+    assert c.post(
+        f"/api/projects/{project_id}/source",
+        files={"file": ("clip.mp4", _clip(tmp_path), "video/mp4")},
+    ).status_code == 200
+    face = _library_face(c, (40, 40, 200))
+    assert c.post(
+        f"/api/projects/{project_id}/face", json={"face_id": face}
+    ).status_code == 200
+    assert c.post(
+        f"/api/projects/{project_id}/scheduler/start", json={}
+    ).status_code == 200
+    try:
+        refused = c.post(f"/api/projects/{project_id}/recording/release")
+        assert refused.status_code == 409, refused.text
+    finally:
+        c.post(f"/api/projects/{project_id}/scheduler/stop")
+
+
 def test_the_test_writes_nothing_outside_tmp(client, tmp_path, monkeypatch):
     """Guard the guard: the fixture really repointed both roots."""
     c, _built = client

@@ -141,6 +141,14 @@ export interface RecordingInfo {
   bytes: number
 }
 
+/** POST /{id}/recording/release. `held` names the files that would not go —
+ *  whatever still has them open is outside this app. */
+export interface ReleaseRecordingResponse {
+  removed: number
+  held: string[]
+  recording: RecordingInfo
+}
+
 /** GET /{id}/generation/status (generation._status). */
 export interface GenerationStatusResponse {
   project_id: string

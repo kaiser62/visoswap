@@ -172,6 +172,73 @@ def test_clear_output_removes_both_the_finished_and_partial_files(project):
     assert not recorder.partial_path(project).exists()
 
 
+def test_a_recording_another_process_holds_open_is_kept_not_raised_on(project):
+    """Windows will not unlink an open file, and the commonest holder is this
+    app serving the last take to a player. A run must not fail over that."""
+    recorder.output_path(project).write_bytes(b"being watched")
+    recorder.partial_path(project).write_bytes(b"free to go")
+
+    handle = recorder.output_path(project).open("rb")
+    try:
+        removed = recorder.clear_output(project)
+    finally:
+        handle.close()
+
+    assert removed == 1, "the free file was not removed"
+    assert recorder.output_path(project).exists(), "the held file was deleted"
+    assert not recorder.partial_path(project).exists()
+
+
+def test_a_run_takes_a_free_name_when_the_plain_one_is_still_there(project):
+    recorder.output_path(project).write_bytes(b"left behind")
+
+    working, finished = recorder.free_recording_pair(project)
+
+    assert finished != recorder.output_path(project)
+    assert working == finished.with_suffix(".mp4.part")
+    assert recorder.RECORDING_RE.fullmatch(finished.name), finished.name
+    assert recorder.RECORDING_RE.fullmatch(working.name), working.name
+
+
+def test_the_plain_pair_is_used_when_nothing_holds_it(project):
+    working, finished = recorder.free_recording_pair(project)
+    assert finished == recorder.output_path(project)
+    assert working == recorder.partial_path(project)
+
+
+def test_the_newest_recording_is_the_one_served(project):
+    """A dated take from a run whose predecessor was locked must win: serving
+    the stale plain file would show the user the run they did not just make."""
+    import os
+    import time
+
+    stale = recorder.output_path(project)
+    stale.write_bytes(b"older run")
+    fresh = cache.project_dir(project) / "output-20260826-051457.mp4"
+    fresh.write_bytes(b"newer run")
+    now = time.time()
+    os.utime(stale, (now - 60, now - 60))
+    os.utime(fresh, (now, now))
+
+    current = recorder.current_recording(project)
+    assert current is not None
+    path, complete = current
+    assert path == fresh
+    assert complete is True
+
+
+def test_an_in_progress_recording_is_served_and_reported_incomplete(project):
+    part = recorder.partial_path(project)
+    part.write_bytes(b"still going")
+
+    current = recorder.current_recording(project)
+    assert current == (part, False)
+
+
+def test_no_recording_at_all_reads_as_nothing_to_serve(project):
+    assert recorder.current_recording(project) is None
+
+
 
 def test_a_completed_run_is_promoted_and_carries_the_audio(project, tmp_path):
     source = _source(tmp_path, audio=True)

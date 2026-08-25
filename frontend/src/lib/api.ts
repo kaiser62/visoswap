@@ -17,6 +17,7 @@ import type {
   Preset,
   PresetApplyResponse,
   Project,
+  ReleaseRecordingResponse,
   RenderPreviewResponse,
   SchedulerStartRequest,
   SchemaDocument,
@@ -191,6 +192,20 @@ export function getGenerationStatus(
  *  (and its Range requests) on its own path instead of through this module. */
 export function outputUrl(projectId: string): string {
   return `/api/projects/${projectId}/output`
+}
+
+/** Delete this project's working recordings; reports what would not go.
+ *
+ * The caller must let go of the file FIRST — an inline `<video>` pointed at
+ * `outputUrl` keeps it open through the backend, and no server-side call can
+ * take that handle away. Unmount the player, then call this. */
+export function releaseRecording(
+  projectId: string,
+): Promise<ReleaseRecordingResponse> {
+  return request<ReleaseRecordingResponse>(
+    `/api/projects/${projectId}/recording/release`,
+    { method: 'POST' },
+  )
 }
 
 /** Requeue every failed frame job. The response carries the resulting status

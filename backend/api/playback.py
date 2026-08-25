@@ -139,11 +139,10 @@ async def download_output(project: dict[str, Any] = Depends(get_project)):
     No-store rather than no-cache: the partial file grows underneath the client,
     and a cached copy of an earlier, shorter version is worse than no copy.
     """
-    finished = recorder.output_path(project["id"])
-    partial = recorder.partial_path(project["id"])
-    path, complete = (finished, True) if finished.is_file() else (partial, False)
-    if not path.is_file():
+    current = recorder.current_recording(project["id"])
+    if current is None:
         raise HTTPException(status_code=404, detail="no recording for this project")
+    path, complete = current
 
     return FileResponse(
         path,

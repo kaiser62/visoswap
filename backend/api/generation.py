@@ -62,16 +62,11 @@ async def start_scheduler(
     files = cache.clear_frames(project["id"])
     # The previous run's recording goes with them: leaving it would let this run
     # silently extend a video made with a different face, model or resolution.
-    try:
-        files += recorder.clear_output(project["id"])
-    except OSError as exc:
-        # Something outside this process still has the file -- a media player
-        # with the export open, an antivirus scan. Say so; do not start a run
-        # that would quietly extend a stranger's video.
-        raise HTTPException(
-            status_code=409,
-            detail=f"previous recording is still in use: {exc}",
-        ) from exc
+    # Best-effort: a previous take that something still holds open (this app,
+    # serving it to a player that is still pointed at it) is left where it is
+    # and this run records under a free name instead. Being watched must never
+    # be a reason a run refuses to start.
+    files += recorder.clear_output(project["id"])
     if rows or files:
         log.info(
             "[SCHEDULER] project=%s cleared rows=%d files=%d",
@@ -114,6 +109,32 @@ async def stop_scheduler(
     """
     await registry.stop(project["id"], force=force)
     return await _status(project["id"], db)
+
+
+@router.post("/{project_id}/recording/release")
+async def release_recording(
+    project: dict[str, Any] = Depends(get_project),
+    db: Database = Depends(get_db),
+) -> dict[str, Any]:
+    """Delete this project's working recordings, and say what would not go.
+
+    The caller's job is to let go FIRST: a `<video>` still pointed at
+    `/output` keeps the file open through this app, and nothing the server can
+    do will take that handle off it. Point the player elsewhere, then call
+    this. Whatever remains is held by something outside the app -- a media
+    player with the export open, a scanner mid-file -- and is named in `held`
+    so the message can say which file and let the user close it.
+
+    Refused while a run is going: those files are the run's own output.
+    """
+    scheduler = registry.peek(project["id"])
+    if scheduler is not None and scheduler.running:
+        raise HTTPException(
+            status_code=409, detail="stop the run before releasing its recording"
+        )
+    removed = recorder.clear_output(project["id"])
+    held = [path.name for path in recorder.recordings(project["id"])]
+    return {"removed": removed, "held": held, "recording": _recording_info(project["id"])}
 
 
 @router.post("/{project_id}/playback")
@@ -180,9 +201,8 @@ def _recording_info(project_id: str) -> dict[str, Any]:
     file grows during a run: the point of the recorder is that a partial
     download is available *while* generation is still going.
     """
-    finished = recorder.output_path(project_id)
-    partial = recorder.partial_path(project_id)
-    path, complete = (finished, True) if finished.is_file() else (partial, False)
-    if not path.is_file():
+    current = recorder.current_recording(project_id)
+    if current is None:
         return {"available": False, "complete": False, "bytes": 0}
+    path, complete = current
     return {"available": True, "complete": complete, "bytes": path.stat().st_size}

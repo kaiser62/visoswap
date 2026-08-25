@@ -5,9 +5,9 @@
  * label must follow the backend's `complete` flag and nothing else.
  */
 
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ResultsCard } from '../components/ResultsCard'
+import { RELEASE_SETTLE_MS, ResultsCard } from '../components/ResultsCard'
 import { MediaProvider } from '../state/MediaContext'
 import type { GenerationStatusResponse, Project, RecordingInfo } from '../types'
 
@@ -28,6 +28,13 @@ let serverProject: Project
 let statusPayload: GenerationStatusResponse
 /** Set to reject the next status poll only. */
 let failNextStatus = false
+let releaseCalls = 0
+let releaseFails = false
+let releasePayload: {
+  removed: number
+  held: string[]
+  recording: RecordingInfo
+}
 
 function jsonResponse(body: unknown, status = 200) {
   return { ok: status >= 200 && status < 300, status, statusText: 'ok', json: async () => body }
@@ -38,6 +45,11 @@ function installFetch() {
     if (url === '/api/projects/p1') return jsonResponse(serverProject)
     if (url === '/api/projects/p1/frames')
       return jsonResponse({ project_id: 'p1', interval: 1, duration: null, frames: [] })
+    if (url === '/api/projects/p1/recording/release') {
+      releaseCalls += 1
+      if (releaseFails) return jsonResponse({ detail: 'stop the run first' }, 409)
+      return jsonResponse(releasePayload)
+    }
     if (url === '/api/projects/p1/generation/status') {
       if (failNextStatus) {
         failNextStatus = false
@@ -82,6 +94,13 @@ beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   FakeSocket.instances = []
   failNextStatus = false
+  releaseCalls = 0
+  releaseFails = false
+  releasePayload = {
+    removed: 1,
+    held: [],
+    recording: { available: false, complete: false, bytes: 0 },
+  }
   vi.stubGlobal('WebSocket', FakeSocket as unknown as typeof WebSocket)
   serverProject = {
     id: 'p1',
@@ -189,5 +208,75 @@ describe('results card', () => {
     await mounted()
     const player = screen.getByTestId('results-video')
     expect(player.getAttribute('src')).toBe('/api/projects/p1/output')
+  })
+
+  it('closes the player before it asks the server to delete the file', async () => {
+    // The player is the holder: while it is mounted it keeps the response --
+    // and so the file -- open, and the delete cannot succeed.
+    statusPayload = { ...statusPayload, recording: recording({ complete: true }) }
+    await mounted()
+    expect(screen.getByTestId('results-video')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('results-release'))
+    expect(screen.queryByTestId('results-video')).not.toBeInTheDocument()
+    expect(releaseCalls).toBe(0)
+
+    await tick(RELEASE_SETTLE_MS)
+    await waitFor(() => expect(releaseCalls).toBe(1))
+    await waitFor(() =>
+      expect(screen.getByTestId('results-release-note').textContent).toMatch(/released/i),
+    )
+  })
+
+  it('names the file when something outside the app still holds it', async () => {
+    statusPayload = { ...statusPayload, recording: recording({ complete: true }) }
+    releasePayload = {
+      removed: 0,
+      held: ['output.mp4'],
+      recording: recording({ complete: true }),
+    }
+    await mounted()
+
+    fireEvent.click(screen.getByTestId('results-release'))
+    await tick(RELEASE_SETTLE_MS)
+    await waitFor(() =>
+      expect(screen.getByTestId('results-release-note').textContent).toContain('output.mp4'),
+    )
+  })
+
+  it('refuses to offer release while a run is going', async () => {
+    statusPayload = { ...statusPayload, running: true, recording: recording({}) }
+    await mounted()
+    expect(screen.getByTestId('results-release')).toBeDisabled()
+  })
+
+  it('gives the player back when a new run reports a recording', async () => {
+    statusPayload = { ...statusPayload, recording: recording({ complete: true }) }
+    await mounted()
+    fireEvent.click(screen.getByTestId('results-release'))
+    await tick(RELEASE_SETTLE_MS)
+    await waitFor(() => expect(releaseCalls).toBe(1))
+
+    // A new run begins: the socket flips running, the card polls, and the
+    // recording it reports is a different file from the one just released.
+    statusPayload = { ...statusPayload, running: true, recording: recording({ bytes: 64 }) }
+    await act(async () => {
+      FakeSocket.instances[0]?.onmessage?.({
+        data: JSON.stringify({ type: 'scheduler_started' }),
+      })
+    })
+    await tick()
+    await waitFor(() => expect(screen.getByTestId('results-video')).toBeInTheDocument())
+  })
+
+  it('keeps the player when the release call itself fails', async () => {
+    statusPayload = { ...statusPayload, recording: recording({ complete: true }) }
+    releaseFails = true
+    await mounted()
+
+    fireEvent.click(screen.getByTestId('results-release'))
+    await tick(RELEASE_SETTLE_MS)
+    await waitFor(() => expect(screen.getByTestId('results-release-note')).toBeInTheDocument())
+    expect(screen.getByTestId('results-video')).toBeInTheDocument()
   })
 })
