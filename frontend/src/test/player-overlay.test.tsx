@@ -10,8 +10,9 @@
  * the events are dispatched by hand.
  */
 
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { JobsCard } from '../components/JobsCard'
 import { PlayerCard } from '../components/PlayerCard'
 import { MediaProvider } from '../state/MediaContext'
 import type { FrameEntry, GenerationStatusResponse, Project } from '../types'
@@ -256,6 +257,59 @@ describe('player card overlay', () => {
     expect(screen.getByRole('alert').textContent).toMatch(/end/i)
     expect(screen.getByTestId('mark-start').textContent).toBe('4.000')
     expect(screen.getByTestId('mark-end').textContent).toBe('—')
+  })
+
+  it('hides and restores the layer on demand without disturbing the video', async () => {
+    const video = await mounted(installFetch())
+    act(() => tick(video, 1.5))
+    expect(overlay()?.getAttribute('src')).toBe('/f/1.png')
+
+    const toggle = screen.getByTestId('btn-toggle-overlay')
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(toggle)
+
+    // The layer is gone -- the source video underneath it is not.
+    expect(overlay()).toBeNull()
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(video.paused).toBe(false)
+    expect(video.currentTime).toBe(1.5)
+
+    // The lookup kept running while hidden, so showing again needs no seek.
+    act(() => tick(video, 2.4))
+    expect(overlay()).toBeNull()
+    fireEvent.click(toggle)
+    expect(overlay()?.getAttribute('src')).toBe('/f/2.png')
+  })
+
+  it('keeps measuring coverage while the layer is hidden', async () => {
+    const fetchMock = installFetch()
+    render(
+      <MediaProvider projectId="t">
+        <PlayerCard />
+        <JobsCard />
+      </MediaProvider>,
+    )
+    await act(async () => {})
+    await act(async () => {})
+    act(() => {
+      FakeSocket.instances[0]?.serverOpen()
+    })
+    await act(async () => {})
+    expect(callsTo(fetchMock, '/frames')).toBeGreaterThan(0)
+    const video = drivable(screen.getByTestId('player-video') as HTMLVideoElement)
+
+    fireEvent.click(screen.getByTestId('btn-toggle-overlay'))
+    // Two lookups that both land on a frame: hiding the layer is a display
+    // choice, and a coverage figure that collapsed to 0% here would report a
+    // healthy run as a broken one.
+    await act(async () => {
+      tick(video, 1.5)
+      tick(video, 2.4)
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('jobs-coverage').textContent).toContain('100%'),
+    )
+    expect(overlay()).toBeNull()
   })
 
   it('seeks by time and by frame number using the project frame rate', async () => {

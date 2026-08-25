@@ -51,6 +51,11 @@ export function PlayerCard() {
   } = useMedia()
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
+  // Show/hide is a display concern and nothing else. The lookup, the coverage
+  // measurement and the advisory position report all keep running while the
+  // layer is hidden -- otherwise turning the overlay off to compare against the
+  // source would quietly zero the coverage figure and make the run look broken.
+  const [overlayVisible, setOverlayVisible] = useState(true)
   const [markMessage, setMarkMessage] = useState<string | null>(null)
   const lastReportRef = useRef(0)
 
@@ -179,7 +184,7 @@ export function PlayerCard() {
         ) : (
           <p className="p-4 text-sm text-muted">Load a target video to begin.</p>
         )}
-        {displayedUrl !== null && (
+        {displayedUrl !== null && overlayVisible && (
           <img
             data-testid="overlay-image"
             src={displayedUrl}
@@ -205,6 +210,20 @@ export function PlayerCard() {
       >
         <ModeSelector />
         <PreviewControls />
+        <button
+          type="button"
+          data-testid="btn-toggle-overlay"
+          aria-pressed={overlayVisible}
+          onClick={() => setOverlayVisible((v) => !v)}
+          title="Hide the swapped layer to compare against the source video"
+          className={`rounded border px-3 py-1.5 text-xs font-semibold ${
+            overlayVisible
+              ? 'border-accent bg-active text-text'
+              : 'border-line bg-raised text-muted'
+          }`}
+        >
+          {overlayVisible ? 'Overlay on' : 'Overlay off'}
+        </button>
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
