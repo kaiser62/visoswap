@@ -160,6 +160,10 @@ class Recorder:
         self._stop_after: float | None = None
         self._advance = asyncio.Event()
         self._closed = False
+        # Held for the whole of `aclose`, so a second caller waits for the
+        # finalization rather than returning while the file is still being
+        # promoted and copied out from under it.
+        self._closing = asyncio.Lock()
         # Decoded generated frame, held for reuse across the span it covers.
         self._held_key: str | None = None
         self._held: bytes | None = None
@@ -305,6 +309,21 @@ class Recorder:
         """
         if self._pump is None or self._pump.done():
             return
+        if self._finished:
+            # `finish()` already released the pump to run to the end of the
+            # source, and it is doing exactly that. Imposing a bound now would
+            # cut it off wherever it had got to: a completed ten-second range
+            # run drained to 67.5s of a 72.2s source and then stopped there,
+            # because the stop that followed set the bound back to 10s and the
+            # very next iteration was past it. Wait for the drain instead.
+            try:
+                await asyncio.wait_for(asyncio.shield(self._pump), timeout=timeout)
+            except asyncio.TimeoutError:
+                log.warning(
+                    "[RECORDER] project=%s full drain timed out after %.0fs",
+                    self.project_id, timeout,
+                )
+            return
         self._stop_after = t
         # Everything at or below `t` is settled by definition here: the caller
         # derived `t` from what has already been generated.
@@ -320,10 +339,13 @@ class Recorder:
 
     async def aclose(self) -> None:
         """Stop and finalize. Idempotent — cancel, error and shutdown all land here."""
-        if self._closed:
-            return
-        self._closed = True
+        async with self._closing:
+            if self._closed:
+                return
+            self._closed = True
+            await self._aclose()
 
+    async def _aclose(self) -> None:
         for task in (self._pump, self._stderr):
             if task is not None:
                 task.cancel()
@@ -457,6 +479,17 @@ class Recorder:
             raise
         except Exception:
             log.exception("[RECORDER] project=%s pump crashed", self.project_id)
+            return
+        if self._finished:
+            # Reaching the end of the source is the whole recording; nothing
+            # else is going to arrive. Finalize here rather than waiting for a
+            # stop that may never come -- a range run left running parked at a
+            # `.part` reporting `complete: false` indefinitely, with the moov
+            # atom still unwritten, even though every frame had been pumped.
+            # Deferred to a task on purpose: `aclose` cancels `self._pump`,
+            # which is this very task, and by the time the task runs this
+            # coroutine has returned so the cancel is a no-op.
+            asyncio.create_task(self.aclose())
 
     async def _pump_frames(self) -> None:
         assert self._decoder and self._decoder.stdout

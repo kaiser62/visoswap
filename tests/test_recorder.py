@@ -602,3 +602,55 @@ def test_a_fully_generated_span_is_written_whole(project, tmp_path):
     rec = asyncio.run(run())
     # Every source frame, not merely the ones outside a trailing window.
     assert rec.frames_written == int(DURATION * FPS), rec.frames_written
+
+
+def test_a_stop_after_finish_does_not_cut_the_full_drain_short(project, tmp_path):
+    """The stop that arrives while the full drain is still running.
+
+    A completed range run calls `finish()`, which releases the pump to the end
+    of the source. The stop that follows derives its bound from the last
+    *generated* timestamp -- a few seconds in on a range run -- and applying
+    that bound mid-drain ended the recording wherever the pump had reached. A
+    ten-second range over a 72.2s source exported 67.5s of it.
+    """
+    source = _source(tmp_path, audio=False)
+
+    async def run():
+        rec = _make(project, source)
+        await rec.start()
+        rec.set_frontier(DURATION)
+        rec.finish()
+        # Stop, with a bound the pump is already past, while the drain runs.
+        await rec.drain_to(0.1, timeout=120.0)
+        await rec.aclose()
+        return rec
+
+    rec = asyncio.run(run())
+    assert rec.frames_written == int(DURATION * FPS), rec.frames_written
+
+
+def test_reaching_the_end_of_the_source_finalizes_without_a_stop(project, tmp_path):
+    """A run left running still has to produce a finished file.
+
+    Nothing further can arrive once the source is exhausted, but finalization
+    used to happen only in `aclose`, so a range run nobody stopped sat on a
+    `.part` reporting an incomplete recording indefinitely.
+    """
+    source = _source(tmp_path, audio=False)
+
+    async def run():
+        rec = _make(project, source)
+        await rec.start()
+        rec.set_frontier(DURATION)
+        rec.finish()
+        deadline = asyncio.get_event_loop().time() + 120
+        while not recorder.output_path(project).is_file():
+            assert asyncio.get_event_loop().time() < deadline, "never finalized"
+            await asyncio.sleep(0.05)
+        # Idempotent: the ordinary stop still runs afterwards and must be a
+        # no-op rather than a second finalization.
+        await rec.aclose()
+
+    asyncio.run(run())
+    assert not recorder.partial_path(project).exists()
+    assert _decodes(recorder.output_path(project))
