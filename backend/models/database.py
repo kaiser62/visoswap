@@ -411,6 +411,24 @@ class Database:
         await self.conn.commit()
         return cur.rowcount or 0
 
+    async def cancel_processing(self, project_id: str) -> int:
+        """Settle rows whose worker was killed mid-frame.
+
+        Only a forced stop can produce these. A `processing` row normally
+        settles itself when its worker returns; one whose worker was cancelled
+        without being waited on never will, and an unsettled row sits under the
+        recording watermark forever and keeps reporting as work in flight.
+        Cancelled is the honest terminal state: the frame was started and never
+        produced.
+        """
+        cur = await self.conn.execute(
+            "UPDATE frames SET status = ?, updated_at = ? "
+            "WHERE project_id = ? AND status = ?",
+            (STATUS_CANCELLED, time.time(), project_id, STATUS_PROCESSING),
+        )
+        await self.conn.commit()
+        return cur.rowcount or 0
+
     async def reset_failed(self, project_id: str) -> int:
         cur = await self.conn.execute(
             "UPDATE frames SET status = ?, attempts = 0, error = NULL, "

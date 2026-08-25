@@ -82,9 +82,19 @@ async def start_scheduler(
 
 @router.post("/{project_id}/scheduler/stop")
 async def stop_scheduler(
-    project: dict[str, Any] = Depends(get_project), db: Database = Depends(get_db)
+    force: bool = False,
+    project: dict[str, Any] = Depends(get_project),
+    db: Database = Depends(get_db),
 ) -> dict[str, Any]:
-    await registry.stop(project["id"])
+    """Stop the run. `?force=true` returns without waiting for the cleanup.
+
+    The ordinary stop waits for workers to unwind and for the recorder to
+    drain, which is what keeps the recording whole — but a worker stuck inside
+    a model call can hold that wait open for as long as the call takes. The
+    forced stop is for exactly that case and trades the tail of the recording
+    for a stop that always returns.
+    """
+    await registry.stop(project["id"], force=force)
     return await _status(project["id"], db)
 
 

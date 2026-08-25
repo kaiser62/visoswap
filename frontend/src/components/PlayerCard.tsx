@@ -365,6 +365,19 @@ export function PlayerCard() {
           >
             Stop
           </button>
+          {/* Deliberately not gated on `running`: the case this exists for is a
+              stop that never came back, which leaves the card's idea of the run
+              stuck at whatever it was. A disabled escape hatch is not one. */}
+          <button
+            type="button"
+            data-testid="btn-force-stop-run"
+            onClick={() => void stopRun({ force: true })}
+            disabled={!projectId}
+            title="Kill the run now. Anything still being written to the recording may be lost."
+            className="rounded border border-bad/60 bg-raised px-3 py-1.5 text-xs font-semibold text-bad hover:bg-bad/10 disabled:pointer-events-none disabled:opacity-50"
+          >
+            Force stop
+          </button>
         </div>
       </div>
       {mediaError !== null && (

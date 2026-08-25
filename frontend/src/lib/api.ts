@@ -146,10 +146,18 @@ export function startScheduler(
   )
 }
 
-/** Stop the scheduler; returns the resulting status. */
-export function stopScheduler(projectId: string): Promise<GenerationStatusResponse> {
+/** Stop the scheduler; returns the resulting status.
+ *
+ * `force` skips the server's wait for workers to unwind and for the recorder
+ * to drain, so the call returns even when a worker is wedged inside a model
+ * call. It costs the tail of the recording — see the route's own docstring. */
+export function stopScheduler(
+  projectId: string,
+  options: { force?: boolean } = {},
+): Promise<GenerationStatusResponse> {
+  const query = options.force ? '?force=true' : ''
   return request<GenerationStatusResponse>(
-    `/api/projects/${projectId}/scheduler/stop`,
+    `/api/projects/${projectId}/scheduler/stop${query}`,
     { method: 'POST' },
   )
 }

@@ -96,6 +96,7 @@ const server = {
   framesStatus: 200,
   startBodies: [] as unknown[],
   stopCalls: 0,
+  stopUrls: [] as string[],
 }
 
 function installFetch() {
@@ -121,8 +122,9 @@ function installFetch() {
       server.startBodies.push(JSON.parse(String(init.body)))
       return jsonResponse(statusPayload({ running: true }))
     }
-    if (init?.method === 'POST' && url === '/api/projects/t/scheduler/stop') {
+    if (init?.method === 'POST' && url.startsWith('/api/projects/t/scheduler/stop')) {
       server.stopCalls += 1
+      server.stopUrls.push(url)
       return jsonResponse(statusPayload({ running: false }))
     }
     return jsonResponse({ detail: 'not found' }, 404)
@@ -152,6 +154,7 @@ function Probe({ onReady }: { onReady?: () => void }) {
       <div data-testid="error">{media.error ?? '-'}</div>
       <button data-testid="btn-start" onClick={() => void media.startRun()} />
       <button data-testid="btn-stop" onClick={() => void media.stopRun()} />
+      <button data-testid="btn-force-stop" onClick={() => void media.stopRun({ force: true })} />
       <button data-testid="btn-mode-export" onClick={() => media.selectMode('export')} />
       <button data-testid="btn-set-start" onClick={() => media.setStartMark(10)} />
       <button data-testid="btn-set-end" onClick={() => media.setEndMark(20)} />
@@ -186,6 +189,7 @@ beforeEach(() => {
   server.framesStatus = 200
   server.startBodies = []
   server.stopCalls = 0
+  server.stopUrls = []
 })
 
 afterEach(() => {
@@ -376,6 +380,19 @@ describe('media context', () => {
     await waitFor(() => {
       expect(callsTo(fetchMock, '/generation/status')).toBeGreaterThan(statusBefore)
     })
+  })
+
+  it('a force stop asks the server for the forced path, and an ordinary stop does not', async () => {
+    // The flag is the whole difference between the two buttons: without it on
+    // the wire, the force button is a second Stop that hangs the same way.
+    const fetchMock = installFetch()
+    await bootstrapped(fetchMock)
+    fireEvent.click(screen.getByTestId('btn-stop'))
+    await waitFor(() => expect(server.stopUrls).toHaveLength(1))
+    expect(server.stopUrls[0]).toBe('/api/projects/t/scheduler/stop')
+    fireEvent.click(screen.getByTestId('btn-force-stop'))
+    await waitFor(() => expect(server.stopUrls).toHaveLength(2))
+    expect(server.stopUrls[1]).toBe('/api/projects/t/scheduler/stop?force=true')
   })
 
   it('a failed index fetch leaves an error state naming the failure without unmounting children', async () => {

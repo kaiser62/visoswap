@@ -237,7 +237,9 @@ export function mediaReducer(state: MediaState, action: MediaAction): MediaState
 
 interface MediaContextValue extends MediaState {
   startRun: () => Promise<void>
-  stopRun: () => Promise<void>
+  /** Stop the run. `force` gives up the recorder drain for a stop that
+   *  always returns, for when a worker is wedged and the ordinary stop hangs. */
+  stopRun: (options?: { force?: boolean }) => Promise<void>
   refreshStatus: () => Promise<void>
   setStartMark: (t: number) => void
   setEndMark: (t: number) => void
@@ -441,16 +443,20 @@ export function MediaProvider({
     await refreshStatus()
   }, [projectId, state.mode, state.range, refreshStatus])
 
-  const stopRun = useCallback(async () => {
-    if (!projectId) return
-    try {
-      await postSchedulerStop(projectId)
-    } catch (err) {
-      dispatch({ type: 'MEDIA_ERROR', message: `Stopping the run failed: ${describeError(err)}` })
-      return
-    }
-    await refreshStatus()
-  }, [projectId, refreshStatus])
+  const stopRun = useCallback(
+    async (options: { force?: boolean } = {}) => {
+      if (!projectId) return
+      try {
+        await postSchedulerStop(projectId, options)
+      } catch (err) {
+        const what = options.force ? 'Force stopping' : 'Stopping'
+        dispatch({ type: 'MEDIA_ERROR', message: `${what} the run failed: ${describeError(err)}` })
+        return
+      }
+      await refreshStatus()
+    },
+    [projectId, refreshStatus],
+  )
 
   /**
    * Selecting a mode is a UI choice that also persists the row's generation

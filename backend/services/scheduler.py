@@ -320,7 +320,22 @@ class ProjectScheduler:
             return
         self.recorder = recorder
 
-    async def stop(self) -> None:
+    async def stop(self, *, force: bool = False) -> None:
+        """Stop the run.
+
+        The ordinary stop is worth waiting for: it lets a worker finish
+        unwinding and it drains the recorder, so the file on disk holds
+        everything that was actually generated.
+
+        `force` is the escape hatch for when that wait is the problem — a
+        worker wedged inside a model call, a backend that has stopped
+        answering, an encoder that will not drain. It cancels everything and
+        returns without awaiting any of it: the run is marked idle and
+        announced stopped immediately, and the cleanup is left to finish on
+        its own in the background. The cost is real and is the point — the
+        tail of the recording may be lost, because the alternative is a stop
+        button that does not stop.
+        """
         self.running = False
         self._wake.set()
         tasks = [*self._workers]
@@ -328,20 +343,56 @@ class ProjectScheduler:
             tasks.append(self._planner)
         for task in tasks:
             task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
         self._workers.clear()
         self._planner = None
-        # Flush the recording before the run is marked idle. `aclose` is
-        # idempotent and never raises, so cancel, error and shutdown all leave a
-        # playable file behind.
-        if self.recorder is not None:
-            await self._drain_recording()
-            await self.recorder.aclose()
-            self.recorder = None
+        recorder, self.recorder = self.recorder, None
+
+        if force:
+            # Detached on purpose. Nothing below is allowed to hold up the
+            # caller, but a cancelled worker still has a generator to close and
+            # the encoder still has a pipe to shut, so the work is handed to
+            # the loop rather than dropped.
+            asyncio.create_task(self._reap(tasks, recorder))
+        else:
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            # Flush the recording before the run is marked idle. `aclose` is
+            # idempotent and never raises, so cancel, error and shutdown all
+            # leave a playable file behind.
+            if recorder is not None:
+                self.recorder = recorder
+                await self._drain_recording()
+                self.recorder = None
+                await recorder.aclose()
+
+        # A forced stop leaves `processing` rows behind: their worker was
+        # cancelled mid-frame and will never settle them. Left alone they
+        # would pin the recording watermark under them forever and make the
+        # next status read claim work is still in flight.
+        if force:
+            abandoned = await self.db.cancel_processing(self.project_id)
+            if abandoned:
+                log.info(
+                    "[SCHEDULER] project=%s force cancelled in-flight=%d",
+                    self.project_id, abandoned,
+                )
         await self.db.update_project(self.project_id, status="idle")
         hub.publish(self.project_id, {"type": "scheduler_stopped"})
-        log.info("[SCHEDULER] project=%s stopped", self.project_id)
+        log.info(
+            "[SCHEDULER] project=%s stopped%s", self.project_id, " (forced)" if force else ""
+        )
+
+    async def _reap(
+        self, tasks: list[asyncio.Task[Any]], recorder: Recorder | None
+    ) -> None:
+        """Finish a forced stop's cleanup after the caller has been let go."""
+        try:
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            if recorder is not None:
+                await recorder.aclose()
+        except Exception:
+            log.exception("[SCHEDULER] project=%s reap failed", self.project_id)
 
     # -- playback tracking ----------------------------------------------------
 
@@ -632,10 +683,10 @@ class SchedulerRegistry:
     def peek(self, project_id: str) -> ProjectScheduler | None:
         return self._schedulers.get(project_id)
 
-    async def stop(self, project_id: str) -> None:
+    async def stop(self, project_id: str, *, force: bool = False) -> None:
         scheduler = self._schedulers.pop(project_id, None)
         if scheduler is not None:
-            await scheduler.stop()
+            await scheduler.stop(force=force)
 
     async def stop_all(self) -> None:
         for project_id in list(self._schedulers):
