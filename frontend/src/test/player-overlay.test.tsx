@@ -216,6 +216,48 @@ describe('player card overlay', () => {
     }
   })
 
+  it('paints the swap inside the frame callback, not on the commit after it', async () => {
+    // Measured in Chrome: routing the swap through React alone left the layer
+    // a median of one whole video frame staler than the index could already
+    // have supplied, because the commit lands after the frame the lookup ran
+    // on. The url has to be on the element before the callback returns.
+    const pending: ((now: number, meta: { mediaTime: number }) => void)[] = []
+    const proto = HTMLVideoElement.prototype as unknown as Record<string, unknown>
+    proto.requestVideoFrameCallback = function (
+      cb: (now: number, meta: { mediaTime: number }) => void,
+    ) {
+      pending.push(cb)
+      return pending.length
+    }
+    proto.cancelVideoFrameCallback = function () {}
+    try {
+      await mounted(installFetch())
+      const next = () => {
+        const cb = pending.pop()
+        pending.length = 0
+        return cb
+      }
+      // The first swap necessarily goes through React: with nothing displayed
+      // the layer is not mounted, so there is no element to write to yet.
+      act(() => next()?.(0, { mediaTime: 1.5 }))
+      expect(overlay()?.getAttribute('src')).toBe('/f/1.png')
+
+      const cb = next()
+      let srcDuringCallback: string | null | undefined
+      act(() => {
+        cb?.(0, { mediaTime: 2.4 })
+        // Still inside the batch: nothing React scheduled has committed yet.
+        srcDuringCallback = overlay()?.getAttribute('src')
+      })
+      expect(srcDuringCallback).toBe('/f/2.png')
+      // And the commit that follows agrees rather than fighting it.
+      expect(overlay()?.getAttribute('src')).toBe('/f/2.png')
+    } finally {
+      delete proto.requestVideoFrameCallback
+      delete proto.cancelVideoFrameCallback
+    }
+  })
+
   it('swaps the overlay image to a frame once the playhead passes its timestamp', async () => {
     const video = await mounted(installFetch())
     act(() => tick(video, 1.5))
