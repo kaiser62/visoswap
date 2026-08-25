@@ -64,6 +64,16 @@ def test_stepping_the_rate_down_keeps_earlier_frames_on_grid():
     assert not stranded, sorted(stranded)[:5]
 
 
+def test_full_video_mode_asks_for_every_source_frame():
+    """Nothing races the playhead in a whole-clip render, so a throughput cap
+    would only guarantee a permanently sparse take."""
+    assert grid_rate(_project(full_video_mode=1), observed_rate=4.0) == FPS
+    # It is not real time, so even a very slow backend gets the full grid.
+    assert grid_rate(_project(full_video_mode=1), observed_rate=0.4) == FPS
+    # ...while an ordinary stream run is still capped.
+    assert grid_rate(_project(), observed_rate=4.0) < FPS
+
+
 def test_a_video_with_no_reported_fps_still_gets_a_stable_grid():
     first = grid_rate({"generation_mode": MODE_STREAM, "fps": 0}, observed_rate=7.1)
     second = grid_rate({"generation_mode": MODE_STREAM, "fps": 0}, observed_rate=7.3)

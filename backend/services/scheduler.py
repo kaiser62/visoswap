@@ -75,7 +75,17 @@ def grid_rate(project: dict[str, Any], observed_rate: float | None = None) -> fl
     So the stream grid is capped at the measured throughput. The overlay holds
     each frame until the next arrives, which is what makes a sparse grid look
     continuous rather than strobing.
+
+    Full-video mode is the exception: it plans the whole clip up front and
+    nothing races the playhead, so throttling it to what the backend can deliver
+    IN REAL TIME only guarantees a permanently sparse render. A 60fps source
+    capped at a measured 15fps grid produced a take with every swapped face held
+    across four source frames -- an even judder instead of an uneven one. Given
+    time it can have every frame, so it asks for every frame.
     """
+    if project.get("full_video_mode"):
+        fps = float(project.get("fps") or 0.0)
+        return fps if fps > 0 else FALLBACK_FPS
     if (project.get("generation_mode") or MODE_INTERVAL) == MODE_STREAM:
         fps = float(project.get("fps") or 0.0)
         fps = fps if fps > 0 else FALLBACK_FPS
