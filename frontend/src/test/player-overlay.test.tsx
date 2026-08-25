@@ -174,6 +174,20 @@ describe('player card overlay', () => {
       return pending.length
     }
     proto.cancelVideoFrameCallback = function () {}
+    // Detached prefetch images, captured rather than loaded — jsdom fetches no
+    // resources, so the url handed to the browser is the whole observable.
+    const warmed: string[] = []
+    vi.stubGlobal(
+      'Image',
+      class {
+        set src(url: string) {
+          warmed.push(url)
+        }
+        decode() {
+          return Promise.resolve()
+        }
+      },
+    )
     try {
       const fetchMock = installFetch()
       await mounted(fetchMock)
@@ -191,6 +205,11 @@ describe('player card overlay', () => {
       // The advisory position post stays on the coarse path: a frame-rate
       // callback must not turn into a frame-rate request.
       expect(callsTo(fetchMock, '/playback')).toBe(0)
+
+      // The frames ahead of the playhead were warmed, so the next swap is a
+      // cache hit rather than a decode. Only the ones ahead: the displayed
+      // frame is already on screen.
+      expect(warmed.sort()).toEqual(['/f/2.png', '/f/4.png'])
     } finally {
       delete proto.requestVideoFrameCallback
       delete proto.cancelVideoFrameCallback

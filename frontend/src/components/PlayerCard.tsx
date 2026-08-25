@@ -20,7 +20,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { reportPlayback } from '../lib/api'
-import { frameAtOrBefore } from '../lib/frameindex'
+import { entriesAfter, frameAtOrBefore } from '../lib/frameindex'
 import { useMedia } from '../state/MediaContext'
 import { ModeSelector } from './ModeSelector'
 import { PreviewControls } from './PreviewControls'
@@ -29,6 +29,14 @@ import { Transport } from './Transport'
 
 /** At most one advisory position post per this many ms of continuous play. */
 export const PLAYBACK_THROTTLE_MS = 500
+
+/** How many frames ahead of the playhead to fetch and decode early.
+ *
+ * Three, not thirty: generated frames are large, the run is producing them at
+ * a few per second, and warming a long tail would compete for bandwidth with
+ * the generation the user is waiting on. Three covers the swap that is about
+ * to happen and the two behind it. */
+export const PREFETCH_FRAMES = 3
 
 export function PlayerCard() {
   const {
@@ -77,6 +85,31 @@ export function PlayerCard() {
     [projectId],
   )
 
+  // Urls already handed to the browser to fetch and decode. Frame urls carry an
+  // immutable cache header, so the second reference is a memory hit and one
+  // attempt per url is enough for the life of the card.
+  const prefetchedRef = useRef(new Set<string>())
+
+  /** Warm the next few frames so the swap itself never waits on a decode.
+   *
+   * Assigning `src` to a cold image decodes on the swap, which on a large
+   * frame is precisely the hitch this is here to remove. Detached `Image`
+   * objects do the fetch and the decode in advance and are then dropped —
+   * what survives is the browser's own cache entry, which is what the visible
+   * <img> ends up hitting. Failures are ignored on purpose: a frame that
+   * cannot be prefetched simply loads the old way, and the overlay already
+   * degrades to the raw video if it cannot load at all.
+   */
+  const prefetchAhead = useCallback((t: number) => {
+    for (const entry of entriesAfter(indexRef.current, t, PREFETCH_FRAMES)) {
+      if (prefetchedRef.current.has(entry.url)) continue
+      prefetchedRef.current.add(entry.url)
+      const img = new Image()
+      img.src = entry.url
+      void img.decode?.().catch(() => {})
+    }
+  }, [])
+
   /** Point the overlay at whatever covers `t`, or at nothing.
    *
    * Idempotent by design: the same url in means the same state object out, so
@@ -85,6 +118,7 @@ export function PlayerCard() {
   const swapOverlay = useCallback((t: number) => {
     const next = frameAtOrBefore(indexRef.current, t)?.url ?? null
     setOverlayUrl((prev) => (prev === next ? prev : next))
+    prefetchAhead(t)
   }, [])
 
   /** Swap the overlay once per *video* frame instead of once per `timeupdate`.

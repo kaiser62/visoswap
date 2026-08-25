@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { buildIndex, frameAtOrBefore, upsert } from '../lib/frameindex'
+import { buildIndex, entriesAfter, frameAtOrBefore, upsert } from '../lib/frameindex'
 import type { FrameEntry, FramesIndexResponse } from '../types'
 
 function entry(timestamp: number, url: string | null, status = 'completed'): FrameEntry {
@@ -71,6 +71,18 @@ describe('frameAtOrBefore', () => {
     // A descending-mid bug or off-by-one hi bound breaks at least one of these.
     expect(frameAtOrBefore(index, 8675.309)?.timestamp).toBe(8675)
     expect(frameAtOrBefore(index, -1)).toBeNull()
+  })
+})
+
+describe('entriesAfter', () => {
+  it('returns the next entries strictly after t, bounded by count', () => {
+    const index = buildIndex(resp([entry(1, 'u1'), entry(2, 'u2'), entry(3, 'u3'), entry(4, 'u4')]))
+    expect(entriesAfter(index, 1.5, 2).map((e) => e.timestamp)).toEqual([2, 3])
+    // Strictly after: the entry sitting exactly on t is the one being shown.
+    expect(entriesAfter(index, 2, 2).map((e) => e.timestamp)).toEqual([3, 4])
+    // Past the end is empty, not a wrap or a throw.
+    expect(entriesAfter(index, 99, 3)).toEqual([])
+    expect(entriesAfter([], 0, 3)).toEqual([])
   })
 })
 

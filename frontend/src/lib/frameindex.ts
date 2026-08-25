@@ -51,6 +51,25 @@ export function frameAtOrBefore(index: FrameIndex, t: number): FrameIndexEntry |
 }
 
 /**
+ * The next `count` entries strictly after `t`, in order.
+ *
+ * Looking forward is allowed here and only here: these are never displayed,
+ * they are handed to the browser to fetch and decode early so the swap at
+ * frame time is a memory hit rather than a decode. D-15d governs what is
+ * *shown*, and that stays nearest-previous.
+ */
+export function entriesAfter(index: FrameIndex, t: number, count: number): FrameIndex {
+  let lo = 0
+  let hi = index.length
+  while (lo < hi) {
+    const mid = lo + ((hi - lo) >> 1)
+    if (index[mid].timestamp <= t) lo = mid + 1
+    else hi = mid
+  }
+  return index.slice(lo, lo + count)
+}
+
+/**
  * Insert a newly completed frame in sorted position, or replace an existing
  * entry at the same timestamp. Returns a new array; the input is untouched.
  */
