@@ -17,6 +17,9 @@ const PYTHON = resolve(REPO_ROOT, '.venv-clean', 'Scripts', 'python.exe')
 
 export default defineConfig({
   testDir: './e2e',
+  // Every project a run creates is named `e2e-...` and deleted here. Without
+  // it the runs silently accumulate projects and their cached frames.
+  globalTeardown: './e2e/global-teardown.ts',
   timeout: 60_000,
   expect: { timeout: 10_000 },
   reporter: 'line',
