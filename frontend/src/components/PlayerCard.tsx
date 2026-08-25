@@ -172,14 +172,23 @@ export function PlayerCard() {
 
   return (
     <StudioCard title="Player" defaultOpen>
-      <div className="relative min-h-[280px] bg-black">
+      {/* No min height once a video is mounted: the stage is exactly the video's
+          box, which is what keeps the absolutely-positioned overlay registered
+          with the frame instead of centred in a taller black field. */}
+      <div className={`relative bg-black ${project?.video_src ? '' : 'min-h-[280px]'}`}>
         {project?.video_src ? (
           <video
             ref={videoRef}
             data-testid="player-video"
             src={project.video_src}
             controls
-            className="block h-full w-full"
+            // Capped at 80% of the viewport height and letterboxed inside the
+            // full card width. A portrait source is the case that breaks: given
+            // only `w-full` it takes its own aspect ratio and runs off the
+            // bottom of the screen. `object-contain` on both the video and the
+            // overlay makes them resolve to the same box, so the swapped layer
+            // still lands exactly on the frame.
+            className="block max-h-[80vh] w-full object-contain"
           />
         ) : (
           <p className="p-4 text-sm text-muted">Load a target video to begin.</p>
