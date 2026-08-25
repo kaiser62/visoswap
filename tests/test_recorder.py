@@ -125,6 +125,31 @@ def test_a_timestamp_before_the_first_generated_frame_falls_back_to_source(proje
     assert rec._generated_for(1.9) is None
 
 
+def test_a_range_run_leaves_the_footage_outside_the_range_untouched(project):
+    """Past the end of the range there is nothing the user asked to swap.
+
+    Nearest-previous has no upper bound of its own, so a ten-second range over a
+    seventy-second source held the frame generated at t=10 for the remaining
+    sixty seconds and exported a take that was swapped end to end.
+    """
+    _write_generated(project, [0.0, 2.0, 4.0])
+    rec = _make(project, "unused.mp4", swap_range=(2.0, 4.0))
+
+    assert rec._generated_for(1.9) is None, "before the range"
+    assert rec._generated_for(2.0).stem == cache.timestamp_key(2.0)
+    assert rec._generated_for(3.5).stem == cache.timestamp_key(2.0)
+    assert rec._generated_for(4.0).stem == cache.timestamp_key(4.0)
+    assert rec._generated_for(4.1) is None, "after the range"
+
+
+def test_without_a_range_the_last_generated_frame_still_carries_the_tail(project):
+    """The whole-video run is unchanged: no range means no upper bound."""
+    _write_generated(project, [0.0, 2.0])
+    rec = _make(project, "unused.mp4")
+
+    assert rec._generated_for(60.0).stem == cache.timestamp_key(2.0)
+
+
 def test_half_written_frames_are_never_selected(project):
     """`.part` files are a frame mid-write, not a cache hit."""
     _write_generated(project, [0.0])

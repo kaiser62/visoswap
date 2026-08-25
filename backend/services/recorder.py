@@ -133,6 +133,7 @@ class Recorder:
         duration: float | None = None,
         name: str = "",
         face: str = "",
+        swap_range: tuple[float, float] | None = None,
     ) -> None:
         s = get_settings()
         self.project_id = project_id
@@ -145,6 +146,13 @@ class Recorder:
         # Display stem of the source face this run used — not a path; the
         # recorder never opens it. It only names the exported take.
         self.face = face
+        # The span a range run asked for, or None for a run that covers the
+        # whole video. Outside it the source frame is written untouched: the
+        # nearest-*previous* rule has no upper bound of its own, so a ten-second
+        # range over a seventy-second source used to hold the frame generated at
+        # t=10 for the remaining sixty seconds -- a take that shows a swapped
+        # face over footage nobody asked to swap.
+        self.swap_range = swap_range
         # Set once the finished recording has been copied to the output folder.
         self.exported_to: Path | None = None
         self.frame_bytes = self.width * self.height * BYTES_PER_PIXEL
@@ -591,6 +599,10 @@ class Recorder:
         moves during the run, so computing the covering timestamp arithmetically
         would miss frames the scheduler really produced.
         """
+        if self.swap_range is not None:
+            start, end = self.swap_range
+            if t < start or t > end:
+                return None
         stems, names = self._generated_keys()
         if not stems:
             return None

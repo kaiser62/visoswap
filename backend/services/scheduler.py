@@ -310,6 +310,7 @@ class ProjectScheduler:
                 duration=info.duration,
                 name=str(project.get("name") or ""),
                 face=Path(face_source).stem if face_source else "",
+                swap_range=self.target_range,
             )
             await recorder.start()
         except Exception as exc:
