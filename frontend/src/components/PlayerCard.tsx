@@ -18,7 +18,7 @@
  *     normal playback must never reach the screen.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { reportPlayback } from '../lib/api'
 import { frameAtOrBefore } from '../lib/frameindex'
 import { useMedia } from '../state/MediaContext'
@@ -77,6 +77,54 @@ export function PlayerCard() {
     [projectId],
   )
 
+  /** Point the overlay at whatever covers `t`, or at nothing.
+   *
+   * Idempotent by design: the same url in means the same state object out, so
+   * React bails out of the render entirely. That is what makes it safe to call
+   * this once per composited video frame. */
+  const swapOverlay = useCallback((t: number) => {
+    const next = frameAtOrBefore(indexRef.current, t)?.url ?? null
+    setOverlayUrl((prev) => (prev === next ? prev : next))
+  }, [])
+
+  /** Swap the overlay once per *video* frame instead of once per `timeupdate`.
+   *
+   * `timeupdate` fires roughly four times a second. Against 30fps source that
+   * is a 4Hz layer over a 30Hz picture, and the beat between the two is the
+   * choppiness — the swapped face visibly lags and snaps while the video under
+   * it runs smooth. `requestVideoFrameCallback` fires once per frame the
+   * compositor actually shows and hands back that frame's `mediaTime`, so the
+   * overlay changes on the same beat as the picture it belongs to.
+   *
+   * D-06 is untouched: this still only reads the in-memory index and assigns a
+   * string. Nothing is awaited, nothing is requested, and the callback drops
+   * itself when the element goes away. Browsers without the API (and jsdom)
+   * simply keep the `timeupdate` path below, which remains correct and merely
+   * coarser.
+   */
+  useEffect(() => {
+    const video = videoRef.current as
+      | (HTMLVideoElement & {
+          requestVideoFrameCallback?: (
+            cb: (now: number, meta: { mediaTime: number }) => void,
+          ) => number
+          cancelVideoFrameCallback?: (handle: number) => void
+        })
+      | null
+    if (!video?.requestVideoFrameCallback) return
+    let handle = 0
+    let stopped = false
+    const onFrame = (_now: number, meta: { mediaTime: number }) => {
+      swapOverlay(meta.mediaTime)
+      if (!stopped) handle = video.requestVideoFrameCallback!(onFrame)
+    }
+    handle = video.requestVideoFrameCallback(onFrame)
+    return () => {
+      stopped = true
+      video.cancelVideoFrameCallback?.(handle)
+    }
+  }, [swapOverlay, project?.video_src])
+
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
@@ -85,7 +133,7 @@ export function PlayerCard() {
       const t = video.currentTime
       reportPlayhead(t)
       const entry = frameAtOrBefore(indexRef.current, t)
-      setOverlayUrl(entry?.url ?? null)
+      setOverlayUrl((prev) => (prev === (entry?.url ?? null) ? prev : entry?.url ?? null))
       // The coverage figure is measured from this lookup, using the result
       // already in hand: no second lookup, nothing awaited, nothing that can
       // make playback wait on generation.
@@ -129,8 +177,11 @@ export function PlayerCard() {
   // render, not stored: a stale frame must never survive even one paint.
   // A rendered preview outranks the index while it exists — it is cleared on
   // play, on start, and by rendering a new one.
-  const indexedUrl =
-    overlayUrl !== null && index.some((e) => e.url === overlayUrl) ? overlayUrl : null
+  // A set, not a scan: the overlay now swaps at frame rate, and an O(n) walk of
+  // a several-thousand-entry index on every one of those renders is exactly the
+  // kind of cost that shows up as stutter.
+  const indexUrls = useMemo(() => new Set(index.map((e) => e.url)), [index])
+  const indexedUrl = overlayUrl !== null && indexUrls.has(overlayUrl) ? overlayUrl : null
   const displayedUrl = previewUrl ?? indexedUrl
 
   const currentTime = () => videoRef.current?.currentTime ?? 0

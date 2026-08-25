@@ -160,6 +160,43 @@ describe('player card overlay', () => {
     expect(video.getAttribute('src')).toBe('/api/projects/t/video')
   })
 
+  it('swaps on every composited video frame, not on the 4Hz timeupdate', async () => {
+    // `timeupdate` fires ~4 times a second. Driving a 30fps picture from it
+    // makes the swapped layer beat against the video under it, which is the
+    // whole of the reported choppiness. rVFC is the per-frame signal, and this
+    // pins that the overlay follows it with no `timeupdate` at all.
+    const pending: ((now: number, meta: { mediaTime: number }) => void)[] = []
+    const proto = HTMLVideoElement.prototype as unknown as Record<string, unknown>
+    proto.requestVideoFrameCallback = function (
+      cb: (now: number, meta: { mediaTime: number }) => void,
+    ) {
+      pending.push(cb)
+      return pending.length
+    }
+    proto.cancelVideoFrameCallback = function () {}
+    try {
+      const fetchMock = installFetch()
+      await mounted(fetchMock)
+      const paint = (mediaTime: number) => {
+        const cb = pending.pop()
+        pending.length = 0
+        act(() => cb?.(0, { mediaTime }))
+      }
+
+      paint(1.5)
+      expect(overlay()?.getAttribute('src')).toBe('/f/1.png')
+      paint(2.4)
+      expect(overlay()?.getAttribute('src')).toBe('/f/2.png')
+
+      // The advisory position post stays on the coarse path: a frame-rate
+      // callback must not turn into a frame-rate request.
+      expect(callsTo(fetchMock, '/playback')).toBe(0)
+    } finally {
+      delete proto.requestVideoFrameCallback
+      delete proto.cancelVideoFrameCallback
+    }
+  })
+
   it('swaps the overlay image to a frame once the playhead passes its timestamp', async () => {
     const video = await mounted(installFetch())
     act(() => tick(video, 1.5))
