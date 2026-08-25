@@ -44,6 +44,16 @@ async def start_scheduler(
     finally:
         await generator.close()
 
+    scheduler = await registry.get(project["id"], db)
+    # Starting is a restart: everything below deletes the previous run's state,
+    # so that run has to be all the way down first. Two things go wrong
+    # otherwise -- a still-running scheduler carries on against a queue and a
+    # cache that have just been emptied under it, and a forced stop's encoder
+    # still holds `output.mp4.part` open, which Windows will not let us unlink.
+    if scheduler.running:
+        await scheduler.stop()
+    await scheduler.wait_closed()
+
     # Every run starts from an empty queue and an empty cache. A backlog was
     # planned against the old playhead, interval and mode; a completed frame
     # was made with whatever face and model were set at the time. Neither is
@@ -52,7 +62,16 @@ async def start_scheduler(
     files = cache.clear_frames(project["id"])
     # The previous run's recording goes with them: leaving it would let this run
     # silently extend a video made with a different face, model or resolution.
-    files += recorder.clear_output(project["id"])
+    try:
+        files += recorder.clear_output(project["id"])
+    except OSError as exc:
+        # Something outside this process still has the file -- a media player
+        # with the export open, an antivirus scan. Say so; do not start a run
+        # that would quietly extend a stranger's video.
+        raise HTTPException(
+            status_code=409,
+            detail=f"previous recording is still in use: {exc}",
+        ) from exc
     if rows or files:
         log.info(
             "[SCHEDULER] project=%s cleared rows=%d files=%d",
@@ -70,7 +89,6 @@ async def start_scheduler(
             raise HTTPException(status_code=400, detail="range starts past the video")
         target_range = (start, end)
 
-    scheduler = await registry.get(project["id"], db)
     # A range run ignores the playhead, so seed the window at its start rather
     # than wherever the player happens to be sitting.
     scheduler.current_time = payload.range_start or payload.current_time

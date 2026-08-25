@@ -364,6 +364,69 @@ def test_stop_change_face_start_leaves_nothing_from_the_previous_face(
     )
 
 
+def _worker_tasks(project_id: str) -> list:
+    """The live worker tasks. Held as objects, not ids -- a dead task's id gets
+    handed straight back out to its replacement."""
+    from backend.services.scheduler import registry
+
+    scheduler = registry.peek(project_id)
+    return list(scheduler._workers) if scheduler is not None else []
+
+
+def test_starting_a_running_scheduler_restarts_it_rather_than_racing_it(
+    client, tmp_path
+):
+    """Start is a restart, and a restart deletes the previous run's state.
+
+    Left running, the old scheduler would carry on against a queue and a cache
+    that had just been emptied under it -- and its recorder would still hold
+    `output.mp4.part` open, which is the `WinError 32` the endpoint used to
+    raise. Starting must take the previous run down first.
+    """
+    c, built = client
+    project_id = c.post("/api/projects", json={"name": "restart"}).json()["id"]
+    upload = c.post(
+        f"/api/projects/{project_id}/source",
+        files={"file": ("clip.mp4", _clip(tmp_path), "video/mp4")},
+    )
+    assert upload.status_code == 200, upload.text
+    face = _library_face(c, (200, 40, 40))
+    assert c.post(
+        f"/api/projects/{project_id}/face", json={"face_id": face}
+    ).status_code == 200
+
+    assert c.post(
+        f"/api/projects/{project_id}/scheduler/start", json={}
+    ).status_code == 200
+    _wait_for_completed(c, project_id, 1)
+    first_run_rows = c.get(f"/api/projects/{project_id}/frames").json()["frames"]
+    assert first_run_rows, "run one planned nothing to be forgotten"
+
+    # Seed the artefact the old code tripped over, then start again WITHOUT
+    # stopping -- the exact sequence from the report.
+    recorder.partial_path(project_id).write_bytes(b"stale partial")
+    workers_before = _worker_tasks(project_id)
+    assert workers_before, "run one has no worker pool to be replaced"
+    restarted = c.post(f"/api/projects/{project_id}/scheduler/start", json={})
+    assert restarted.status_code == 200, restarted.text
+
+    assert not recorder.partial_path(project_id).exists(), (
+        "the previous run's partial recording survived the restart"
+    )
+    _wait_for_completed(c, project_id, 1)
+    # The pool the second start is running on must not be the first run's. That
+    # is what separates a real restart from the old early return, which cleared
+    # the state and then left the previous run going against the wreckage.
+    assert all(task.done() for task in workers_before), (
+        "the previous run's workers kept going -- their queue and cache were "
+        "deleted underneath them"
+    )
+    assert _worker_tasks(project_id), "the restart left no worker pool running"
+    assert c.post(
+        f"/api/projects/{project_id}/scheduler/stop"
+    ).status_code == 200
+
+
 def test_the_test_writes_nothing_outside_tmp(client, tmp_path, monkeypatch):
     """Guard the guard: the fixture really repointed both roots."""
     c, _built = client

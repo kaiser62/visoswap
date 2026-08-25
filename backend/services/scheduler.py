@@ -284,6 +284,9 @@ class ProjectScheduler:
         self.target_range: tuple[float, float] | None = None
         self._range_cursor: float | None = None
         self.recorder: Recorder | None = None
+        #: A forced stop's detached cleanup, kept so a caller that needs the
+        #: encoder's file handle back can wait for it. See `wait_closed`.
+        self._reaper: asyncio.Task[None] | None = None
 
     # -- lifecycle ------------------------------------------------------------
 
@@ -394,7 +397,7 @@ class ProjectScheduler:
             # caller, but a cancelled worker still has a generator to close and
             # the encoder still has a pipe to shut, so the work is handed to
             # the loop rather than dropped.
-            asyncio.create_task(self._reap(tasks, recorder))
+            self._reaper = asyncio.create_task(self._reap(tasks, recorder))
         else:
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
@@ -424,6 +427,18 @@ class ProjectScheduler:
             "[SCHEDULER] project=%s stopped%s", self.project_id, " (forced)" if force else ""
         )
 
+    async def wait_closed(self) -> None:
+        """Block until a forced stop's detached cleanup has finished.
+
+        `stop(force=True)` answers before the encoder has let go of its file --
+        that is the whole point of it. A caller about to DELETE that file (a
+        restart clears the previous recording) has to wait for the handle
+        first: Windows refuses to unlink a file another process holds open.
+        """
+        reaper = self._reaper
+        if reaper is not None:
+            await asyncio.gather(reaper, return_exceptions=True)
+
     async def _reap(
         self, tasks: list[asyncio.Task[Any]], recorder: Recorder | None
     ) -> None:
@@ -435,6 +450,11 @@ class ProjectScheduler:
                 await recorder.aclose()
         except Exception:
             log.exception("[SCHEDULER] project=%s reap failed", self.project_id)
+        finally:
+            # Only clear the slot if it is still this reap's: a second forced
+            # stop may already have put its own cleanup there.
+            if self._reaper is asyncio.current_task():
+                self._reaper = None
 
     # -- playback tracking ----------------------------------------------------
 
