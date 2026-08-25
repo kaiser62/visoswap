@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from backend.api.deps import get_db, get_project
 from backend.models.database import STATUS_COMPLETED, Database
@@ -105,12 +105,12 @@ async def stream_video(
 ):
     """Serve the local source file with Range support.
 
-    Remote direct URLs are redirected instead of proxied: the browser can range
-    -request them itself, and proxying would waste the backend's bandwidth.
+    Always same-origin, never a redirect to the original URL. Handing the
+    browser a cross-origin media URL that carries no CORS headers gets the
+    response blocked by Opaque Response Blocking, and the `<video>` element
+    surfaces that as an unexplained "Format error"; `/url` therefore downloads
+    the source and this endpoint only ever serves a local file.
     """
-    if project.get("video_url") and not project.get("video_path"):
-        return RedirectResponse(project["video_url"])
-
     raw_path = project.get("video_path")
     if not raw_path:
         raise HTTPException(status_code=404, detail="project has no video")

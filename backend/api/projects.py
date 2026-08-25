@@ -138,20 +138,25 @@ async def set_source_url(
     db: Database = Depends(get_db),
 ) -> dict[str, Any]:
     project_id = project["id"]
+    # Always land the bytes on disk. A remote source cannot simply be handed to
+    # the browser: a cross-origin media response with no CORS headers is killed
+    # by Chromium's Opaque Response Blocking, so the player reports a bare
+    # "Format error" while the URL itself is perfectly healthy. Downloading also
+    # gives the engine and the recorder the local decoder path they already want.
     try:
         source, info = await video.resolve_url(
             project_id,
             payload.url,
-            require_local=False,
+            require_local=True,
         )
     except (video.VideoSourceError, FFmpegError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    is_local = not source.lower().startswith(("http://", "https://"))
     updated = await db.update_project(
         project_id,
-        video_path=source if is_local else None,
-        video_url=payload.url if not is_local else None,
+        video_path=source,
+        # Kept for provenance only — `video_path` is what anything reads.
+        video_url=payload.url,
         duration=info.duration,
         width=info.width,
         height=info.height,
@@ -223,7 +228,9 @@ def _public(project: dict[str, Any]) -> dict[str, Any]:
     data = dict(project)
     local_path = data.pop("video_path", None)
     face_path_raw = data.pop("source_face_path", None)
-    data["has_video"] = bool(local_path or data.get("video_url"))
+    # A row carrying only `video_url` is a source nothing can play — `/video`
+    # serves local files exclusively — so it must not claim to have one.
+    data["has_video"] = bool(local_path)
     data["video_filename"] = Path(local_path).name if local_path else None
     data["video_src"] = (
         f"/api/projects/{project['id']}/video" if data["has_video"] else None
