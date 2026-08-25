@@ -336,6 +336,7 @@ class ProjectScheduler:
         # idempotent and never raises, so cancel, error and shutdown all leave a
         # playable file behind.
         if self.recorder is not None:
+            await self._drain_recording()
             await self.recorder.aclose()
             self.recorder = None
         await self.db.update_project(self.project_id, status="idle")
@@ -405,6 +406,31 @@ class ProjectScheduler:
         except Exception:
             log.exception("[SCHEDULER] project=%s planner crashed", self.project_id)
             await self.db.update_project(self.project_id, status="error")
+
+    async def _drain_recording(self) -> None:
+        """Write out everything that was generated before letting the file close.
+
+        The writer trails generation, so at the moment Stop is pressed there is
+        always a span that has been swapped but not yet muxed. `aclose` cancels
+        the pump, so without this that span is simply lost — the recording ends
+        wherever the writer happened to be rather than where the run got to.
+
+        The bound is the last *completed* timestamp, not the watermark: a job
+        left `processing` when its worker was cancelled never settles, and the
+        watermark would sit pinned underneath it. Frames with no generated
+        counterpart in the drained span fall back to the source.
+        """
+        if self.recorder is None:
+            return
+        last = await self.db.last_generated_timestamp(self.project_id)
+        if last is None:
+            return
+        try:
+            await self.recorder.drain_to(last)
+        except Exception:
+            # Finalizing must not depend on this: a file that stops early is
+            # still playable, and raising here would skip `aclose` entirely.
+            log.exception("[RECORDER] project=%s drain failed", self.project_id)
 
     async def _advance_recorder(
         self, counts: dict[str, int], project: dict[str, Any]

@@ -465,6 +465,22 @@ class Database:
         row = await cur.fetchone()
         return float(row[0]) + 1e-6 if row and row[0] is not None else 0.0
 
+    async def last_generated_timestamp(self, project_id: str) -> float | None:
+        """Highest timestamp with a generated frame, or None if there are none.
+
+        This is how far a stopped run is worth recording to. The watermark is
+        the wrong bound at stop time: a job left `processing` when its worker
+        was cancelled never settles, so the watermark stays pinned underneath
+        it and everything generated above would be thrown away. Frames in the
+        gap fall back to the source, which is honest — they were never swapped.
+        """
+        cur = await self.conn.execute(
+            "SELECT MAX(timestamp) FROM frames WHERE project_id = ? AND status = ?",
+            (project_id, STATUS_COMPLETED),
+        )
+        row = await cur.fetchone()
+        return float(row[0]) if row and row[0] is not None else None
+
     async def average_duration(self, project_id: str, limit: int = 20) -> float | None:
         cur = await self.conn.execute(
             "SELECT AVG(d) FROM (SELECT generation_duration AS d FROM frames "

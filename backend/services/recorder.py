@@ -155,6 +155,9 @@ class Recorder:
         self._stderr: asyncio.Task[None] | None = None
         self._frontier = 0.0
         self._finished = False
+        # Set at stop time: the last timestamp worth writing. None means "to the
+        # end of the source", which is what a run that completes does.
+        self._stop_after: float | None = None
         self._advance = asyncio.Event()
         self._closed = False
         # Decoded generated frame, held for reuse across the span it covers.
@@ -285,6 +288,35 @@ class Recorder:
         """No further frames are coming; drain the rest at full speed."""
         self._finished = True
         self._advance.set()
+
+    async def drain_to(self, t: float, *, timeout: float = 120.0) -> None:
+        """Write everything up to and including `t`, then stop the pump.
+
+        This is what a *stopped* run finalizes through. Cancelling the pump
+        outright — which is all `aclose` used to do — threw away every frame
+        between wherever the writer had got to and the end of what had actually
+        been generated, so pressing Stop truncated the recording to whatever
+        the writer happened to have reached.
+
+        Bounded on purpose. `finish()` would also release the pump, but it
+        releases it all the way to the end of the source, which on a stream run
+        stopped 30 seconds into a ten-minute video means encoding nine and a
+        half minutes of untouched footage nobody asked for.
+        """
+        if self._pump is None or self._pump.done():
+            return
+        self._stop_after = t
+        # Everything at or below `t` is settled by definition here: the caller
+        # derived `t` from what has already been generated.
+        self.set_frontier(t + 1e-6)
+        self._advance.set()
+        try:
+            await asyncio.wait_for(asyncio.shield(self._pump), timeout=timeout)
+        except asyncio.TimeoutError:
+            log.warning(
+                "[RECORDER] project=%s drain to %.2fs timed out after %.0fs",
+                self.project_id, t, timeout,
+            )
 
     async def aclose(self) -> None:
         """Stop and finalize. Idempotent — cancel, error and shutdown all land here."""
@@ -447,6 +479,11 @@ class Recorder:
                 return
 
             t = index / self.fps
+            # A stopped run is written to its bound and no further. Returning
+            # here leaves the file a `.part`, which is exactly right: the
+            # recording did stop early.
+            if self._stop_after is not None and t > self._stop_after:
+                return
             await self._await_deadline(t)
 
             frame = await self._compose(t, raw)

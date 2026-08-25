@@ -542,6 +542,40 @@ def test_finishing_releases_a_frame_still_above_the_watermark(project):
     asyncio.run(run())
 
 
+def test_stopping_writes_the_generated_span_before_closing(project, tmp_path):
+    """Stop must not discard what the writer had not caught up on yet.
+
+    The writer trails generation, so there is always a swapped-but-not-muxed
+    span when Stop is pressed. `aclose` cancels the pump, so before this the
+    recording ended wherever the writer happened to be.
+    """
+    source = _source(tmp_path, audio=False)
+    stop_at = 2.0
+
+    async def run():
+        rec = _make(project, source)
+        await rec.start()
+        # The pump parks here: nothing above 0.5s has settled yet.
+        rec.set_frontier(0.5)
+        deadline = asyncio.get_event_loop().time() + 30
+        while rec.frames_written < int(0.5 * FPS):
+            assert asyncio.get_event_loop().time() < deadline, "pump never advanced"
+            await asyncio.sleep(0.02)
+        parked = rec.frames_written
+
+        # Generation had in fact reached `stop_at`, so that is what gets written.
+        await rec.drain_to(stop_at, timeout=60.0)
+        await rec.aclose()
+        return rec, parked
+
+    rec, parked = asyncio.run(run())
+    assert parked < int(stop_at * FPS), "the test never exercised a trailing writer"
+    assert rec.frames_written == int(stop_at * FPS) + 1, rec.frames_written
+    # Stopped early, so the file stays a `.part` and is still playable.
+    assert recorder.partial_path(project).is_file()
+    assert _decodes(recorder.partial_path(project))
+
+
 def test_a_fully_generated_span_is_written_whole(project, tmp_path):
     """The reported symptom: a run that generated N seconds exported ~1.
 
