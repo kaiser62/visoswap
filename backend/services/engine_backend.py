@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 from typing import Any
@@ -80,9 +81,15 @@ class EngineFrameGenerator(FrameGenerator):
         # settings (e.g. `SimilarityThresholdSlider`) unconditionally, so a
         # project-less engine would be built with an empty project tier.
         self._project = dict(project)
-        engine = self._get_engine()
-        self._media = engine.load(str(video))
-        self.faces = engine.detect_faces()
+
+        def _bind() -> tuple[dict[str, Any], list[Any]]:
+            engine = self._get_engine()
+            return engine.load(str(video)), engine.detect_faces()
+
+        # Off the loop, for the same reason as `generate_at`: building the
+        # engine loads models and `detect_faces` is a full inference pass, and
+        # both used to run where nothing else could be served.
+        self._media, self.faces = await asyncio.to_thread(_bind)
 
     async def generate(self, image_bytes: bytes, filename: str) -> GenerationResult:
         raise NotImplementedError("engine generator decodes its bound video")
@@ -105,13 +112,25 @@ class EngineFrameGenerator(FrameGenerator):
         from backend.workers.generation_worker import _processing_width
 
         target_width = _processing_width(self._project)
-        frame = self._get_engine().swap(
-            frame_number, str(source), target_width=target_width
-        )
-        ok, encoded = cv2.imencode(Path(filename).suffix or ".jpeg", frame)
-        if not ok:
-            raise RuntimeError(f"could not encode {filename}")
-        return GenerationResult(encoded.tobytes(), None, time.monotonic() - started, filename)
+
+        def _swap() -> bytes:
+            frame = self._get_engine().swap(
+                frame_number, str(source), target_width=target_width
+            )
+            ok, encoded = cv2.imencode(Path(filename).suffix or ".jpeg", frame)
+            if not ok:
+                raise RuntimeError(f"could not encode {filename}")
+            return encoded.tobytes()
+
+        # The swap is a synchronous CUDA call and the encode is a synchronous
+        # CPU one. Awaited directly on the loop they starved everything else
+        # the backend serves: with four workers each blocking for a few hundred
+        # milliseconds per frame, a plain status read measured 4.3s during a
+        # run against 6ms idle, which is long enough for a client timeout to
+        # turn an ordinary poll into a 500. Each worker owns its own generator
+        # and its own engine, so only one thread is ever inside a given one.
+        data = await asyncio.to_thread(_swap)
+        return GenerationResult(data, None, time.monotonic() - started, filename)
 
     async def unbind(self) -> None:
         self._project = None
