@@ -6,6 +6,7 @@
 
 import type {
   ActivateFaceResponse,
+  ComposeJob,
   Face,
   FaceUsageProject,
   FaceUsageResponse,
@@ -206,6 +207,38 @@ export function releaseRecording(
     `/api/projects/${projectId}/recording/release`,
     { method: 'POST' },
   )
+}
+
+// --- Compose queue ----------------------------------------------------------
+//
+// The queue is global, not per-project: it runs one job at a time across every
+// project, so a job of yours sitting behind another project's is a state the
+// panel has to be able to show.
+
+/** Every compose job this backend knows about, newest first. */
+export async function listComposeJobs(): Promise<ComposeJob[]> {
+  const resp = await request<{ jobs: ComposeJob[] }>('/api/compose/jobs')
+  return resp.jobs
+}
+
+/** Compose this project's generated frames into a take on demand. 409 while a
+ *  run is going — the frame directory is still being written. */
+export function composeProject(projectId: string): Promise<ComposeJob> {
+  return request<ComposeJob>(`/api/projects/${projectId}/compose`, {
+    method: 'POST',
+  })
+}
+
+/** Call off a job, waiting or already re-encoding. */
+export function cancelComposeJob(jobId: string): Promise<ComposeJob> {
+  return request<ComposeJob>(`/api/compose/jobs/${jobId}/cancel`, {
+    method: 'POST',
+  })
+}
+
+/** Drop a finished job from the list. The take it produced is untouched. */
+export function forgetComposeJob(jobId: string): Promise<undefined> {
+  return request<undefined>(`/api/compose/jobs/${jobId}`, { method: 'DELETE' })
 }
 
 /** Requeue every failed frame job. The response carries the resulting status

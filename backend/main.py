@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.api import (
     backends,
+    compose,
     faces,
     gallery,
     generation,
@@ -29,6 +30,7 @@ from backend.api import (
 from backend.config import Settings, get_settings
 from backend.models.database import db
 from backend.services import cache, video
+from backend.services.compose_queue import queue as compose_queue
 from backend.services.ffmpeg import ffmpeg_available
 from backend.services.scheduler import registry
 from backend.services.video import ytdlp_available
@@ -100,7 +102,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        # Order matters: stopping the schedulers is what queues the last round
+        # of composes, and they are then cancelled rather than left running
+        # against a database that is about to close.
         await registry.stop_all()
+        await compose_queue.aclose()
         await db.close()
 
 
@@ -221,6 +227,7 @@ def create_app() -> FastAPI:
     app.include_router(playback.router)
     app.include_router(gallery.router)
     app.include_router(generation.router)
+    app.include_router(compose.router)
     app.include_router(backends.router)
     app.include_router(settings_api.router)
     app.include_router(ws.router)

@@ -13,6 +13,7 @@ import { JobsCard } from './components/JobsCard'
 import { MediaCard } from './components/MediaCard'
 import { PlayerCard } from './components/PlayerCard'
 import { ProjectsView } from './components/ProjectsView'
+import { ComposeCard } from './components/ComposeCard'
 import { ResultsCard } from './components/ResultsCard'
 import { Sidebar, buildHierarchy } from './components/Sidebar'
 import { StudioCard, StudioGrid } from './components/StudioLayout'
@@ -129,6 +130,7 @@ function StudioBody() {
           <PlayerCard />
           <MediaCard />
           <ResultsCard />
+          <ComposeCard />
         </>
       }
       right={

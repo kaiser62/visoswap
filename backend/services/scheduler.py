@@ -426,6 +426,39 @@ class ProjectScheduler:
         log.info(
             "[SCHEDULER] project=%s stopped%s", self.project_id, " (forced)" if force else ""
         )
+        await self._queue_compose()
+
+    async def _queue_compose(self) -> None:
+        """Hand the finished run to the offline compose queue.
+
+        Every stop earns one. The live recording is what the run could commit in
+        time; the composed take is every generated frame there is, which is not
+        the same file whenever generation ran behind the writer.
+
+        Enqueuing only -- the pass itself runs on the queue's own task, so a
+        re-encode never delays the stop that asked for it. Never fatal: a stop
+        that has already done its job must not fail because a convenience on top
+        of it could not be scheduled.
+        """
+        try:
+            from backend.services import cache as _cache
+            from backend.services.compose_queue import queue as compose_queue
+
+            project = await self.db.get_project(self.project_id)
+            video_path = (project or {}).get("video_path")
+            if not project or not video_path:
+                return
+            face_source = str(project.get("source_face_path") or "")
+            compose_queue.enqueue(
+                self.project_id,
+                _cache.to_absolute(video_path),
+                project_name=str(project.get("name") or ""),
+                face=Path(face_source).stem if face_source else "",
+            )
+        except Exception:
+            log.exception(
+                "[SCHEDULER] project=%s could not queue a compose", self.project_id
+            )
 
     async def wait_closed(self) -> None:
         """Block until a forced stop's detached cleanup has finished.

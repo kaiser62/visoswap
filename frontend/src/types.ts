@@ -149,6 +149,34 @@ export interface ReleaseRecordingResponse {
   recording: RecordingInfo
 }
 
+/** What a compose job can be doing (services/compose_queue.JobState).
+ *  `empty` is a normal outcome, not a failure: a run stopped before it
+ *  generated anything has nothing to compose. */
+export type ComposeJobState =
+  | 'pending'
+  | 'running'
+  | 'done'
+  | 'failed'
+  | 'cancelled'
+  | 'empty'
+
+/** One row of GET /api/compose/jobs. Times are epoch seconds, as the backend
+ *  stores them — not ISO strings. */
+export interface ComposeJob {
+  id: string
+  project_id: string
+  project_name: string
+  state: ComposeJobState
+  created_at: number
+  started_at: number | null
+  finished_at: number | null
+  frames_written: number
+  total_frames: number
+  /** Filename in the output folder once published; null until then. */
+  output_name: string | null
+  error: string | null
+}
+
 /** GET /{id}/generation/status (generation._status). */
 export interface GenerationStatusResponse {
   project_id: string
