@@ -463,3 +463,55 @@ def test_deleting_a_project_leaves_the_global_face_library_intact(client):
     remaining = client.get("/api/faces").json()
     assert [r["face_id"] for r in remaining] == [face_id]
 
+
+
+# ---------------------------------------------------------------------------
+# changing the face invalidates what the old one produced
+# ---------------------------------------------------------------------------
+
+from backend.services import cache as _cache  # noqa: E402
+from backend.services import scheduler as _scheduler  # noqa: E402
+
+
+def test_changing_the_face_throws_away_what_the_old_one_generated(client):
+    """Two faces in one take is the bug this prevents.
+
+    The overlay resolves nearest-previous and the scheduler never re-enqueues a
+    timestamp that is already `completed`, so a frame left behind by the
+    previous face is not stale for a moment -- it is stale for the rest of the
+    project's life, shown in between the new face's frames.
+    """
+    project_id = _create_project(client)
+    _bind(client, project_id, PNG_BYTES)
+
+    generated = _cache.generated_dir(project_id)
+    generated.mkdir(parents=True, exist_ok=True)
+    old = generated / "000001.000.jpg"
+    old.write_bytes(b"a frame wearing the first face")
+
+    second = _upload(client, name="second.png", content=OTHER_BYTES).json()["face_id"]
+    swapped = client.post(
+        f"/api/projects/{project_id}/face", json={"face_id": second}
+    )
+    assert swapped.status_code == 200, swapped.text
+    assert not old.exists()
+    assert client.get(f"/api/projects/{project_id}/frames").json()["frames"] == []
+
+
+def test_changing_the_face_under_a_running_run_is_refused(client, monkeypatch):
+    """Half-applied is the one outcome with no coherent take at the end."""
+    project_id = _create_project(client)
+    _bind(client, project_id, PNG_BYTES)
+    second = _upload(client, name="second.png", content=OTHER_BYTES).json()["face_id"]
+
+    class _Running:
+        running = True
+
+    monkeypatch.setattr(_scheduler.registry, "peek", lambda _pid: _Running())
+    refused = client.post(
+        f"/api/projects/{project_id}/face", json={"face_id": second}
+    )
+    assert refused.status_code == 409, refused.text
+    assert "stop the run" in refused.json()["detail"]
+    # And the face on the row is still the one the run is using.
+    assert client.get(f"/api/projects/{project_id}").json()["source_face_id"] != second

@@ -523,7 +523,19 @@ export function MediaProvider({
       try {
         await activateFace(projectId, faceId)
         dispatch({ type: 'SOURCE_FACE_SET', sourceFaceId: faceId })
-        await refreshProject()
+        // The backend throws away every frame made with the previous face, so
+        // the index the overlay is drawing from now points at pictures that no
+        // longer exist. Refetch it rather than let the old face keep showing.
+        const [project, framesResp] = await Promise.all([
+          getProject(projectId),
+          listFrames(projectId),
+        ])
+        dispatch({ type: 'PROJECT_LOADED', project })
+        dispatch({ type: 'INDEX_LOADED', entries: buildIndex(framesResp) })
+        // After the payload, not before: PROJECT_LOADED re-derives the active
+        // face from the row, and the face just activated is the truth about
+        // what was activated. Nothing here may take the mark back off.
+        dispatch({ type: 'SOURCE_FACE_SET', sourceFaceId: faceId })
       } catch (err) {
         dispatch({
           type: 'MEDIA_ERROR',
@@ -531,7 +543,7 @@ export function MediaProvider({
         })
       }
     },
-    [projectId, refreshProject],
+    [projectId],
   )
 
   const setStartMark = useCallback((t: number) => {

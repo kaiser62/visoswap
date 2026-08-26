@@ -178,8 +178,9 @@ async def list_frames(
                 "attempts": row["attempts"],
                 "error": row["error"],
                 "url": (
-                    f"/api/projects/{project['id']}/frame/"
-                    f"{cache.timestamp_key(row['timestamp'])}"
+                    cache.frame_url(
+                        project["id"], row["timestamp"], row["updated_at"]
+                    )
                     if row["status"] == STATUS_COMPLETED
                     else None
                 ),
@@ -239,7 +240,5 @@ async def frame_at(
     return {
         "timestamp": target,
         "available": True,
-        "url": (
-            f"/api/projects/{project['id']}/frame/{cache.timestamp_key(target)}"
-        ),
+        "url": cache.frame_url(project["id"], target, row["updated_at"]),
     }

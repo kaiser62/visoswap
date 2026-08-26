@@ -210,8 +210,30 @@ async def activate_face(
     if not path.is_file():
         raise HTTPException(status_code=404, detail="face not found")
 
+    # A run in flight would keep writing frames with the face it started under,
+    # interleaved with the ones written after the swap. There is no coherent
+    # take at the end of that, so the swap is refused rather than half-applied.
+    scheduler = registry.peek(project["id"])
+    if scheduler is not None and scheduler.running:
+        raise HTTPException(
+            status_code=409, detail="stop the run before changing the face"
+        )
+
     updated = await db.update_project(project["id"], source_face_path=str(path))
     assert updated is not None
+
+    # Everything already generated was generated with the old face. Leaving it
+    # is not a harmless cache: the overlay resolves nearest-previous, and the
+    # scheduler never re-enqueues a timestamp that is already `completed`, so
+    # those frames would keep showing the previous face for the rest of the
+    # project's life -- two faces in one take.
+    rows = await db.delete_frames(project["id"])
+    files = cache.clear_frames(project["id"])
+    if rows or files:
+        log.info(
+            "[FACE] project=%s face changed, cleared rows=%d files=%d",
+            project["id"], rows, files,
+        )
     return {
         "assignments": [
             {

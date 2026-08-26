@@ -125,7 +125,7 @@ async def _process_frame(
         _atomic_write(dest, result.data)
 
         duration = time.monotonic() - started
-        await db.set_frame_status(
+        row = await db.set_frame_status(
             project_id,
             ts,
             STATUS_COMPLETED,
@@ -148,7 +148,12 @@ async def _process_frame(
             {
                 "type": "generation_completed",
                 "timestamp": ts,
-                "path": f"/api/projects/{project_id}/frame/{cache.timestamp_key(ts)}",
+                # Same versioned URL the frames index hands out, taken from the
+                # row that was just written -- the live overlay and a refetch
+                # must agree on it, or they cache the one frame twice.
+                "path": cache.frame_url(
+                    project_id, ts, (row or {}).get("updated_at")
+                ),
                 "duration": round(duration, 3),
             },
         )

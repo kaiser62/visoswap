@@ -130,7 +130,6 @@ function StudioBody() {
           <PlayerCard />
           <MediaCard />
           <ResultsCard />
-          <ComposeCard />
         </>
       }
       right={
@@ -177,6 +176,9 @@ function StudioBody() {
         {/* Beneath the controls: what the backend is doing right now, and how
           well the overlay is actually keeping up. */}
         <JobsCard />
+        {/* Under the Generation card because a compose is the tail of a run:
+          the queue fills when a run stops, so it reads in run order. */}
+        <ComposeCard />
         </>
       }
     />

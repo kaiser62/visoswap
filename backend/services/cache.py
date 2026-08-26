@@ -107,6 +107,25 @@ def frame_path(project_id: str, ts: float, *, generated: bool, fmt: str) -> Path
     return base / f"{timestamp_key(ts)}{ext}"
 
 
+def frame_url(project_id: str, ts: float, updated_at: float | None) -> str:
+    """The browser-facing URL of one generated frame, versioned by its row.
+
+    The `?v=` is not decoration. Without it the URL is only (project,
+    timestamp), and the *same* URL serves different pictures over a project's
+    life: a run is started with another face, the timestamps are regenerated,
+    and the path a frame is served from has not moved. The response is
+    `immutable, max-age=1y`, so the browser keeps handing back the image it
+    already had. Some timestamps come from that cache and some come fresh, and
+    the overlay shows two different faces in the same take.
+
+    `updated_at` is the frame row's own write time, so it changes exactly when
+    the picture behind the URL does -- and no more often than that, which is
+    what keeps the year-long immutable caching both safe and worth having.
+    """
+    version = int((updated_at or 0.0) * 1000)
+    return f"/api/projects/{project_id}/frame/{timestamp_key(ts)}?v={version}"
+
+
 def assert_within_project(path: Path, project_id: str) -> Path:
     """Guard against traversal for any path that came from the database."""
     root = project_dir(project_id).resolve()
