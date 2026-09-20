@@ -87,6 +87,9 @@ async def start_scheduler(
     # A range run ignores the playhead, so seed the window at its start rather
     # than wherever the player happens to be sitting.
     scheduler.current_time = payload.range_start or payload.current_time
+    if payload.generation_mode:
+        await db.update_project(project["id"], generation_mode=payload.generation_mode)
+        project["generation_mode"] = payload.generation_mode
     if payload.full_video is not None:
         await db.update_project(project["id"], full_video_mode=payload.full_video)
     await scheduler.start(full_video=payload.full_video, target_range=target_range)

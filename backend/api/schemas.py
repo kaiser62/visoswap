@@ -101,6 +101,7 @@ class SchedulerStart(BaseModel):
     # irrelevant here — the run finishes the span whether or not it is watched.
     range_start: float | None = Field(default=None, ge=0)
     range_duration: float | None = Field(default=None, gt=0, le=36000)
+    generation_mode: str | None = None
 
 
 class PreviewRequest(BaseModel):

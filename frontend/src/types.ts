@@ -194,6 +194,7 @@ export interface SchedulerStartRequest {
   current_time?: number
   range_start?: number | null
   range_duration?: number | null
+  generation_mode?: 'stream' | 'interval' | null
 }
 
 /** POST /{id}/playback body (schemas.PlaybackUpdate). Advisory only. */

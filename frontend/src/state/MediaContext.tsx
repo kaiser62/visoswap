@@ -160,8 +160,20 @@ export function mediaReducer(state: MediaState, action: MediaAction): MediaState
         status: 'loading',
         projectId: action.projectId,
       }
-    case 'PROJECT_LOADED':
-      return { ...state, project: action.project, sourceFaceId: action.project.source_face_id ?? null }
+    case 'PROJECT_LOADED': {
+      const mode: MediaMode =
+        state.mode === 'export'
+          ? 'export'
+          : action.project.generation_mode === 'interval'
+          ? 'interval'
+          : 'live'
+      return {
+        ...state,
+        project: action.project,
+        sourceFaceId: action.project.source_face_id ?? null,
+        mode,
+      }
+    }
     case 'INDEX_LOADED':
       return { ...state, index: action.entries, status: 'ready' }
     case 'INDEX_UPSERTED': {
@@ -431,7 +443,8 @@ export function MediaProvider({
         return
       }
     } else {
-      body = { current_time: playheadRef.current }
+      const generation_mode = state.mode === 'live' ? 'stream' : 'interval'
+      body = { current_time: playheadRef.current, generation_mode }
     }
     try {
       await postSchedulerStart(projectId, body)
@@ -523,6 +536,7 @@ export function MediaProvider({
       try {
         await activateFace(projectId, faceId)
         dispatch({ type: 'SOURCE_FACE_SET', sourceFaceId: faceId })
+        dispatch({ type: 'PREVIEW_CLEAR' })
         // The backend throws away every frame made with the previous face, so
         // the index the overlay is drawing from now points at pictures that no
         // longer exist. Refetch it rather than let the old face keep showing.

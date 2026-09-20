@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS projects (
     -- dense floods the queue before the first measurement lands.
     measured_frame_cost REAL,
     full_video_mode   INTEGER NOT NULL DEFAULT 0,
-    generation_mode   TEXT NOT NULL DEFAULT 'interval',
+    generation_mode   TEXT NOT NULL DEFAULT 'stream',
     stream_buffer     REAL NOT NULL DEFAULT 6.0,
     status            TEXT NOT NULL DEFAULT 'idle',
     error             TEXT,
@@ -187,7 +187,7 @@ class Database:
             "generated_format": fields.get("generated_format") or s.generated_format,
             "source_face_path": fields.get("source_face_path"),
             "full_video_mode": int(bool(fields.get("full_video_mode"))),
-            "generation_mode": fields.get("generation_mode") or "interval",
+            "generation_mode": fields.get("generation_mode") or "stream",
             "stream_buffer": float(fields.get("stream_buffer") or 6.0),
             "status": "idle",
             "error": None,
