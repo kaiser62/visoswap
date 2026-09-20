@@ -76,7 +76,7 @@ class EngineFrameGenerator(FrameGenerator):
             raise ValueError(f"source face not found: {face}")
 
     async def bind(self, project: dict[str, Any]) -> None:
-        if self._project and self._project.get("id") == project.get("id"):
+        if bool(self._media) and self._project and self._project.get("id") == project.get("id"):
             # Same project: update row metadata (such as source_face_path) without
             # re-decoding the video or re-detecting target faces.
             self._project = dict(project)
@@ -107,7 +107,7 @@ class EngineFrameGenerator(FrameGenerator):
             raise RuntimeError("generator is not bound")
         import cv2
         started = time.monotonic()
-        fps = float(self._media["fps"])
+        fps = float(self._media.get("fps") or (self._project and self._project.get("fps")) or 24.0)
         frame_number = int(timestamp * fps)  # floor: playback must never use a future frame
         source = self._project.get("source_face_path")
         if not source:
