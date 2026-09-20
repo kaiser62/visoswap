@@ -50,10 +50,11 @@ async def run_worker(scheduler: ProjectScheduler, index: int) -> None:
                 await asyncio.sleep(IDLE_SLEEP)
                 continue
 
-            # Rebuild the generator whenever the project's config changed.
+            # Rebuild the generator whenever the project's config or face changed.
             key = (
                 project.get("backend"),
                 project.get("generated_format"),
+                project.get("source_face_path"),
             )
             if generator is None or key != generator_key:
                 if generator is not None:

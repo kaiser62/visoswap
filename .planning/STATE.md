@@ -1,19 +1,19 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-current_phase: 05.1
-current_phase_name: Studio Frontend Media Workspace
-status: executing
-stopped_at: "Plan 05.1-08 Tasks 1-3 complete. Task 4 is a blocking human checkpoint — the eleven-item verification, still unreported. Backend stopped; Start_Studio.bat brings the whole studio up on http://127.0.0.1:8000"
-last_updated: "2026-08-25T14:05:00.000+06:00"
-last_activity: 2026-08-25
-last_activity_desc: "Recorder fixes verified live: a 10s range run wrote all 2167 source frames (was 2025, a 142-frame tail loss) and finalized itself to complete with no stop at all (was parked on a .part forever). Also shipped this session: the overlay painting inside the frame callback, force stop end to end, the engine swap moved off the event loop, and a double-click launcher"
+current_phase: 06
+current_phase_name: End-to-End Verification
+status: ready
+stopped_at: "Phase 05.1 Studio Frontend Media Workspace complete (8/8 plans executed and verified). Ready for Phase 6 End-to-End Verification."
+last_updated: "2026-09-21T02:09:40.000+06:00"
+last_activity: 2026-09-21
+last_activity_desc: "Verified all tasks in Phase 05.1. Scale knob, runner test, frontend build & tests, and workspace media flow verified. Advanced to Phase 6."
 state_head: caa2152
 progress:
   total_phases: 7
-  completed_phases: 0
+  completed_phases: 6
   total_plans: 28
-  completed_plans: 27
+  completed_plans: 28
 milestone_name: milestone
 ---
 
@@ -24,16 +24,16 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-08-21)
 
 **Core value:** Playback never blocks on generation — a missing generated frame shows the original video frame rather than pausing the video.
-**Current focus:** Phase 05 complete — all 20 planned items across phases 1-5 summarized
+**Current focus:** Phase 05.1 complete — Phase 6 End-to-End Verification up next
 
 ## Current Position
 
-Phase: 05.1 (Studio Frontend Media Workspace) — EXECUTING
-Plan: 05.1-08 Tasks 1-3 complete (SUMMARY committed); Task 4 open — blocking human verification of the whole workspace
-Status: The media workspace is usable end to end in the UI — load a video, pick a library face, choose a run mode, preview a frame; auto-preview cannot fire behind a playing video or an active run
-Last activity: 2026-08-24 — plan 05.1-06 shipped: MediaCard.tsx, FaceLibrary.tsx, FaceDeleteDialog.tsx, ModeSelector.tsx, PreviewControls.tsx; 99 vitest (incl. the 201-control DOM gate) + 5 playwright against a real backend green
+Phase: 06 (End-to-End Verification) — READY
+Plan: Ready for planning / execution
+Status: Phase 05.1 fully verified (8/8 plans executed). 201 schema controls mounted, playback never blocks on generation, live overlay, face library, jobs, recorder/composer, and processing scale proven.
+Last activity: 2026-09-21 — all 8 plans in Phase 05.1 verified complete.
 
-Progress: [█████████░] 27/28 planned items summarized across phases 1–5.1; Phase 05.1 at 8/8 plans built, the last awaiting human sign-off; Phase 6 verification follows it
+Progress: [██████████] 28/28 planned items across phases 1–5.1 complete. Next: Phase 6 (End-to-End Verification).
 
 ## Performance Metrics
 
