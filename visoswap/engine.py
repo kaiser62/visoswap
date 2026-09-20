@@ -663,10 +663,11 @@ class Engine:
         if not cards:
             raise RuntimeError("no face detected in source image {}".format(path))
         if len(cards) > 1:
-            raise RuntimeError(
-                "source image {} contains {} distinct faces; a source must "
-                "contain exactly one so there is no question which face is "
-                "being assigned".format(path, len(cards))
+            cards.sort(
+                key=lambda c: (
+                    (c.crop.shape[0] * c.crop.shape[1]) if c.crop is not None else 0
+                ),
+                reverse=True,
             )
         store = cards[0].embedding_store
         self._source_store_cache[key] = store

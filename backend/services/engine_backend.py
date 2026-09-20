@@ -26,7 +26,9 @@ class EngineFrameGenerator(FrameGenerator):
 
     @classmethod
     def from_project(cls, project: dict[str, Any], timeout: float = 0, worker_index: int = 0):
-        return cls(get_settings().visomaster_provider)
+        inst = cls(get_settings().visomaster_provider)
+        inst._project = dict(project)
+        return inst
 
     def _get_engine(self):
         if self._engine is None:
@@ -69,9 +71,15 @@ class EngineFrameGenerator(FrameGenerator):
     async def validate(self) -> None:
         if self.provider not in {"CUDA", "CPU"}:
             raise ValueError(f"unsupported provider {self.provider!r}; TensorRT is refused")
+        face = self._project.get("source_face_path") if self._project else None
+        if face and not Path(face).is_file():
+            raise ValueError(f"source face not found: {face}")
 
     async def bind(self, project: dict[str, Any]) -> None:
         if self._project and self._project.get("id") == project.get("id"):
+            # Same project: update row metadata (such as source_face_path) without
+            # re-decoding the video or re-detecting target faces.
+            self._project = dict(project)
             return
         video = project.get("video_path")
         if not video:
