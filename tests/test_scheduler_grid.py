@@ -78,3 +78,14 @@ def test_a_video_with_no_reported_fps_still_gets_a_stable_grid():
     first = grid_rate({"generation_mode": MODE_STREAM, "fps": 0}, observed_rate=7.1)
     second = grid_rate({"generation_mode": MODE_STREAM, "fps": 0}, observed_rate=7.3)
     assert first == second > 0
+
+
+def test_stream_mode_targets_15s_seamless_buffer():
+    # At 30fps with 15s buffer, targets_for_rate covers 450 consecutive frames
+    fps = 30.0
+    targets = targets_for_rate(0.0, 15.0, fps)
+    assert len(targets) == 451
+    # Consecutive spacing matches 1/fps exactly
+    diff = round(targets[1] - targets[0], 3)
+    assert diff == round(1.0 / fps, 3)
+

@@ -60,6 +60,11 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
   const [overlayVisible, setOverlayVisible] = useState(true)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
+  const [isScrubbing, setIsScrubbing] = useState(false)
+  const [scrubTime, setScrubTime] = useState(0)
+  const [isMuted, setIsMuted] = useState(true)
+  const [useNativeControls, setUseNativeControls] = useState(false)
+  const isScrubbingRef = useRef(false)
   const [duration, setDuration] = useState(0)
   const [markMessage, setMarkMessage] = useState<string | null>(null)
   const [intervalText, setIntervalText] = useState('')
@@ -174,7 +179,9 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
 
     const onTimeUpdate = () => {
       const t = video.currentTime
-      setCurrentTime(t)
+      if (!isScrubbingRef.current) {
+        setCurrentTime(t)
+      }
       reportPlayhead(t)
       prefetchAhead(t)
       const entry = frameAtOrBefore(indexRef.current, t)
@@ -191,7 +198,9 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
     const onSeeked = () => {
       lastReportRef.current = Date.now()
       const t = video.currentTime
-      setCurrentTime(t)
+      if (!isScrubbingRef.current) {
+        setCurrentTime(t)
+      }
       reportPlayhead(t)
       report(t, true)
       const entry = frameAtOrBefore(indexRef.current, t)
@@ -236,9 +245,22 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
     const video = videoRef.current
     if (!video) return
     if (video.paused) {
-      void video.play()
+      video.play().catch(() => {
+        // Fall back to muted playback if browser/OS gesture requirements block audio
+        video.muted = true
+        setIsMuted(true)
+        void video.play().catch(() => {})
+      })
     } else {
       video.pause()
+    }
+  }
+
+  const toggleMute = () => {
+    const next = !isMuted
+    setIsMuted(next)
+    if (videoRef.current) {
+      videoRef.current.muted = next
     }
   }
 
@@ -248,15 +270,43 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
     const next = Math.max(0, Math.min(duration || 9999, video.currentTime + delta))
     video.currentTime = next
     setCurrentTime(next)
+    reportPlayhead(next)
+    report(next, true)
+    const entry = frameAtOrBefore(indexRef.current, next)
+    setOverlayUrl(entry ? entry.url : null)
+  }
+
+  const stepFrames = (frames: number) => {
+    const fps = project?.fps && project.fps > 0 ? project.fps : 30
+    skipSeconds(frames / fps)
+  }
+
+  const handleScrubberPointerDown = () => {
+    isScrubbingRef.current = true
+    setIsScrubbing(true)
+    setScrubTime(currentTime)
   }
 
   const handleScrubberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const targetTime = Number(e.target.value)
+    setScrubTime(targetTime)
+    const entry = frameAtOrBefore(indexRef.current, targetTime)
+    if (entry) setOverlayUrl(entry.url)
+  }
+
+  const handleScrubberCommit = (targetVal?: number) => {
+    const finalTime = targetVal !== undefined ? targetVal : scrubTime
+    isScrubbingRef.current = false
+    setIsScrubbing(false)
     const video = videoRef.current
     if (video) {
-      video.currentTime = targetTime
+      video.currentTime = finalTime
     }
-    setCurrentTime(targetTime)
+    setCurrentTime(finalTime)
+    reportPlayhead(finalTime)
+    report(finalTime, true)
+    const entry = frameAtOrBefore(indexRef.current, finalTime)
+    setOverlayUrl(entry ? entry.url : null)
   }
 
   // Active overlay url derivation
@@ -270,9 +320,6 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
     const t = video?.currentTime ?? 0
     reportPlayhead(t)
     void startRun()
-    if (mode === 'live' && video && video.paused) {
-      void video.play().catch(() => {})
-    }
   }
 
   const handleStop = () => {
@@ -342,6 +389,8 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
               src={project.video_src}
               preload="auto"
               playsInline
+              muted={isMuted}
+              controls={useNativeControls}
               disablePictureInPicture
               className="h-full w-full object-contain"
             />
@@ -382,20 +431,34 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
             />
           )}
 
-          {/* Quick Overlay Switch Floating Pill */}
+          {/* Quick Player & Overlay Floating Controls */}
           {project?.video_src && (
-            <button
-              type="button"
-              onClick={() => setOverlayVisible(!overlayVisible)}
-              className={`absolute top-2.5 right-2.5 z-10 flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold backdrop-blur-md transition-colors ${
-                overlayVisible
-                  ? 'border border-accent/50 bg-active/80 text-accent'
-                  : 'border border-line bg-card/80 text-muted'
-              }`}
-            >
-              <span className={`h-2 w-2 rounded-full ${overlayVisible ? 'bg-accent' : 'bg-muted'}`} />
-              {overlayVisible ? 'Overlay ON' : 'Overlay OFF'}
-            </button>
+            <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setUseNativeControls(!useNativeControls)}
+                className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold backdrop-blur-md transition-colors ${
+                  useNativeControls
+                    ? 'border border-accent/50 bg-active/90 text-accent'
+                    : 'border border-line bg-card/80 text-muted active:text-text'
+                }`}
+                title="Toggle native controls"
+              >
+                {useNativeControls ? 'Native UI' : 'Custom UI'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setOverlayVisible(!overlayVisible)}
+                className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold backdrop-blur-md transition-colors ${
+                  overlayVisible
+                    ? 'border border-accent/50 bg-active/90 text-accent'
+                    : 'border border-line bg-card/80 text-muted active:text-text'
+                }`}
+              >
+                <span className={`h-2 w-2 rounded-full ${overlayVisible ? 'bg-accent' : 'bg-muted'}`} />
+                {overlayVisible ? 'Overlay ON' : 'Overlay OFF'}
+              </button>
+            </div>
           )}
         </div>
 
@@ -404,35 +467,52 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
           <div className="border-t border-line/60 bg-card p-3">
             {/* Scrubber slider */}
             <div className="flex items-center gap-2.5">
-              <span className="text-[11px] tabular-nums text-muted">{formatTime(currentTime)}</span>
+              <span className="text-[11px] tabular-nums text-muted">
+                {formatTime(isScrubbing ? scrubTime : currentTime)}
+              </span>
               <input
                 type="range"
                 min="0"
                 max={duration || 100}
-                step="0.04"
-                value={currentTime}
+                step="0.033"
+                value={isScrubbing ? scrubTime : currentTime}
+                onPointerDown={handleScrubberPointerDown}
+                onTouchStart={handleScrubberPointerDown}
+                onPointerUp={(e) => handleScrubberCommit(Number(e.currentTarget.value))}
+                onTouchEnd={() => handleScrubberCommit()}
+                onKeyUp={() => handleScrubberCommit()}
                 onChange={handleScrubberChange}
-                className="h-2 flex-1 accent-accent"
+                className="h-2.5 flex-1 cursor-pointer accent-accent"
               />
               <span className="text-[11px] tabular-nums text-muted">{formatTime(duration)}</span>
             </div>
 
-            {/* Play/Pause & Skip buttons */}
+            {/* Play/Pause & Transport controls */}
             <div className="mt-2.5 flex items-center justify-between">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => skipSeconds(-5)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-raised text-muted active:bg-active active:text-text"
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-raised text-muted active:bg-active active:text-text"
                   title="Rewind 5 seconds"
                 >
-                  <span className="text-xs font-bold">-5s</span>
+                  <span className="text-[11px] font-bold">-5s</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => stepFrames(-1)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-raised text-muted active:bg-active active:text-text"
+                  title="Previous frame"
+                >
+                  <span className="text-xs font-bold">&lt;</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={togglePlay}
                   className="flex h-11 w-11 items-center justify-center rounded-full bg-accent text-bg shadow-md shadow-accent/20 active:scale-95"
+                  title={isPlaying ? "Pause" : "Play"}
                 >
                   {isPlaying ? (
                     <svg className="h-5 w-5 fill-current" viewBox="0 0 24 24">
@@ -447,11 +527,39 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
 
                 <button
                   type="button"
+                  onClick={() => stepFrames(1)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-raised text-muted active:bg-active active:text-text"
+                  title="Next frame"
+                >
+                  <span className="text-xs font-bold">&gt;</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => skipSeconds(5)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-raised text-muted active:bg-active active:text-text"
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-raised text-muted active:bg-active active:text-text"
                   title="Forward 5 seconds"
                 >
-                  <span className="text-xs font-bold">+5s</span>
+                  <span className="text-[11px] font-bold">+5s</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={toggleMute}
+                  className={`ml-1 flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
+                    isMuted ? 'border-line bg-raised text-muted' : 'border-accent/40 bg-active text-accent'
+                  }`}
+                  title={isMuted ? "Unmute" : "Mute"}
+                >
+                  {isMuted ? (
+                    <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
+                      <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27l4.73 4.73H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
+                    </svg>
+                  ) : (
+                    <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
+                      <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+                    </svg>
+                  )}
                 </button>
               </div>
 

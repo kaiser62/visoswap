@@ -34,7 +34,7 @@ PRIORITY_BACKGROUND = 3
 # Frames within this many seconds ahead of playback are priority 1.
 IMMEDIATE_SPAN = 30.0
 # Never let a single enqueue explode; the window advances as playback does.
-MAX_ENQUEUE_PER_TICK = 400
+MAX_ENQUEUE_PER_TICK = 800
 # Playback time is not perfectly discrete; treat anything inside this as equal.
 TIMESTAMP_TOLERANCE = 0.05
 
@@ -506,7 +506,7 @@ class ProjectScheduler:
         if project is None:
             return
         span = (
-            float(project.get("stream_buffer") or 6.0)
+            float(project.get("stream_buffer") or 15.0)
             if (project.get("generation_mode") or MODE_INTERVAL) == MODE_STREAM
             else project["lookahead"]
         )
@@ -639,27 +639,27 @@ class ProjectScheduler:
             return
 
         if (project.get("generation_mode") or MODE_INTERVAL) == MODE_STREAM:
-            # Stream mode fills a short contiguous run of *consecutive* video
-            # frames ahead of the playhead. A long lookahead would be pointless:
-            # at ~0.6s of GPU per frame the buffer can never outrun playback, so
-            # the only useful work is the frames immediately in front of it.
-            buffer_span = max(interval, float(project.get("stream_buffer") or 6.0))
+            # Stream mode fills a contiguous run of consecutive video frames
+            # ahead of the playhead (minimum 10-15s buffer) for seamless playback.
+            buffer_span = max(15.0, float(project.get("stream_buffer") or 15.0))
             start, end = generation_window(self.current_time, buffer_span, duration)
-            # Drop everything still pending outside that window. Targets are all
-            # PRIORITY_IMMEDIATE here, so `claim_next_frame` orders by timestamp
-            # and workers keep picking the oldest one: with playback at 30s the
-            # pool was still generating 0.25s, 1580 jobs deep, and the overlay
-            # never showed a single frame. A frame the playhead has passed is
-            # worth nothing in stream mode — only the ones in front of it are.
             if not self.full_video_mode:
-                dropped = await self.db.cancel_pending_outside(self.project_id, start, end)
+                # Cancel pending frames that lagged far behind playback (> 4s),
+                # keeping recent frames so workers aren't instantly invalidated while video plays.
+                dropped = await self.db.cancel_pending_outside(
+                    self.project_id, max(0.0, start - 4.0), end
+                )
                 if dropped:
                     log.debug(
                         "[SCHEDULER] project=%s dropped=%d behind window=%.1f-%.1f",
                         self.project_id, dropped, start, end,
                     )
+            fps = float(project.get("fps") or 0.0)
+            fps = fps if fps > 0 else FALLBACK_FPS
+            # Use full video fps for seamless 30fps consecutive generation unless explicitly opted out
+            stream_rate = rate if project.get("stream_seamless") is False else fps
             await self._enqueue(
-                targets_for_rate(start, end, rate, duration),
+                targets_for_rate(start, end, stream_rate, duration),
                 PRIORITY_IMMEDIATE,
                 project,
             )
