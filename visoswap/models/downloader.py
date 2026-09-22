@@ -33,6 +33,9 @@ def download_file(model_name: str, file_path: str, correct_hash: str, url: str) 
             print(f"\n{file_path} already exists, but its file integrity couldn't be verified. Re-downloading it!")
             os.remove(file_path)
 
+    # Ensure parent directory exists (e.g. for subfolders like liveportrait_onnx/)
+    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+
     print(f"\nDownloading {model_name} from {url}")
     
     try:
