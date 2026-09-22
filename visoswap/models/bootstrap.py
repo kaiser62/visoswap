@@ -128,12 +128,23 @@ def _verification_message(result: VerificationResult, ok_prefix: str = "incomple
     return "\n".join(lines)
 
 
-def _verify_core(models_dir: Optional[os.PathLike], mode: str) -> VerificationResult:
+def _verify_core(
+    models_dir: Optional[os.PathLike],
+    mode: str,
+    subset: str = "auto",
+) -> VerificationResult:
     if mode not in MODES:
         raise ValueError("unknown verification mode {!r}; expected one of {}".format(mode, MODES))
-    entries = manifest.tracked(models_dir)
-    required = [e for e in entries if e.required]
-    optional = [e for e in entries if not e.required]
+    # 'auto' respects MODELS_SUBSET env var ('default' | 'all')
+    chosen_subset = os.environ.get("MODELS_SUBSET", "all") if subset == "auto" else subset
+    if chosen_subset == "default":
+        entries = manifest.default_entries(models_dir)
+        required = [e for e in entries if e.required]
+        optional = [e for e in manifest.tracked(models_dir) if e not in required]
+    else:
+        entries = manifest.tracked(models_dir)
+        required = [e for e in entries if e.required]
+        optional = [e for e in entries if not e.required]
 
     present: List[manifest.ManifestEntry] = []
     mismatching: List[manifest.ManifestEntry] = []
@@ -164,7 +175,12 @@ def _verify_core(models_dir: Optional[os.PathLike], mode: str) -> VerificationRe
     )
 
 
-def verify(models_dir: Optional[os.PathLike] = None, mode: str = FAST) -> VerificationResult:
+
+def verify(
+    models_dir: Optional[os.PathLike] = None,
+    mode: str = FAST,
+    subset: str = "auto",
+) -> VerificationResult:
     """Verify the models directory, raising on an incomplete one.
 
     Returns the :class:`VerificationResult` when the directory is complete. When
@@ -172,7 +188,7 @@ def verify(models_dir: Optional[os.PathLike] = None, mode: str = FAST) -> Verifi
     :class:`ModelVerificationError` whose message names the offending files and
     the directory searched, and whose ``.result`` carries the full groups.
     """
-    result = _verify_core(models_dir, mode)
+    result = _verify_core(models_dir, mode, subset=subset)
     if not result.ok:
         raise ModelVerificationError(result)
     return result
@@ -218,6 +234,7 @@ def repair(
     models_dir: Optional[os.PathLike] = None,
     mode: str = FAST,
     fetcher: Optional[Callable[..., bool]] = None,
+    subset: str = "auto",
 ) -> VerificationResult:
     """Fetch every required entry that is missing or mismatching.
 
@@ -231,7 +248,7 @@ def repair(
     escapes the configured models directory, raises :class:`RepairRefused` before
     any file is opened.
     """
-    result = _verify_core(models_dir, mode)
+    result = _verify_core(models_dir, mode, subset=subset)
     directory = resolve_models_dir(models_dir)
     read_only = _read_only_weight_tree()
 
@@ -255,7 +272,7 @@ def repair(
             )
         fetcher(entry.name, str(entry.path), entry.digest, entry.url)
 
-    return _verify_core(models_dir, mode)
+    return _verify_core(models_dir, mode, subset=subset)
 
 
 # ---------------------------------------------------------------------------
@@ -263,7 +280,7 @@ def repair(
 # ---------------------------------------------------------------------------
 
 
-def manifest_fingerprint() -> str:
+def manifest_fingerprint(subset: str = "auto") -> str:
     """A stable id for the current required model set.
 
     Derived from the (name, digest) pairs of the *required* entries, sorted, so it
@@ -271,21 +288,26 @@ def manifest_fingerprint() -> str:
     are optional either way). A change upstream in a required file's digest flips
     it, which is what invalidates a verification marker.
     """
-    required = sorted((e.name, e.digest) for e in manifest.required_entries())
+    chosen_subset = os.environ.get("MODELS_SUBSET", "all") if subset == "auto" else subset
+    if chosen_subset == "default":
+        entries = manifest.default_entries()
+    else:
+        entries = manifest.required_entries()
+    required = sorted((e.name, e.digest) for e in entries if e.required)
     return hashlib.sha256(repr(required).encode("utf-8")).hexdigest()
 
 
-def verification_marker_path(data_dir: os.PathLike) -> Path:
+def verification_marker_path(data_dir: os.PathLike, subset: str = "auto") -> Path:
     """Where the 'this manifest was fully verified' marker lives.
 
     Beside the project's own data, never inside the models directory -- writing
     into a directory that may be a junction into a read-only tree is the mistake
     this gate is most exposed to.
     """
-    return Path(data_dir) / ".model-verify-{}.marker".format(manifest_fingerprint())
+    return Path(data_dir) / ".model-verify-{}.marker".format(manifest_fingerprint(subset=subset))
 
 
-def resolve_startup_mode(configured: str, data_dir: os.PathLike) -> str:
+def resolve_startup_mode(configured: str, data_dir: os.PathLike, subset: str = "auto") -> str:
     """The mode the gate runs: full when no marker for the current manifest exists.
 
     ``auto`` (the safe default) means fast on every start, full on a first run
@@ -295,13 +317,14 @@ def resolve_startup_mode(configured: str, data_dir: os.PathLike) -> str:
     """
     if configured != "auto":
         return configured
-    return "full" if not verification_marker_path(data_dir).exists() else "fast"
+    return "full" if not verification_marker_path(data_dir, subset=subset).exists() else "fast"
 
 
 def verify_at_startup(
     models_dir: Optional[os.PathLike],
     data_dir: os.PathLike,
     configured_mode: str,
+    subset: str = "auto",
 ) -> VerificationResult:
     """Verify at startup, choosing the mode, and record a full pass.
 
@@ -309,10 +332,10 @@ def verify_at_startup(
     pass writes the marker so later starts are fast; a ``fast`` pass writes
     nothing, so it can never be mistaken for a hash-verified one.
     """
-    mode = resolve_startup_mode(configured_mode, data_dir)
-    result = _verify_core(models_dir, mode)
+    mode = resolve_startup_mode(configured_mode, data_dir, subset=subset)
+    result = _verify_core(models_dir, mode, subset=subset)
     if not result.ok:
         raise ModelVerificationError(result)
     if mode == FULL:
-        verification_marker_path(data_dir).write_text("ok\n", encoding="utf-8")
+        verification_marker_path(data_dir, subset=subset).write_text("ok\n", encoding="utf-8")
     return result

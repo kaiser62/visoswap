@@ -74,6 +74,7 @@ def _verify_models_at_startup(settings: Settings) -> None:
             settings.models_dir,
             settings.data_dir,
             settings.models_verify_mode,
+            subset=settings.models_subset,
         )
     except bootstrap.ModelVerificationError as exc:
         sys.stderr.write(str(exc) + "\n")

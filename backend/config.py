@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     # off switch on a refusal-to-start gate is the first thing an environment
     # file sets and then forgets, and BACKEND-01 would quietly stop being true.
     models_verify_mode: str = "auto"
+    # Subset of models to require: "all" (all 56 required models) or "default" (minimal default face swap: 6 models, ~1.3GB)
+    models_subset: str = "auto"
+
 
     # Generation
     # 1 by default: one engine serializes, so a second worker against it only

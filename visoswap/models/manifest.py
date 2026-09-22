@@ -39,7 +39,18 @@ from typing import Optional, Sequence
 from visoswap.models import models_data
 from visoswap.schema import resolve_models_dir
 
-__all__ = ["ManifestEntry", "tracked", "required_entries", "optional_entries"]
+__all__ = ["ManifestEntry", "tracked", "required_entries", "optional_entries", "default_entries", "DEFAULT_SWAP_MODELS"]
+
+#: The minimal set of models required for default face swap (RetinaFace detector,
+#: 4 ArcFace embedders for face card generation, and Inswapper128 engine).
+DEFAULT_SWAP_MODELS = frozenset({
+    "RetinaFace",
+    "Inswapper128ArcFace",
+    "SimSwapArcFace",
+    "GhostArcFace",
+    "CSCSArcFace",
+    "Inswapper128",
+})
 
 #: The execution providers ``visoswap/engine.py`` accepts. Mirrored here rather
 #: than imported from ``engine.py`` so this module stays importable with no torch
@@ -160,3 +171,9 @@ def required_entries(models_dir: Optional[os.PathLike] = None) -> list[ManifestE
 def optional_entries(models_dir: Optional[os.PathLike] = None) -> list[ManifestEntry]:
     """The subset the manifest deliberately does not require."""
     return [entry for entry in tracked(models_dir) if not entry.required]
+
+
+def default_entries(models_dir: Optional[os.PathLike] = None) -> list[ManifestEntry]:
+    """The minimal subset of models needed for default face swapping."""
+    return [entry for entry in tracked(models_dir) if entry.name in DEFAULT_SWAP_MODELS]
+
