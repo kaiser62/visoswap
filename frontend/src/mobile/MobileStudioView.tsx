@@ -266,9 +266,13 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
 
   const handleStart = () => {
     setMarkMessage(null)
-    const t = videoRef.current?.currentTime ?? 0
+    const video = videoRef.current
+    const t = video?.currentTime ?? 0
     reportPlayhead(t)
     void startRun()
+    if (mode === 'live' && video && video.paused) {
+      void video.play().catch(() => {})
+    }
   }
 
   const handleStop = () => {
@@ -556,6 +560,15 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
             )
           })}
         </div>
+
+        <p className="mt-2 text-[11px] text-muted">
+          {mode === 'live' &&
+            'Live preview: generates rolling buffer ahead of playhead while video plays.'}
+          {mode === 'interval' &&
+            `Sampled preview: generates 1 frame every ${intervalText || '1'}s across playback.`}
+          {mode === 'export' &&
+            'Full render: generates every single frame sequentially for seamless 30fps video.'}
+        </p>
 
         {/* Processing Scale Chips */}
         <div className="mt-3 flex items-center justify-between border-t border-line/50 pt-2.5">
