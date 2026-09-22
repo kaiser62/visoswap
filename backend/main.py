@@ -36,6 +36,9 @@ from backend.services.naming import generate_project_name
 from backend.services.scheduler import registry
 from backend.services.video import ytdlp_available
 from visoswap.models import bootstrap
+from visoswap.processors.models_processor import _patch_cuda_libraries
+
+_patch_cuda_libraries()
 
 log = logging.getLogger(__name__)
 

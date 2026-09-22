@@ -12,9 +12,82 @@ from typing import Dict, TYPE_CHECKING
 
 from packaging import version
 import numpy as np
-import onnxruntime
 import torch
 import onnx
+
+def _patch_cuda_libraries():
+    import sys
+    if not sys.platform.startswith("linux"):
+        return
+    import os
+    import site
+    import ctypes
+    from pathlib import Path
+
+    lib_dirs = []
+    try:
+        site_pkgs = site.getsitepackages()
+    except Exception:
+        site_pkgs = []
+
+    for base in site_pkgs:
+        base_path = Path(base)
+        nvidia_path = base_path / "nvidia"
+        if nvidia_path.is_dir():
+            try:
+                for sub in nvidia_path.iterdir():
+                    sub_lib = sub / "lib"
+                    if sub_lib.is_dir():
+                        lib_dirs.append(str(sub_lib))
+            except Exception:
+                pass
+        torch_lib = base_path / "torch" / "lib"
+        if torch_lib.is_dir():
+            lib_dirs.append(str(torch_lib))
+
+    for p in ["/usr/local/cuda/lib64", "/usr/local/cuda/targets/x86_64-linux/lib"]:
+        if os.path.isdir(p):
+            lib_dirs.append(p)
+
+    if not lib_dirs:
+        return
+
+    cur_ld = os.environ.get("LD_LIBRARY_PATH", "")
+    new_parts = [p for p in lib_dirs if p not in cur_ld.split(":")]
+    if new_parts:
+        os.environ["LD_LIBRARY_PATH"] = ":".join(new_parts) + (f":{cur_ld}" if cur_ld else "")
+
+    preload_names = [
+        "libcudart.so.12",
+        "libcudart.so.11",
+        "libcublasLt.so.12",
+        "libcublas.so.12",
+        "libcublasLt.so.11",
+        "libcublas.so.11",
+        "libcudnn.so.9",
+        "libcudnn_graph.so.9",
+        "libcudnn_cnn.so.9",
+        "libcudnn_adv.so.9",
+        "libcudnn_ops.so.9",
+        "libcudnn.so.8",
+        "libcudnn_ops_infer.so.8",
+        "libcudnn_cnn_infer.so.8",
+        "libcufft.so.11",
+        "libcufft.so.10",
+        "libcurand.so.10",
+    ]
+    for d in lib_dirs:
+        for name in preload_names:
+            candidate = os.path.join(d, name)
+            if os.path.exists(candidate):
+                try:
+                    ctypes.CDLL(candidate, mode=ctypes.RTLD_GLOBAL)
+                except Exception:
+                    pass
+
+_patch_cuda_libraries()
+
+import onnxruntime
 from torchvision.transforms import v2
 try:
     import tensorrt as trt
@@ -64,9 +137,9 @@ class ModelsProcessor:
             'trt_builder_optimization_level': 5,
         }
         self.providers = [
-            ('CUDAExecutionProvider'),
+            'CUDAExecutionProvider',
             ('TensorrtExecutionProvider', self.trt_ep_options),
-            ('CPUExecutionProvider')
+            'CPUExecutionProvider'
         ]       
         self.nThreads = 2
         self.syncvec = torch.empty((1, 1), dtype=torch.float32, device=self.device)
@@ -134,6 +207,14 @@ class ModelsProcessor:
                 model_instance = onnxruntime.InferenceSession(self.models_path[model_name], providers=self.providers)
             else:
                 model_instance = onnxruntime.InferenceSession(self.models_path[model_name], sess_options=session_options, providers=self.providers)
+
+            active_providers = model_instance.get_providers()
+            if self.device == "cuda" and not any(p in active_providers for p in ("CUDAExecutionProvider", "TensorrtExecutionProvider")):
+                raise RuntimeError(
+                    f"Model '{model_name}' fell back to {active_providers} despite device='cuda'. "
+                    f"CUDAExecutionProvider failed to initialize. "
+                    f"Ensure nvidia-cudnn-cu12 is installed and libraries are discoverable in LD_LIBRARY_PATH."
+                )
 
             # Check if another thread has already loaded an instance for this model, if yes then delete the current one and return that instead
             if self.models[model_name]:
@@ -212,8 +293,8 @@ class ModelsProcessor:
             case "TensorRT" | "TensorRT-Engine":
                 providers = [
                                 ('TensorrtExecutionProvider', self.trt_ep_options),
-                                ('CUDAExecutionProvider'),
-                                ('CPUExecutionProvider')
+                                'CUDAExecutionProvider',
+                                'CPUExecutionProvider'
                             ]
                 self.device = 'cuda'
                 if version.parse(trt.__version__) < version.parse("10.2.0") and provider_name == "TensorRT-Engine":
@@ -222,13 +303,13 @@ class ModelsProcessor:
 
             case "CPU":
                 providers = [
-                                ('CPUExecutionProvider')
+                                'CPUExecutionProvider'
                             ]
                 self.device = 'cpu'
             case "CUDA":
                 providers = [
-                                ('CUDAExecutionProvider'),
-                                ('CPUExecutionProvider')
+                                'CUDAExecutionProvider',
+                                'CPUExecutionProvider'
                             ]
                 self.device = 'cuda'
             #case _:
