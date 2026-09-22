@@ -1,5 +1,7 @@
 # VisoSwap
 
+[![Open in Kaggle](https://kaggle.com/static/images/open-in-kaggle.svg)](https://kaggle.com/kernels/welcome?src=https://github.com/kaiser62/visoswap/blob/master/visoswap_kaggle.ipynb)
+
 A self-contained video face-swap application: you load a video, pick a source
 face, and the swapped result plays back in real time while frames are generated
 asynchronously behind the playhead. Playback never blocks on generation — if a
@@ -10,6 +12,17 @@ code is vendored into `visoswap/`, the Qt UI is dropped entirely, and every
 setting is explicit and stored rather than inherited from whatever a GUI last
 wrote to disk. Built for a single technical user running it on their own GPU
 machine.
+
+## Run on Free Kaggle GPU
+
+You can run VisoSwap directly on Kaggle with a free NVIDIA GPU (T4 x2 or P100):
+
+1. Click **[![Open in Kaggle](https://kaggle.com/static/images/open-in-kaggle.svg)](https://kaggle.com/kernels/welcome?src=https://github.com/kaiser62/visoswap/blob/master/visoswap_kaggle.ipynb)** to import [visoswap_kaggle.ipynb](visoswap_kaggle.ipynb) into Kaggle (or upload `visoswap_kaggle.ipynb` as a new notebook).
+2. Set notebook **Settings**:
+   - **Accelerator**: `GPU T4 x2` or `GPU P100`
+   - **Internet**: `Internet on`
+3. Click **Run All**.
+4. The last cell prints a public Cloudflare tunnel link (e.g. `https://xxxx.trycloudflare.com`). Open it in your desktop browser or mobile Safari/Chrome to access the full VisoSwap Studio Web UI with live streaming and theater mode!
 
 ## Status
 
