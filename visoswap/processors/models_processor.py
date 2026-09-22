@@ -22,32 +22,52 @@ def _patch_cuda_libraries():
     import os
     import site
     import ctypes
+    import subprocess
     from pathlib import Path
 
-    lib_dirs = []
-    try:
-        site_pkgs = site.getsitepackages()
-    except Exception:
-        site_pkgs = []
+    def _collect_dirs():
+        dirs = []
+        try:
+            site_pkgs = site.getsitepackages()
+        except Exception:
+            site_pkgs = []
+        for base in site_pkgs:
+            base_path = Path(base)
+            nvidia_path = base_path / "nvidia"
+            if nvidia_path.is_dir():
+                try:
+                    for sub in nvidia_path.iterdir():
+                        sub_lib = sub / "lib"
+                        if sub_lib.is_dir():
+                            dirs.append(str(sub_lib))
+                except Exception:
+                    pass
+            torch_lib = base_path / "torch" / "lib"
+            if torch_lib.is_dir():
+                dirs.append(str(torch_lib))
+        for p in ["/usr/local/cuda/lib64", "/usr/local/cuda/targets/x86_64-linux/lib"]:
+            if os.path.isdir(p):
+                dirs.append(p)
+        return dirs
 
-    for base in site_pkgs:
-        base_path = Path(base)
-        nvidia_path = base_path / "nvidia"
-        if nvidia_path.is_dir():
-            try:
-                for sub in nvidia_path.iterdir():
-                    sub_lib = sub / "lib"
-                    if sub_lib.is_dir():
-                        lib_dirs.append(str(sub_lib))
-            except Exception:
-                pass
-        torch_lib = base_path / "torch" / "lib"
-        if torch_lib.is_dir():
-            lib_dirs.append(str(torch_lib))
+    lib_dirs = _collect_dirs()
 
-    for p in ["/usr/local/cuda/lib64", "/usr/local/cuda/targets/x86_64-linux/lib"]:
-        if os.path.isdir(p):
-            lib_dirs.append(p)
+    # If on Linux with CUDA and cuDNN is not found in any lib directory, auto-install nvidia-cudnn-cu12
+    has_cudnn = any(
+        os.path.exists(os.path.join(d, fname))
+        for d in lib_dirs
+        for fname in ["libcudnn.so.9", "libcudnn.so.8", "libcudnn.so"]
+    )
+    if not has_cudnn:
+        try:
+            print("visoswap: cuDNN not found in environment. Auto-installing nvidia-cudnn-cu12...")
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--no-cache-dir", "nvidia-cudnn-cu12", "nvidia-cuda-runtime-cu12"],
+                check=True
+            )
+            lib_dirs = _collect_dirs()
+        except Exception as err:
+            print(f"visoswap: auto-install nvidia-cudnn-cu12 error: {err}")
 
     if not lib_dirs:
         return
@@ -57,6 +77,7 @@ def _patch_cuda_libraries():
     if new_parts:
         os.environ["LD_LIBRARY_PATH"] = ":".join(new_parts) + (f":{cur_ld}" if cur_ld else "")
 
+    rtld_mode = getattr(ctypes, "RTLD_GLOBAL", 0)
     preload_names = [
         "libcudart.so.12",
         "libcudart.so.11",
@@ -64,14 +85,18 @@ def _patch_cuda_libraries():
         "libcublas.so.12",
         "libcublasLt.so.11",
         "libcublas.so.11",
-        "libcudnn.so.9",
-        "libcudnn_graph.so.9",
+        "libcudnn_ops.so.9",
         "libcudnn_cnn.so.9",
         "libcudnn_adv.so.9",
-        "libcudnn_ops.so.9",
-        "libcudnn.so.8",
+        "libcudnn_graph.so.9",
+        "libcudnn_engines_precompiled.so.9",
+        "libcudnn_engines_runtime_compiled.so.9",
+        "libcudnn_heuristic.so.9",
+        "libcudnn.so.9",
         "libcudnn_ops_infer.so.8",
         "libcudnn_cnn_infer.so.8",
+        "libcudnn_adv_infer.so.8",
+        "libcudnn.so.8",
         "libcufft.so.11",
         "libcufft.so.10",
         "libcurand.so.10",
@@ -81,7 +106,7 @@ def _patch_cuda_libraries():
             candidate = os.path.join(d, name)
             if os.path.exists(candidate):
                 try:
-                    ctypes.CDLL(candidate, mode=ctypes.RTLD_GLOBAL)
+                    ctypes.CDLL(candidate, mode=rtld_mode)
                 except Exception:
                     pass
 
@@ -113,7 +138,7 @@ from visoswap.models.downloader import download_file
 if TYPE_CHECKING:
     from visoswap.processors.context import EngineContext
 
-onnxruntime.set_default_logger_severity(4)
+onnxruntime.set_default_logger_severity(3)
 onnxruntime.log_verbosity_level = -1
 lock = threading.Lock()
 
@@ -210,9 +235,14 @@ class ModelsProcessor:
 
             active_providers = model_instance.get_providers()
             if self.device == "cuda" and not any(p in active_providers for p in ("CUDAExecutionProvider", "TensorrtExecutionProvider")):
+                underlying_error = ""
+                try:
+                    onnxruntime.InferenceSession(self.models_path[model_name], providers=['CUDAExecutionProvider'])
+                except Exception as ex:
+                    underlying_error = f" Underlying error: {ex}"
                 raise RuntimeError(
                     f"Model '{model_name}' fell back to {active_providers} despite device='cuda'. "
-                    f"CUDAExecutionProvider failed to initialize. "
+                    f"CUDAExecutionProvider failed to initialize.{underlying_error} "
                     f"Ensure nvidia-cudnn-cu12 is installed and libraries are discoverable in LD_LIBRARY_PATH."
                 )
 
