@@ -495,7 +495,7 @@ class ProjectScheduler:
         """Called by the frontend as playback advances or after a seek."""
         previous = self.current_time
         self.current_time = max(0.0, float(current_time))
-        if seeked or abs(self.current_time - previous) > IMMEDIATE_SPAN:
+        if seeked or abs(self.current_time - previous) > 2.0:
             await self._reprioritize_for_seek()
         self._wake.set()
 
@@ -641,28 +641,45 @@ class ProjectScheduler:
         if (project.get("generation_mode") or MODE_INTERVAL) == MODE_STREAM:
             # Stream mode fills a contiguous run of consecutive video frames
             # ahead of the playhead (minimum 10-15s buffer) for seamless playback.
-            buffer_span = max(15.0, float(project.get("stream_buffer") or 15.0))
-            start, end = generation_window(self.current_time, buffer_span, duration)
+            base_buffer = max(15.0, float(project.get("stream_buffer") or 15.0))
+            counts = await self.db.counts(self.project_id)
+            outstanding = counts.get(STATUS_PENDING, 0) + counts.get(STATUS_PROCESSING, 0)
+
+            start, end = generation_window(self.current_time, base_buffer, duration)
             if not self.full_video_mode:
-                # Cancel pending frames that lagged far behind playback (> 4s),
-                # keeping recent frames so workers aren't instantly invalidated while video plays.
+                # Keep up to 60s ahead of window so extended buffer is preserved
                 dropped = await self.db.cancel_pending_outside(
-                    self.project_id, max(0.0, start - 4.0), end
+                    self.project_id, max(0.0, start - 4.0), min(duration or 99999.0, end + 60.0)
                 )
                 if dropped:
                     log.debug(
-                        "[SCHEDULER] project=%s dropped=%d behind window=%.1f-%.1f",
-                        self.project_id, dropped, start, end,
+                        "[SCHEDULER] project=%s dropped=%d behind window=%.1f",
+                        self.project_id, dropped, start,
                     )
             fps = float(project.get("fps") or 0.0)
             fps = fps if fps > 0 else FALLBACK_FPS
-            # Use full video fps for seamless 30fps consecutive generation unless explicitly opted out
             stream_rate = rate if project.get("stream_seamless") is False else fps
+
+            # 1. Immediate buffer window ahead of playhead (PRIORITY_IMMEDIATE)
             await self._enqueue(
                 targets_for_rate(start, end, stream_rate, duration),
                 PRIORITY_IMMEDIATE,
                 project,
             )
+
+            # 2. If the immediate buffer is mostly done, continue buffering forward
+            # ahead of the playhead so GPU does not idle while clip has length
+            if outstanding < 60 and duration and duration > end:
+                max_ts = await self.db.max_enqueued_timestamp(self.project_id)
+                extend_start = (max_ts + 1.0 / stream_rate) if max_ts is not None and max_ts >= end else end
+                extend_end = min(duration, extend_start + 15.0)
+                if extend_end > extend_start:
+                    await self._enqueue(
+                        targets_for_rate(extend_start, extend_end, stream_rate, duration),
+                        PRIORITY_LOOKAHEAD,
+                        project,
+                    )
+
             self._last_plan = time.time()
             return
 

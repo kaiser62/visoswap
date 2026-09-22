@@ -45,7 +45,7 @@ async def run_worker(scheduler: ProjectScheduler, index: int) -> None:
             if project is None:
                 return
 
-            frame = await scheduler.db.claim_next_frame(project_id)
+            frame = await scheduler.db.claim_next_frame(project_id, playhead=scheduler.current_time)
             if frame is None:
                 await asyncio.sleep(IDLE_SLEEP)
                 continue

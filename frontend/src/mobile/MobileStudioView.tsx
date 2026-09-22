@@ -158,10 +158,20 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
     let handle = 0
     let stopped = false
     const onFrame = (_now: number, meta: { mediaTime: number }) => {
-      const entry = frameAtOrBefore(indexRef.current, meta.mediaTime)
+      const t = meta.mediaTime
+      if (!isScrubbingRef.current) {
+        setCurrentTime(t)
+      }
+      reportPlayhead(t)
+      const entry = frameAtOrBefore(indexRef.current, t)
       if (entry) {
         setOverlayUrl(entry.url)
-        prefetchAhead(meta.mediaTime)
+        prefetchAhead(t)
+      }
+      const now = Date.now()
+      if (now - lastReportRef.current >= PLAYBACK_THROTTLE_MS) {
+        lastReportRef.current = now
+        report(t, false)
       }
       if (!stopped) handle = video.requestVideoFrameCallback!(onFrame)
     }
@@ -170,7 +180,7 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
       stopped = true
       video.cancelVideoFrameCallback?.(handle)
     }
-  }, [prefetchAhead, project?.video_src])
+  }, [prefetchAhead, project?.video_src, report, reportPlayhead])
 
   // Video event listeners
   useEffect(() => {
@@ -239,7 +249,7 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
       video.removeEventListener('pause', onPause)
       video.removeEventListener('loadedmetadata', onLoadedMetadata)
     }
-  }, [report, prefetchAhead, reportPlayhead, setVideoPaused, clearPreview, recordCoverage])
+  }, [report, project?.video_src, prefetchAhead, reportPlayhead, setVideoPaused, clearPreview, recordCoverage])
 
   const togglePlay = () => {
     const video = videoRef.current

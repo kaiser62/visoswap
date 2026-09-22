@@ -348,19 +348,41 @@ class Database:
         )
         return int((await cur.fetchone())[0])
 
-    async def claim_next_frame(self, project_id: str) -> dict[str, Any] | None:
+    async def max_enqueued_timestamp(self, project_id: str) -> float | None:
+        """Highest timestamp currently in the frames table."""
+        cur = await self.conn.execute(
+            "SELECT MAX(timestamp) FROM frames WHERE project_id = ?",
+            (project_id,),
+        )
+        row = await cur.fetchone()
+        return float(row[0]) if row and row[0] is not None else None
+
+    async def claim_next_frame(
+        self, project_id: str, playhead: float | None = None
+    ) -> dict[str, Any] | None:
         """Atomically move the best pending frame to `processing`.
 
         Ordering: priority ascending (1 = closest to playback), then timestamp.
-        Frames in retry backoff are skipped until `next_retry_at` passes.
+        When playhead is provided, frames at or ahead of playhead are preferred
+        first, ordered sequentially forward.
         """
         now = time.time()
-        cur = await self.conn.execute(
-            "SELECT timestamp FROM frames WHERE project_id = ? AND status = ? "
-            "AND (next_retry_at IS NULL OR next_retry_at <= ?) "
-            "ORDER BY priority ASC, timestamp ASC LIMIT 1",
-            (project_id, STATUS_PENDING, now),
-        )
+        if playhead is not None:
+            sql = (
+                "SELECT timestamp FROM frames WHERE project_id = ? AND status = ? "
+                "AND (next_retry_at IS NULL OR next_retry_at <= ?) "
+                "ORDER BY (CASE WHEN timestamp >= ? THEN 0 ELSE 1 END) ASC, "
+                "priority ASC, timestamp ASC LIMIT 1"
+            )
+            params = (project_id, STATUS_PENDING, now, playhead)
+        else:
+            sql = (
+                "SELECT timestamp FROM frames WHERE project_id = ? AND status = ? "
+                "AND (next_retry_at IS NULL OR next_retry_at <= ?) "
+                "ORDER BY priority ASC, timestamp ASC LIMIT 1"
+            )
+            params = (project_id, STATUS_PENDING, now)
+        cur = await self.conn.execute(sql, params)
         row = await cur.fetchone()
         if row is None:
             return None
