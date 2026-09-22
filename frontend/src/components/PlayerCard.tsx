@@ -74,6 +74,17 @@ export function PlayerCard() {
     indexRef.current = index
   }, [index])
 
+  // Sync overlay when index or project loads while video is paused
+  useEffect(() => {
+    if (index.length === 0) {
+      setOverlayUrl(null)
+      return
+    }
+    const t = videoRef.current?.currentTime ?? 0
+    const entry = frameAtOrBefore(index, t)
+    setOverlayUrl((prev) => (prev === (entry?.url ?? null) ? prev : entry?.url ?? null))
+  }, [index])
+
   // The overlay element itself, written to directly on the frame callback, and
   // the preview url the write has to stand down for -- both in refs for the
   // same reason as the index: the frame callback is armed once and must not be
@@ -207,8 +218,11 @@ export function PlayerCard() {
     }
     const onSeeked = () => {
       lastReportRef.current = Date.now()
-      reportPlayhead(video.currentTime)
-      report(video.currentTime, true)
+      const t = video.currentTime
+      reportPlayhead(t)
+      report(t, true)
+      const entry = frameAtOrBefore(indexRef.current, t)
+      setOverlayUrl((prev) => (prev === (entry?.url ?? null) ? prev : entry?.url ?? null))
     }
     const onPlay = () => {
       setVideoPaused(false)
@@ -313,7 +327,7 @@ export function PlayerCard() {
             alt=""
             // A broken frame clears the overlay; the video is never touched.
             onError={() => setOverlayUrl(null)}
-            className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+            className="pointer-events-none absolute inset-0 z-10 h-full w-full object-contain"
           />
         )}
       </div>

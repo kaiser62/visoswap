@@ -103,6 +103,70 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
     if (project?.duration) setDuration(project.duration)
   }, [project?.duration])
 
+  // Keep screen awake while in Studio
+  useEffect(() => {
+    let wakeLock: any = null
+    const requestLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await (navigator as any).wakeLock.request('screen')
+        }
+      } catch {
+        /* WakeLock not supported or blocked */
+      }
+    }
+    void requestLock()
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void requestLock()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      void wakeLock?.release().catch(() => {})
+    }
+  }, [])
+
+  // Sync initial and reactive overlay frame from index and currentTime
+  useEffect(() => {
+    if (index.length === 0) {
+      setOverlayUrl(null)
+      return
+    }
+    const entry = frameAtOrBefore(index, currentTime)
+    setOverlayUrl(entry ? entry.url : null)
+  }, [index, currentTime])
+
+  // Smooth per-frame overlay updates when video is playing
+  useEffect(() => {
+    const video = videoRef.current as
+      | (HTMLVideoElement & {
+          requestVideoFrameCallback?: (
+            cb: (now: number, meta: { mediaTime: number }) => void,
+          ) => number
+          cancelVideoFrameCallback?: (handle: number) => void
+        })
+      | null
+    if (!video?.requestVideoFrameCallback) return
+    let handle = 0
+    let stopped = false
+    const onFrame = (_now: number, meta: { mediaTime: number }) => {
+      const entry = frameAtOrBefore(indexRef.current, meta.mediaTime)
+      if (entry) {
+        setOverlayUrl(entry.url)
+        prefetchAhead(meta.mediaTime)
+      }
+      if (!stopped) handle = video.requestVideoFrameCallback!(onFrame)
+    }
+    handle = video.requestVideoFrameCallback(onFrame)
+    return () => {
+      stopped = true
+      video.cancelVideoFrameCallback?.(handle)
+    }
+  }, [prefetchAhead, project?.video_src])
+
   // Video event listeners
   useEffect(() => {
     const video = videoRef.current
@@ -130,6 +194,8 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
       setCurrentTime(t)
       reportPlayhead(t)
       report(t, true)
+      const entry = frameAtOrBefore(indexRef.current, t)
+      setOverlayUrl(entry ? entry.url : null)
     }
 
     const onPlay = () => {
@@ -147,6 +213,8 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
       if (video.duration && Number.isFinite(video.duration)) {
         setDuration(video.duration)
       }
+      const entry = frameAtOrBefore(indexRef.current, video.currentTime)
+      if (entry) setOverlayUrl(entry.url)
     }
 
     video.addEventListener('timeupdate', onTimeUpdate)
@@ -268,6 +336,7 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
             <video
               ref={videoRef}
               src={project.video_src}
+              preload="auto"
               playsInline
               disablePictureInPicture
               className="h-full w-full object-contain"
@@ -305,7 +374,7 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
               src={displayedUrl}
               alt=""
               onError={() => setOverlayUrl(null)}
-              className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+              className="pointer-events-none absolute inset-0 z-10 h-full w-full object-contain"
             />
           )}
 
