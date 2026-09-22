@@ -232,6 +232,17 @@ def create_app() -> FastAPI:
     app.include_router(settings_api.router)
     app.include_router(ws.router)
 
+    # Dedicated route for mobile web app so direct access to /mobile serves index.html
+    @app.get("/mobile", include_in_schema=False)
+    @app.get("/mobile/{subpath:path}", include_in_schema=False)
+    async def mobile_root(subpath: str = "") -> Response:
+        index = FRONTEND_DIST / "index.html"
+        if index.is_file():
+            return FileResponse(index)
+        return JSONResponse(
+            {"detail": "frontend not built; run 'npm run build' in ./frontend"}
+        )
+
     # Serve the built frontend when it exists (single-container deployment).
     # `/` itself is handled above so `?url=` can be intercepted.
     if FRONTEND_DIST.is_dir():

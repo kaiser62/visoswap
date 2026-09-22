@@ -21,6 +21,7 @@ import { Button, Card, Skeleton } from './components/ui'
 import { isControlEnabled } from './lib/gates'
 import { MediaProvider } from './state/MediaContext'
 import { SettingsProvider, useSettings } from './state/SettingsContext'
+import { MobileApp } from './mobile/MobileApp'
 
 function StudioBody() {
   const { status, schema, values, setValue, load } = useSettings()
@@ -243,13 +244,51 @@ function MediaBoundary() {
   )
 }
 
+function MobileMediaBoundary({ onSwitchToDesktop }: { onSwitchToDesktop: () => void }) {
+  const { projectId } = useSettings()
+  return (
+    <MediaProvider projectId={projectId}>
+      <MobileApp onSwitchToDesktop={onSwitchToDesktop} />
+    </MediaProvider>
+  )
+}
+
+function checkIsMobile(): boolean {
+  if (typeof window === 'undefined') return false
+  return Boolean(window.location?.pathname && window.location.pathname.startsWith('/mobile'))
+}
+
 export default function App() {
+  const [isMobile, setIsMobile] = useState(checkIsMobile)
+
+  useEffect(() => {
+    const onPopState = () => {
+      setIsMobile(checkIsMobile())
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  const switchToDesktop = () => {
+    window.history.pushState({}, '', `/${window.location.search}`)
+    setIsMobile(false)
+  }
+
+  const switchToMobile = () => {
+    window.history.pushState({}, '', `/mobile${window.location.search}`)
+    setIsMobile(true)
+  }
+
   return (
     <SettingsProvider>
-      <div className="flex h-screen flex-col bg-bg text-text">
-        <Header />
-        <MediaBoundary />
-      </div>
+      {isMobile ? (
+        <MobileMediaBoundary onSwitchToDesktop={switchToDesktop} />
+      ) : (
+        <div className="flex h-screen flex-col bg-bg text-text">
+          <Header onSwitchToMobile={switchToMobile} />
+          <MediaBoundary />
+        </div>
+      )}
     </SettingsProvider>
   )
 }

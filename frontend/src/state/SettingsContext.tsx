@@ -188,7 +188,8 @@ export function SettingsProvider({
       dispatch({ type: 'SET_PROJECT', projectId: target })
       // Keep the URL in sync so a plain reload reopens the same project.
       if (fromUrl !== target) {
-        window.history.replaceState({}, '', `/?project=${target}`)
+        const basePath = window.location?.pathname?.startsWith('/mobile') ? '/mobile' : '/'
+        window.history.replaceState({}, '', `${basePath}?project=${target}`)
       }
       dispatch({ type: 'LOAD_OK', schema, values })
     } catch {
@@ -204,7 +205,8 @@ export function SettingsProvider({
       dispatch({ type: 'SET_PROJECT', projectId })
       // Switching projects rewrites the URL too, so a reload reopens what is
       // on screen rather than whatever the address bar still remembers.
-      window.history.replaceState({}, '', `/?project=${projectId}`)
+      const basePath = window.location?.pathname?.startsWith('/mobile') ? '/mobile' : '/'
+      window.history.replaceState({}, '', `${basePath}?project=${projectId}`)
       dispatch({ type: 'LOAD_OK', schema, values })
     } catch {
       dispatch({ type: 'LOAD_ERROR' })

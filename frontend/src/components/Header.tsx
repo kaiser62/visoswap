@@ -7,7 +7,7 @@ import { PresetSelector } from './PresetSelector'
 import { ProjectDeleteDialog } from './ProjectDeleteDialog'
 import { Button } from './ui'
 
-export function Header() {
+export function Header({ onSwitchToMobile }: { onSwitchToMobile?: () => void } = {}) {
   const {
     projects,
     projectId,
@@ -98,6 +98,20 @@ export function Header() {
           dirty={dirty}
           onChangeValues={applyPresetValues}
         />
+
+        {onSwitchToMobile && (
+          <Button
+            variant="ghost"
+            onClick={onSwitchToMobile}
+            title="Open Mobile Web App (/mobile)"
+            className="flex items-center gap-1.5 text-accent"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            <span>Mobile</span>
+          </Button>
+        )}
 
         {justSaved && (
           <span className="text-sm text-good" aria-live="polite">
