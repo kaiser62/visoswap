@@ -50,9 +50,20 @@ class FaceOut(BaseModel):
 
     face_id: str
     display_name: str | None = None
+    group: str | None = None
     bytes: int
     url: str
     thumbnail_url: str | None = None
+
+
+class FaceUpdate(BaseModel):
+    display_name: str | None = None
+    group: str | None = None
+
+
+class FaceGroupRename(BaseModel):
+    old_name: str = Field(..., min_length=1, max_length=80)
+    new_name: str = Field(..., min_length=1, max_length=80)
 
 
 class FaceActivate(BaseModel):

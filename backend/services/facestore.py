@@ -36,8 +36,11 @@ THUMB_SUFFIX = ".thumb.jpg"
 #: caller influences -- the name they chose is file *content*, never a name --
 #: so a library of a hundred digests can still be read by a human.
 NAME_SUFFIX = ".name.txt"
+#: Companion group sidecar to group related faces together.
+GROUP_SUFFIX = ".group.txt"
 #: A display name longer than this is stored truncated; the UI shows one line.
 NAME_MAX = 120
+GROUP_MAX = 80
 THUMB_SIZE = (112, 112)
 ALLOWED_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
@@ -126,24 +129,122 @@ def read_name(face_id: str) -> str | None:
     return text or None
 
 
-def write_name(face_id: str, filename: str | None) -> None:
-    """Record an upload's original name beside its face, first name winning.
-
-    Content addressing means the same picture uploaded twice under two names is
-    one face; keeping the first keeps the library stable rather than letting a
-    later duplicate rename an entry the user already recognises. Failure is
-    never fatal -- the name is a convenience, the id is the identity.
+def write_name(face_id: str, filename: str | None, overwrite: bool = False) -> None:
+    """Record an upload's original name beside its face.
+    
+    If overwrite is True, replace existing sidecar. Otherwise first name wins.
     """
     safe = cache.sanitize_filename(filename or "", "face").strip()
     if not safe:
         return
     path = name_path(face_id)
-    if path.exists():
+    if path.exists() and not overwrite:
         return
     try:
         path.write_text(safe[:NAME_MAX], encoding="utf-8")
     except OSError as exc:  # noqa: BLE001 - names are never fatal
         log.warning("[FACES] name sidecar for %s failed: %s", face_id, exc)
+
+
+def group_path(face_id: str) -> Path:
+    """The companion group-name sidecar path under the same id rule."""
+    _validate(face_id)
+    return faces_dir() / f"{face_id}{GROUP_SUFFIX}"
+
+
+def read_group(face_id: str) -> str | None:
+    """The stored group name, or None when no group is assigned."""
+    path = group_path(face_id)
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    return text or None
+
+
+def write_group(face_id: str, group: str | None) -> None:
+    """Assign or clear a face's group name."""
+    path = group_path(face_id)
+    if not group or not str(group).strip():
+        path.unlink(missing_ok=True)
+        return
+    clean = str(group).strip()[:GROUP_MAX]
+    try:
+        path.write_text(clean, encoding="utf-8")
+    except OSError as exc:  # noqa: BLE001
+        log.warning("[FACES] group sidecar for %s failed: %s", face_id, exc)
+
+
+def rename_group(old_name: str, new_name: str) -> int:
+    """Rename all faces belonging to old_name to new_name."""
+    old_clean = (old_name or "").strip()
+    new_clean = (new_name or "").strip()[:GROUP_MAX]
+    count = 0
+    for record in list_faces():
+        if (record.get("group") or "") == old_clean:
+            write_group(record["face_id"], new_clean if new_clean else None)
+            count += 1
+    return count
+
+
+def detect_group_name(filename: str | None) -> str | None:
+    """Heuristic to detect a person's group name from a filename."""
+    if not filename:
+        return None
+    stem = re.sub(r"\.[a-zA-Z0-9]{2,5}$", "", str(filename)).strip()
+    stem = re.sub(
+        r"(_SnapseedCopy|_Original|_Copy|\(\d+\))+$", "", stem, flags=re.IGNORECASE
+    )
+    # Strip leading 8-char camera hash prefixes like '8c3c6577_progga'
+    stem = re.sub(r"^[0-9a-fA-F]{8}[-_ ]+", "", stem)
+    cleaned = re.sub(r"([_-]\d+)+$", "", stem)
+    cleaned = re.sub(r"_\d+$", "", cleaned).strip("_- ")
+    low = cleaned.lower()
+    if not cleaned or cleaned.isdigit() or len(cleaned) < 2:
+        return None
+    if low.startswith(
+        ("img", "dsc", "pxl", "received", "unknown_group", "new bitmap", "untitled")
+    ):
+        return None
+    # Reject UUIDs or hex hashes
+    if re.match(r"^[0-9a-fA-F\- ]{16,}$", cleaned):
+        return None
+    return cleaned.replace("_", " ").replace("-", " ").title()
+
+
+def auto_group_all(overwrite: bool = False, min_count: int = 2) -> dict[str, int]:
+    """Group ungrouped faces with same/similar detected names (clusters of min_count+)."""
+    faces = list_faces()
+    # First pass: tally detected names across all faces
+    detected_map: dict[str, str] = {}  # face_id -> detected group
+    name_counts: dict[str, int] = {}
+    for f in faces:
+        curr = f.get("group")
+        if curr and not overwrite:
+            continue
+        g = detect_group_name(f.get("display_name"))
+        if g:
+            detected_map[f["face_id"]] = g
+            name_counts[g] = name_counts.get(g, 0) + 1
+
+    # Second pass: assign group if count >= min_count
+    grouped_counts: dict[str, int] = {}
+    for f in faces:
+        face_id = f["face_id"]
+        curr = f.get("group")
+        if curr and not overwrite:
+            grouped_counts[curr] = grouped_counts.get(curr, 0) + 1
+            continue
+        g = detected_map.get(face_id)
+        if g and name_counts.get(g, 0) >= min_count:
+            write_group(face_id, g)
+            grouped_counts[g] = grouped_counts.get(g, 0) + 1
+        elif curr and overwrite:
+            # Overwrite was requested and this face had no cluster
+            write_group(face_id, None)
+
+    return grouped_counts
+
 
 
 def _make_thumbnail(data: bytes, dest: Path) -> None:
@@ -153,15 +254,10 @@ def _make_thumbnail(data: bytes, dest: Path) -> None:
         img.save(dest, "JPEG")
 
 
-def store(data: bytes, filename: str | None) -> dict[str, Any]:
-    """Store image bytes under their content digest plus a 112x112 thumbnail.
-
-    Storing the same bytes again leaves exactly one pair of files: identity is
-    the digest, so the second upload finds its destination already present. A
-    thumbnail failure must not fail an upload -- it logs a warning and records
-    the face with a null thumbnail URL, the never-fatal posture of
-    ``Recorder._export``.
-    """
+def store(
+    data: bytes, filename: str | None, group: str | None = None
+) -> dict[str, Any]:
+    """Store image bytes under their content digest plus a 112x112 thumbnail."""
     ext = image_suffix(filename)
     face_id = face_id_for(data)
     root = faces_dir()
@@ -177,6 +273,9 @@ def store(data: bytes, filename: str | None) -> dict[str, Any]:
         tmp.unlink(missing_ok=True)
 
     write_name(face_id, filename)
+    # Assign explicit group if provided
+    if group is not None and str(group).strip():
+        write_group(face_id, group)
 
     thumbnail_url: str | None = f"/api/faces/{face_id}/thumbnail"
     if not thumb.exists():
@@ -189,9 +288,27 @@ def store(data: bytes, filename: str | None) -> dict[str, Any]:
     return {
         "face_id": face_id,
         "display_name": read_name(face_id) or face_id,
+        "group": read_group(face_id),
         "bytes": len(data),
         "url": f"/api/faces/{face_id}/image",
         "thumbnail_url": thumbnail_url,
+    }
+
+
+def get_face(face_id: str) -> dict[str, Any]:
+    """Retrieve metadata for a single face by id."""
+    _validate(face_id)
+    path = face_path(face_id)
+    if not path.is_file():
+        raise FileNotFoundError(f"no such face: {face_id}")
+    thumb = thumb_path(face_id)
+    return {
+        "face_id": face_id,
+        "display_name": read_name(face_id) or face_id,
+        "group": read_group(face_id),
+        "bytes": path.stat().st_size,
+        "url": f"/api/faces/{face_id}/image",
+        "thumbnail_url": f"/api/faces/{face_id}/thumbnail" if thumb.exists() else None,
     }
 
 
@@ -199,19 +316,20 @@ def list_faces() -> list[dict[str, Any]]:
     """Every stored face, newest-first. Thumbnails are never faces."""
     records: list[dict[str, Any]] = []
     for path in sorted(faces_dir().glob("*")):
-        if not path.is_file() or path.name.endswith((THUMB_SUFFIX, NAME_SUFFIX)):
+        if not path.is_file() or path.name.endswith(
+            (THUMB_SUFFIX, NAME_SUFFIX, GROUP_SUFFIX)
+        ):
             continue
         match = FACE_ID_RE.fullmatch(path.stem)
         if not match:
             continue
         face_id = match.group(0)
         thumb = thumb_path(face_id)
-        # The upload name lives in a sidecar, which faces stored before
-        # sidecars existed do not have; those still list, named by their id.
         records.append(
             {
                 "face_id": face_id,
                 "display_name": read_name(face_id) or face_id,
+                "group": read_group(face_id),
                 "bytes": path.stat().st_size,
                 "url": f"/api/faces/{face_id}/image",
                 "thumbnail_url": (
@@ -227,10 +345,11 @@ def list_faces() -> list[dict[str, Any]]:
 
 
 def delete(face_id: str) -> None:
-    """Remove the file, its thumbnail and its name sidecar; unknown id is a no-op."""
+    """Remove the file, its thumbnail, name sidecar and group sidecar."""
     face_path(face_id).unlink(missing_ok=True)
     thumb_path(face_id).unlink(missing_ok=True)
     name_path(face_id).unlink(missing_ok=True)
+    group_path(face_id).unlink(missing_ok=True)
 
 
 def face_id_for_path(path: str | Path) -> str | None:

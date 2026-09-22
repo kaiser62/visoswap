@@ -248,6 +248,7 @@ export type SocketEvent =
 export interface Face {
   face_id: string
   display_name: string | null
+  group: string | null
   bytes: number
   url: string
   thumbnail_url: string | null

@@ -515,3 +515,67 @@ def test_changing_the_face_under_a_running_run_is_refused(client, monkeypatch):
     assert "stop the run" in refused.json()["detail"]
     # And the face on the row is still the one the run is using.
     assert client.get(f"/api/projects/{project_id}").json()["source_face_id"] != second
+
+
+def test_patch_face_updates_name_and_group(client):
+    record = _upload(client, name="person_1.png").json()
+    face_id = record["face_id"]
+
+    # Initial face has no group
+    assert record.get("group") is None
+
+    # Patch group and display_name
+    patch_resp = client.patch(
+        f"/api/faces/{face_id}",
+        json={"display_name": "Hero_Person", "group": "Heroes"},
+    )
+    assert patch_resp.status_code == 200, patch_resp.text
+    updated = patch_resp.json()
+    assert updated["display_name"] == "Hero_Person"
+    assert updated["group"] == "Heroes"
+
+    # Verify persisted in get and list
+    listed = client.get("/api/faces").json()
+    match = next(f for f in listed if f["face_id"] == face_id)
+    assert match["group"] == "Heroes"
+    assert match["display_name"] == "Hero_Person"
+
+
+def test_rename_face_group_updates_all_members(client):
+    f1 = _upload(client, name="actor_1.png", content=PNG_BYTES).json()["face_id"]
+    f2 = _upload(client, name="actor_2.png", content=OTHER_BYTES).json()["face_id"]
+
+    client.patch(f"/api/faces/{f1}", json={"group": "Actors"})
+    client.patch(f"/api/faces/{f2}", json={"group": "Actors"})
+
+    rename_resp = client.post(
+        "/api/faces/group/rename",
+        json={"old_name": "Actors", "new_name": "VIP Actors"},
+    )
+    assert rename_resp.status_code == 200, rename_resp.text
+    assert rename_resp.json()["renamed"] == 2
+
+    # Both faces now belong to VIP Actors
+    listed = client.get("/api/faces").json()
+    f1_rec = next(f for f in listed if f["face_id"] == f1)
+    f2_rec = next(f for f in listed if f["face_id"] == f2)
+    assert f1_rec["group"] == "VIP Actors"
+    assert f2_rec["group"] == "VIP Actors"
+
+
+def test_auto_group_clusters_matching_faces(client):
+    f1 = _upload(client, name="superstar_1.png", content=PNG_BYTES).json()["face_id"]
+    f2 = _upload(client, name="superstar_2.png", content=OTHER_BYTES).json()["face_id"]
+
+    auto_resp = client.post("/api/faces/auto-group?overwrite=true")
+    assert auto_resp.status_code == 200, auto_resp.text
+    groups = auto_resp.json()["groups"]
+    assert "Superstar" in groups
+    assert groups["Superstar"] >= 2
+
+    listed = client.get("/api/faces").json()
+    f1_rec = next(f for f in listed if f["face_id"] == f1)
+    f2_rec = next(f for f in listed if f["face_id"] == f2)
+    assert f1_rec["group"] == "Superstar"
+    assert f2_rec["group"] == "Superstar"
+

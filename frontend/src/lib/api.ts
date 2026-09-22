@@ -333,6 +333,43 @@ export function deleteFace(faceId: string, force = false): Promise<undefined> {
   return request<undefined>(path, { method: 'DELETE' })
 }
 
+/** Update a face's display name or group assignment. */
+export function updateFace(
+  faceId: string,
+  patch: { display_name?: string; group?: string | null },
+): Promise<Face> {
+  return request<Face>(`/api/faces/${faceId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+}
+
+/** Rename an entire face group across all member faces. */
+export function renameFaceGroup(
+  oldName: string,
+  newName: string,
+): Promise<{ renamed: number; old_name: string; new_name: string }> {
+  return request<{ renamed: number; old_name: string; new_name: string }>(
+    '/api/faces/group/rename',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ old_name: oldName, new_name: newName }),
+    },
+  )
+}
+
+/** Automatically group faces based on detected person names. */
+export function autoGroupFaces(
+  overwrite = false,
+): Promise<{ groups: Record<string, number>; total_groups: number }> {
+  return request<{ groups: Record<string, number>; total_groups: number }>(
+    `/api/faces/auto-group?overwrite=${overwrite ? 'true' : 'false'}`,
+    { method: 'POST' },
+  )
+}
+
 // --- Takes / gallery (plan 05.1-07) -----------------------------------------
 
 /** Every exported take, newest-first as the server sorts them (D-12). */

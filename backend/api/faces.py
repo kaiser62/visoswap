@@ -18,7 +18,13 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, Up
 from fastapi.responses import FileResponse
 
 from backend.api.deps import get_db
-from backend.api.schemas import AffectedProject, FaceOut, FaceUsageConflict
+from backend.api.schemas import (
+    AffectedProject,
+    FaceGroupRename,
+    FaceOut,
+    FaceUpdate,
+    FaceUsageConflict,
+)
 from backend.config import get_settings
 from backend.models.database import Database
 from backend.services import facestore
@@ -145,3 +151,40 @@ async def delete_face(
         await db.update_project(entry["id"], source_face_path=None)
     facestore.delete(face_id)
     return Response(status_code=204)
+
+
+@router.patch("/{face_id}", response_model=FaceOut)
+async def update_face(face_id: str, payload: FaceUpdate) -> dict[str, Any]:
+    """Update face display name and/or group."""
+    try:
+        path = facestore.face_path(face_id)
+    except facestore.UnsafeFaceId as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="no such face asset")
+
+    if payload.display_name is not None:
+        facestore.write_name(face_id, payload.display_name, overwrite=True)
+    if payload.group is not None:
+        facestore.write_group(face_id, payload.group)
+
+    return facestore.get_face(face_id)
+
+
+@router.post("/group/rename")
+async def rename_face_group(payload: FaceGroupRename) -> dict[str, Any]:
+    """Rename a face group across all member faces."""
+    count = facestore.rename_group(payload.old_name, payload.new_name)
+    return {
+        "renamed": count,
+        "old_name": payload.old_name,
+        "new_name": payload.new_name,
+    }
+
+
+@router.post("/auto-group")
+async def auto_group_faces(overwrite: bool = Query(default=False)) -> dict[str, Any]:
+    """Auto-detect groups for ungrouped faces based on name patterns."""
+    groups = facestore.auto_group_all(overwrite=overwrite)
+    return {"groups": groups, "total_groups": len(groups)}
+
