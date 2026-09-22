@@ -234,6 +234,7 @@ def create_app() -> FastAPI:
 
     # Dedicated route for mobile web app so direct access to /mobile serves index.html
     @app.get("/mobile", include_in_schema=False)
+    @app.get("/mobile/", include_in_schema=False)
     @app.get("/mobile/{subpath:path}", include_in_schema=False)
     async def mobile_root(subpath: str = "") -> Response:
         index = FRONTEND_DIST / "index.html"
