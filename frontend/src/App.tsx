@@ -248,7 +248,13 @@ function MediaBoundary() {
 }
 
 function MobileMediaBoundary({ onSwitchToDesktop }: { onSwitchToDesktop: () => void }) {
-  const { projectId } = useSettings()
+  const { projectId, load } = useSettings()
+
+  useEffect(() => {
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
     <MediaProvider projectId={projectId}>
       <MobileApp onSwitchToDesktop={onSwitchToDesktop} />

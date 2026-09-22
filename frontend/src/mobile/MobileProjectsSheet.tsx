@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSettings } from '../state/SettingsContext'
 import type { Project } from '../types'
 
@@ -32,7 +32,11 @@ export function MobileProjectsSheet({
   onClose,
   onProjectSelected,
 }: MobileProjectsSheetProps) {
-  const { projects, projectId, setProject, newProject, removeProject } = useSettings()
+  const { projects, projectId, setProject, newProject, removeProject, refreshProjects } = useSettings()
+
+  useEffect(() => {
+    if (open) void refreshProjects()
+  }, [open, refreshProjects])
 
   const [searchQuery, setSearchQuery] = useState('')
   const [creating, setCreating] = useState(false)

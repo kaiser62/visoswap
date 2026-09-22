@@ -65,29 +65,20 @@ export function MobileFacesView({ onFaceSelected }: MobileFacesViewProps) {
   }
 
   return (
-    <div className="space-y-4 p-4 pb-24">
+    <div className="space-y-3 p-3 pb-24">
+      {/* Header with count and inline upload button */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-text">Source Face Library</h2>
-          <p className="text-xs text-muted">Tap a face to make it this project's source</p>
+          <h2 className="text-sm font-bold text-text">Face Library</h2>
+          <p className="text-[11px] text-muted">
+            {faces.length} face{faces.length === 1 ? '' : 's'} • Tap to swap
+          </p>
         </div>
-        <span className="rounded-full bg-raised px-2.5 py-1 text-xs font-medium text-muted">
-          {faces.length} {faces.length === 1 ? 'face' : 'faces'}
-        </span>
-      </div>
-
-      {/* Upload button container */}
-      <div className="rounded-2xl border border-dashed border-line bg-card p-4 text-center">
-        <label className="flex cursor-pointer flex-col items-center justify-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/15 text-accent">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </div>
-          <span className="mt-2 text-sm font-semibold text-text">
-            {uploading ? 'Uploading face…' : 'Take Photo or Choose Face'}
-          </span>
-          <span className="text-[11px] text-muted">Supports camera, photo library or files</span>
+        <label className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-accent px-3 py-1.5 text-xs font-bold text-bg shadow-sm active:bg-accent/80">
+          <svg className="h-3.5 w-3.5 stroke-[2.5]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          <span>{uploading ? 'Adding…' : '+ Add Face'}</span>
           <input
             type="file"
             accept="image/*"
@@ -103,27 +94,27 @@ export function MobileFacesView({ onFaceSelected }: MobileFacesViewProps) {
       </div>
 
       {uploadError && (
-        <p className="rounded-xl bg-bad/10 p-3 text-xs text-bad">{uploadError}</p>
+        <p className="rounded-xl bg-bad/10 p-2 text-xs text-bad">{uploadError}</p>
       )}
       {loadError && (
-        <p className="rounded-xl bg-bad/10 p-3 text-xs text-bad">{loadError}</p>
+        <p className="rounded-xl bg-bad/10 p-2 text-xs text-bad">{loadError}</p>
       )}
 
-      {/* Face Grid (2 columns on mobile) */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      {/* Compact Face Grid (3 columns on mobile, 4-5 on tablet) */}
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
         {faces.map((f) => {
           const isActive = f.face_id === sourceFaceId
           return (
             <div
               key={f.face_id}
               onClick={() => handleSelect(f.face_id)}
-              className={`group relative flex flex-col overflow-hidden rounded-2xl border bg-card transition-all active:scale-[0.98] ${
+              className={`group relative flex flex-col overflow-hidden rounded-xl border bg-card transition-all active:scale-[0.97] ${
                 isActive
-                  ? 'border-accent shadow-md shadow-accent/20 ring-1 ring-accent'
-                  : 'border-line active:border-muted'
+                  ? 'border-accent shadow-sm shadow-accent/30 ring-2 ring-accent'
+                  : 'border-line/70 hover:border-muted active:border-text'
               }`}
             >
-              {/* Aspect square thumbnail */}
+              {/* Compact aspect-square thumbnail */}
               <div className="relative aspect-square w-full bg-raised">
                 {f.thumbnail_url ? (
                   <img
@@ -134,42 +125,38 @@ export function MobileFacesView({ onFaceSelected }: MobileFacesViewProps) {
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-muted">
-                    <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                   </div>
                 )}
 
-                {/* Active checkmark pill */}
+                {/* Active check indicator */}
                 {isActive && (
-                  <div className="absolute top-2 left-2 flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-bg shadow-sm">
-                    <svg className="h-3 w-3 fill-current" viewBox="0 0 20 20">
+                  <div className="absolute top-1.5 left-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-bg shadow-sm">
+                    <svg className="h-2.5 w-2.5 fill-current" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
-                    <span>Active</span>
                   </div>
                 )}
 
-                {/* Delete button */}
+                {/* Compact Delete button */}
                 <button
                   type="button"
                   onClick={(e) => openDelete(f.face_id, e)}
                   title="Delete face"
-                  className="absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-muted backdrop-blur-sm active:bg-bad active:text-white"
+                  className="absolute top-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-muted backdrop-blur-sm active:bg-bad active:text-white"
                 >
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
                 </button>
               </div>
 
-              {/* Face title footer */}
-              <div className="p-2.5">
-                <span className="block truncate text-xs font-semibold text-text">
-                  {f.display_name ?? 'Face Image'}
-                </span>
-                <span className="block text-[10px] text-muted">
-                  {isActive ? 'Current Project Source' : 'Tap to assign'}
+              {/* Compact title footer */}
+              <div className="p-1 text-center">
+                <span className={`block truncate text-[11px] ${isActive ? 'font-bold text-accent' : 'font-medium text-text'}`}>
+                  {f.display_name ?? 'Face'}
                 </span>
               </div>
             </div>
@@ -178,8 +165,8 @@ export function MobileFacesView({ onFaceSelected }: MobileFacesViewProps) {
       </div>
 
       {faces.length === 0 && !uploading && (
-        <div className="py-8 text-center text-sm text-muted">
-          No faces uploaded yet. Tap the button above to upload a face.
+        <div className="py-12 text-center text-sm text-muted">
+          No faces in library yet. Tap "+ Add Face" above to upload.
         </div>
       )}
 
