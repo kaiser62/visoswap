@@ -5,6 +5,7 @@ import { MobileFacesView } from './MobileFacesView'
 import { MobileControlsView } from './MobileControlsView'
 import { MobileTakesView } from './MobileTakesView'
 import { MobileQueueView } from './MobileQueueView'
+import { MobileProjectsSheet } from './MobileProjectsSheet'
 import { useMedia } from '../state/MediaContext'
 
 type MobileTab = 'studio' | 'faces' | 'controls' | 'takes' | 'queue'
@@ -15,17 +16,24 @@ interface MobileAppProps {
 
 export function MobileApp({ onSwitchToDesktop }: MobileAppProps) {
   const [activeTab, setActiveTab] = useState<MobileTab>('studio')
+  const [showProjectsSheet, setShowProjectsSheet] = useState(false)
   const { running } = useMedia()
 
   return (
     <div className="flex h-screen flex-col bg-bg text-text selection:bg-accent selection:text-bg">
       {/* 1. Sticky Mobile Header */}
-      <MobileHeader onSwitchToDesktop={onSwitchToDesktop} />
+      <MobileHeader
+        onSwitchToDesktop={onSwitchToDesktop}
+        onOpenProjects={() => setShowProjectsSheet(true)}
+      />
 
       {/* 2. Scrollable Body Content */}
       <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div hidden={activeTab !== 'studio'}>
-          <MobileStudioView onGoToFaces={() => setActiveTab('faces')} />
+          <MobileStudioView
+            onGoToFaces={() => setActiveTab('faces')}
+            onOpenProjects={() => setShowProjectsSheet(true)}
+          />
         </div>
 
         <div hidden={activeTab !== 'faces'}>
@@ -126,6 +134,13 @@ export function MobileApp({ onSwitchToDesktop }: MobileAppProps) {
           </button>
         </div>
       </nav>
+
+      {/* 4. Projects Drawer Bottom Sheet */}
+      <MobileProjectsSheet
+        open={showProjectsSheet}
+        onClose={() => setShowProjectsSheet(false)}
+        onProjectSelected={() => setActiveTab('studio')}
+      />
     </div>
   )
 }

@@ -32,6 +32,7 @@ from backend.models.database import db
 from backend.services import cache, video
 from backend.services.compose_queue import queue as compose_queue
 from backend.services.ffmpeg import ffmpeg_available
+from backend.services.naming import generate_project_name
 from backend.services.scheduler import registry
 from backend.services.video import ytdlp_available
 from visoswap.models import bootstrap
@@ -216,7 +217,9 @@ def create_app() -> FastAPI:
 
         # No `video_url` yet: `has_video` would flip before the probe, and the
         # player would be handed a source with no duration, width or fps.
-        project = await db.create_project(name=url[:200])
+        existing = {p["name"] for p in await db.list_projects() if p.get("name")}
+        name = generate_project_name(url, existing)
+        project = await db.create_project(name=name)
         cache.ensure_project_dirs(project["id"])
         asyncio.create_task(_bind_url(project["id"], url))
         return RedirectResponse(f"/?project={project['id']}", status_code=303)

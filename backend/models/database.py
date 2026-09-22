@@ -120,6 +120,7 @@ class Database:
         await self._conn.executescript(SCHEMA)
         await self._conn.commit()
         await self._migrate()
+        await self._migrate_project_names()
         await self.recover_stale_jobs()
 
     async def _migrate(self) -> None:
@@ -137,6 +138,31 @@ class Database:
             if column not in have:
                 await self.conn.execute(
                     f"ALTER TABLE projects ADD COLUMN {column} {ddl}"
+                )
+        await self.conn.commit()
+
+    async def _migrate_project_names(self) -> None:
+        """Upgrade generic 'Untitled project' names to unique 10-15 char names derived from source."""
+        from backend.services.naming import generate_project_name
+
+        cur = await self.conn.execute(
+            "SELECT id, name, video_path, video_url FROM projects"
+        )
+        rows = await cur.fetchall()
+        existing_names = {r["name"] for r in rows if r["name"]}
+        for r in rows:
+            name = (r["name"] or "").strip()
+            if (
+                name in ("Untitled project", "My project", "")
+                or len(name) < 10
+                or len(name) > 15
+            ):
+                src = r["video_url"] or r["video_path"]
+                new_name = generate_project_name(src, existing_names)
+                existing_names.add(new_name)
+                await self.conn.execute(
+                    "UPDATE projects SET name = ? WHERE id = ?",
+                    (new_name, r["id"]),
                 )
         await self.conn.commit()
 

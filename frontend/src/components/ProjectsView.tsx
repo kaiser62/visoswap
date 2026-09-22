@@ -82,7 +82,13 @@ function ProjectRow({
   )
 }
 
-export function ProjectsView({ active }: { active: boolean }) {
+export function ProjectsView({
+  active,
+  onOpenStudio,
+}: {
+  active: boolean
+  onOpenStudio?: () => void
+}) {
   const { projects, projectId, setProject, newProject, removeProject, refreshProjects } =
     useSettings()
   const [pending, setPending] = useState<Project | null>(null)
@@ -135,7 +141,10 @@ export function ProjectsView({ active }: { active: boolean }) {
             key={p.id}
             project={p}
             open={p.id === projectId}
-            onOpen={() => setProject(p.id)}
+            onOpen={() => {
+              setProject(p.id)
+              onOpenStudio?.()
+            }}
             onDelete={() => {
               setError(null)
               setPending(p)

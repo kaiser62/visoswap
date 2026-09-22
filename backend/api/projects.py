@@ -21,6 +21,7 @@ from backend.config import get_settings
 from backend.models.database import Database
 from backend.services import cache, facestore, video
 from backend.services.ffmpeg import FFmpegError, probe
+from backend.services.naming import generate_project_name
 from backend.services.scheduler import effective_interval, registry
 
 log = logging.getLogger(__name__)
@@ -34,6 +35,9 @@ async def create_project(
     payload: ProjectCreate, db: Database = Depends(get_db)
 ) -> dict[str, Any]:
     fields = payload.model_dump(exclude_none=True)
+    if not fields.get("name") or fields["name"] in ("Untitled project", "My project"):
+        existing = {p["name"] for p in await db.list_projects() if p.get("name")}
+        fields["name"] = generate_project_name(None, existing)
     project = await db.create_project(**fields)
     cache.ensure_project_dirs(project["id"])
     return _public(project)
@@ -128,7 +132,7 @@ async def upload_source(
     finally:
         await file.close()
 
-    return await _bind_source(db, project_id, str(dest), video_url=None)
+    return await _bind_source(db, project_id, str(dest), video_url=None, original_filename=file.filename)
 
 
 @router.post("/{project_id}/url")
@@ -152,8 +156,13 @@ async def set_source_url(
     except (video.VideoSourceError, FFmpegError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    existing_projects = await db.list_projects()
+    used_names = {p["name"] for p in existing_projects if p.get("id") != project_id and p.get("name")}
+    new_name = generate_project_name(payload.url, used_names)
+
     updated = await db.update_project(
         project_id,
+        name=new_name,
         video_path=source,
         # Kept for provenance only — `video_path` is what anything reads.
         video_url=payload.url,
@@ -168,7 +177,11 @@ async def set_source_url(
 
 
 async def _bind_source(
-    db: Database, project_id: str, path: str, video_url: str | None
+    db: Database,
+    project_id: str,
+    path: str,
+    video_url: str | None,
+    original_filename: str | None = None,
 ) -> dict[str, Any]:
     try:
         info = await probe(path)
@@ -176,8 +189,13 @@ async def _bind_source(
         Path(path).unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=f"invalid video: {exc}") from exc
 
+    existing_projects = await db.list_projects()
+    used_names = {p["name"] for p in existing_projects if p.get("id") != project_id and p.get("name")}
+    new_name = generate_project_name(original_filename or video_url or path, used_names)
+
     updated = await db.update_project(
         project_id,
+        name=new_name,
         video_path=path,
         video_url=video_url,
         duration=info.duration,

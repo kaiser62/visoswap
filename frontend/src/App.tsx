@@ -238,7 +238,10 @@ function MediaBoundary() {
         hidden={view !== 'projects'}
         className={view === 'projects' ? 'min-h-0 flex-1 overflow-y-auto' : ''}
       >
-        <ProjectsView active={view === 'projects'} />
+        <ProjectsView
+          active={view === 'projects'}
+          onOpenStudio={() => setView('studio')}
+        />
       </div>
     </MediaProvider>
   )

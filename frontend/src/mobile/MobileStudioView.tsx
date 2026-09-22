@@ -20,6 +20,7 @@ const SCALES = [
 
 interface MobileStudioViewProps {
   onGoToFaces: () => void
+  onOpenProjects?: () => void
 }
 
 function formatTime(seconds: number): string {
@@ -29,7 +30,7 @@ function formatTime(seconds: number): string {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 }
 
-export function MobileStudioView({ onGoToFaces }: MobileStudioViewProps) {
+export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioViewProps) {
   const {
     projectId,
     project,
@@ -277,13 +278,24 @@ export function MobileStudioView({ onGoToFaces }: MobileStudioViewProps) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>
               <p className="text-sm font-medium text-text">No target video loaded</p>
-              <button
-                type="button"
-                onClick={() => setShowVideoSource(true)}
-                className="mt-2 rounded-lg bg-accent/20 px-3 py-1.5 text-xs font-semibold text-accent"
-              >
-                + Add Target Video
-              </button>
+              <div className="mt-2.5 flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowVideoSource(true)}
+                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-bg active:bg-accent/80"
+                >
+                  + Add Video
+                </button>
+                {onOpenProjects && (
+                  <button
+                    type="button"
+                    onClick={onOpenProjects}
+                    className="rounded-lg border border-line bg-raised px-3 py-1.5 text-xs font-semibold text-text active:bg-active"
+                  >
+                    Select Project
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

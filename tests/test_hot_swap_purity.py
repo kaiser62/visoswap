@@ -215,7 +215,9 @@ def test_stop_change_face_start_leaves_nothing_from_the_previous_face(
     client, tmp_path
 ):
     c, built = client
-    project_id = c.post("/api/projects", json={"name": "hot swap"}).json()["id"]
+    project_id = c.post(
+        "/api/projects", json={"name": "hot swap", "generation_mode": "interval"}
+    ).json()["id"]
 
     upload = c.post(
         f"/api/projects/{project_id}/source",
