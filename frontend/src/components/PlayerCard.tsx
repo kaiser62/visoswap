@@ -59,13 +59,19 @@ export function PlayerCard() {
   } = useMedia()
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
-  // Show/hide is a display concern and nothing else. The lookup, the coverage
-  // measurement and the advisory position report all keep running while the
-  // layer is hidden -- otherwise turning the overlay off to compare against the
-  // source would quietly zero the coverage figure and make the run look broken.
   const [overlayVisible, setOverlayVisible] = useState(true)
+  const [theaterMode, setTheaterMode] = useState(false)
   const [markMessage, setMarkMessage] = useState<string | null>(null)
   const lastReportRef = useRef(0)
+
+  useEffect(() => {
+    if (!theaterMode) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setTheaterMode(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [theaterMode])
 
   // The index the handler reads, held in a ref so the listener never has to be
   // torn down and re-attached as frames arrive.
@@ -298,38 +304,60 @@ export function PlayerCard() {
 
   return (
     <StudioCard title="Player" defaultOpen>
-      {/* No min height once a video is mounted: the stage is exactly the video's
-          box, which is what keeps the absolutely-positioned overlay registered
-          with the frame instead of centred in a taller black field. */}
-      <div className={`relative bg-black ${project?.video_src ? '' : 'min-h-[280px]'}`}>
-        {project?.video_src ? (
-          <video
-            ref={videoRef}
-            data-testid="player-video"
-            src={project.video_src}
-            controls
-            // Capped at 80% of the viewport height and letterboxed inside the
-            // full card width. A portrait source is the case that breaks: given
-            // only `w-full` it takes its own aspect ratio and runs off the
-            // bottom of the screen. `object-contain` on both the video and the
-            // overlay makes them resolve to the same box, so the swapped layer
-            // still lands exactly on the frame.
-            className="block max-h-[80vh] w-full object-contain"
-          />
-        ) : (
-          <p className="p-4 text-sm text-muted">Load a target video to begin.</p>
+      <div
+        className={
+          theaterMode
+            ? 'fixed inset-0 z-50 flex flex-col bg-black/95 p-4'
+            : `relative bg-black ${project?.video_src ? '' : 'min-h-[280px]'}`
+        }
+      >
+        {theaterMode && (
+          <div className="flex items-center justify-between pb-3 text-text">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-accent">Theater Mode</span>
+              <button
+                type="button"
+                onClick={() => setOverlayVisible((v) => !v)}
+                className={`rounded border px-2.5 py-1 text-xs font-semibold ${
+                  overlayVisible ? 'border-accent bg-active text-text' : 'border-line bg-raised text-muted'
+                }`}
+              >
+                {overlayVisible ? 'Overlay ON' : 'Overlay OFF'}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTheaterMode(false)}
+              className="rounded border border-line bg-raised px-2.5 py-1 text-xs font-semibold text-text hover:bg-active"
+            >
+              Exit Theater (Esc) ✕
+            </button>
+          </div>
         )}
-        {displayedUrl !== null && overlayVisible && (
-          <img
-            data-testid="overlay-image"
-            ref={overlayImgRef}
-            src={displayedUrl}
-            alt=""
-            // A broken frame clears the overlay; the video is never touched.
-            onError={() => setOverlayUrl(null)}
-            className="pointer-events-none absolute inset-0 z-10 h-full w-full object-contain"
-          />
-        )}
+
+        <div className={`relative flex items-center justify-center ${theaterMode ? 'min-h-0 flex-1' : ''}`}>
+          {project?.video_src ? (
+            <video
+              ref={videoRef}
+              data-testid="player-video"
+              src={project.video_src}
+              controls
+              className={`block w-full object-contain ${theaterMode ? 'max-h-full' : 'max-h-[80vh]'}`}
+            />
+          ) : (
+            <p className="p-4 text-sm text-muted">Load a target video to begin.</p>
+          )}
+          {displayedUrl !== null && overlayVisible && (
+            <img
+              data-testid="overlay-image"
+              ref={overlayImgRef}
+              src={displayedUrl}
+              alt=""
+              onError={() => setOverlayUrl(null)}
+              className="pointer-events-none absolute inset-0 z-10 h-full w-full object-contain"
+            />
+          )}
+        </div>
       </div>
       <Transport
         marks={range}
@@ -359,6 +387,24 @@ export function PlayerCard() {
           }`}
         >
           {overlayVisible ? 'Overlay on' : 'Overlay off'}
+        </button>
+        <button
+          type="button"
+          data-testid="btn-theater-mode"
+          aria-pressed={theaterMode}
+          onClick={() => setTheaterMode((v) => !v)}
+          title="Toggle Theater Mode"
+          className={`flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-semibold transition-colors ${
+            theaterMode
+              ? 'border-accent bg-active text-accent'
+              : 'border-line bg-raised text-muted hover:text-text'
+          }`}
+        >
+          <svg className="h-3.5 w-3.5 fill-none stroke-current" viewBox="0 0 24 24" strokeWidth={2}>
+            <rect x="2" y="4" width="20" height="16" rx="2" />
+            <path d="M7 15h10" />
+          </svg>
+          {theaterMode ? 'Exit Theater' : 'Theater'}
         </button>
         <div className="ml-auto flex items-center gap-2">
           <button

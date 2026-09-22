@@ -64,8 +64,18 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
   const [scrubTime, setScrubTime] = useState(0)
   const [isMuted, setIsMuted] = useState(true)
   const [useNativeControls, setUseNativeControls] = useState(false)
+  const [theaterMode, setTheaterMode] = useState(false)
   const isScrubbingRef = useRef(false)
   const [duration, setDuration] = useState(0)
+
+  useEffect(() => {
+    if (!theaterMode) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setTheaterMode(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [theaterMode])
   const [markMessage, setMarkMessage] = useState<string | null>(null)
   const [intervalText, setIntervalText] = useState('')
   const [showVideoSource, setShowVideoSource] = useState(false)
@@ -391,8 +401,20 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
   return (
     <div className="space-y-3 p-3">
       {/* 1. Video Player Container with Live Overlay */}
-      <div className="overflow-hidden rounded-2xl border border-line bg-black shadow-lg">
-        <div className="relative aspect-video w-full bg-black">
+      <div
+        className={
+          theaterMode
+            ? 'fixed inset-0 z-50 flex flex-col bg-black'
+            : 'overflow-hidden rounded-2xl border border-line bg-black shadow-lg'
+        }
+      >
+        <div
+          className={`relative w-full bg-black ${
+            theaterMode
+              ? 'flex flex-1 min-h-0 items-center justify-center'
+              : 'aspect-video'
+          }`}
+        >
           {project?.video_src ? (
             <video
               ref={videoRef}
@@ -444,6 +466,22 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
           {/* Quick Player & Overlay Floating Controls */}
           {project?.video_src && (
             <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setTheaterMode(!theaterMode)}
+                className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold backdrop-blur-md transition-colors ${
+                  theaterMode
+                    ? 'border border-accent/50 bg-active/90 text-accent'
+                    : 'border border-line bg-card/80 text-muted active:text-text'
+                }`}
+                title="Toggle Theater Mode"
+              >
+                <svg className="h-3 w-3 fill-none stroke-current" viewBox="0 0 24 24" strokeWidth={2}>
+                  <rect x="2" y="4" width="20" height="16" rx="2" />
+                  <path d="M7 15h10" />
+                </svg>
+                {theaterMode ? 'Exit Theater' : 'Theater'}
+              </button>
               <button
                 type="button"
                 onClick={() => setUseNativeControls(!useNativeControls)}
