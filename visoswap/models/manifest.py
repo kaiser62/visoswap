@@ -42,13 +42,15 @@ from visoswap.schema import resolve_models_dir
 __all__ = ["ManifestEntry", "tracked", "required_entries", "optional_entries", "default_entries", "DEFAULT_SWAP_MODELS"]
 
 #: The minimal set of models required for default face swap (RetinaFace detector,
-#: 4 ArcFace embedders for face card generation, and Inswapper128 engine).
+#: 4 ArcFace embedders for face card generation plus the CSCS ID adapter that
+#: ``recognize_cscs`` always loads alongside CSCSArcFace, and Inswapper128 engine).
 DEFAULT_SWAP_MODELS = frozenset({
     "RetinaFace",
     "Inswapper128ArcFace",
     "SimSwapArcFace",
     "GhostArcFace",
     "CSCSArcFace",
+    "CSCSIDArcFace",
     "Inswapper128",
 })
 
