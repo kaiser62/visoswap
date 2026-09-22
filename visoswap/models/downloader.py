@@ -38,29 +38,24 @@ def download_file(model_name: str, file_path: str, correct_hash: str, url: str) 
 
     print(f"\nDownloading {model_name} from {url}")
     
-    try:
-        response = requests.get(url, stream=True, timeout=5)
-        response.raise_for_status()  # Raise an error for bad HTTP responses (e.g., 404, 500)
-    except requests.exceptions.RequestException as e:
-        print(f"Failed to download {model_name}: {e}")
-        return False
-
-    total_size = int(response.headers.get("content-length", 0))  # File size in bytes
-    block_size = 1024  # Size of chunks to download
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VisoSwap/1.0"}
     max_attempts = 3
     attempt = 1
+    block_size = 65536  # 64KB chunks
 
-    def download_and_save():
-        """Handles the file download and saves it to disk."""
-        with tqdm(total=total_size, unit="B", unit_scale=True) as progress_bar:
-            with open(file_path, "wb") as file:
-                for data in response.iter_content(block_size):
-                    progress_bar.update(len(data))
-                    file.write(data)
-    
     while attempt <= max_attempts:
         try:
-            download_and_save()
+            response = requests.get(url, stream=True, timeout=30, headers=headers)
+            response.raise_for_status()
+
+            total_size = int(response.headers.get("content-length", 0))
+
+            with tqdm(total=total_size, unit="B", unit_scale=True, desc=model_name) as progress_bar:
+                with open(file_path, "wb") as file:
+                    for data in response.iter_content(chunk_size=block_size):
+                        if data:
+                            progress_bar.update(len(data))
+                            file.write(data)
             
             # Verify file integrity
             if check_file_integrity(file_path, correct_hash):
