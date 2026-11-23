@@ -642,9 +642,6 @@ class ProjectScheduler:
             # Stream mode fills a contiguous run of consecutive video frames
             # ahead of the playhead (minimum 10-15s buffer) for seamless playback.
             base_buffer = max(15.0, float(project.get("stream_buffer") or 15.0))
-            counts = await self.db.counts(self.project_id)
-            outstanding = counts.get(STATUS_PENDING, 0) + counts.get(STATUS_PROCESSING, 0)
-
             start, end = generation_window(self.current_time, base_buffer, duration)
             if not self.full_video_mode:
                 # Keep up to 60s ahead of window so extended buffer is preserved
@@ -661,25 +658,33 @@ class ProjectScheduler:
             stream_rate = rate if project.get("stream_seamless") is False else fps
 
             # 1. Immediate buffer window ahead of playhead (PRIORITY_IMMEDIATE)
-            await self._enqueue(
-                targets_for_rate(start, end, stream_rate, duration),
-                PRIORITY_IMMEDIATE,
-                project,
-            )
+            # Coarse-to-fine: when the engine cannot swap every video frame in
+            # real time (Apple Silicon: ~6-8 fps vs 12-30 fps video), generating
+            # strictly in order leaves the playhead racing past the frontier and
+            # showing a stale swapped frame. Instead every 4th frame goes first,
+            # then every 2nd, then the rest, so the whole window is evenly
+            # covered at the best rate affordable and fills in behind. Parity is
+            # taken from the absolute frame number so classes are stable as the
+            # window slides.
+            grid = targets_for_rate(start, end, stream_rate, duration)
+            passes: dict[int, list[float]] = {PRIORITY_IMMEDIATE: [], PRIORITY_LOOKAHEAD: [], PRIORITY_BACKGROUND: []}
+            for ts in grid:
+                n = round(ts * stream_rate)
+                if n % 4 == 0:
+                    passes[PRIORITY_IMMEDIATE].append(ts)
+                elif n % 2 == 0:
+                    passes[PRIORITY_LOOKAHEAD].append(ts)
+                else:
+                    passes[PRIORITY_BACKGROUND].append(ts)
+            for prio, stamps in passes.items():
+                await self._enqueue(stamps, prio, project)
 
-            # 2. If the immediate buffer is mostly done, continue buffering forward
-            # ahead of the playhead so GPU does not idle while clip has length
-            if outstanding < 60 and duration and duration > end:
-                max_ts = await self.db.max_enqueued_timestamp(self.project_id)
-                extend_start = (max_ts + 1.0 / stream_rate) if max_ts is not None and max_ts >= end else end
-                extend_end = min(duration, extend_start + 15.0)
-                if extend_end > extend_start:
-                    await self._enqueue(
-                        targets_for_rate(extend_start, extend_end, stream_rate, duration),
-                        PRIORITY_LOOKAHEAD,
-                        project,
-                    )
-
+            # The window [playhead, playhead + stream_buffer] is the whole
+            # target. Nothing is enqueued beyond it: once it is generated the
+            # planner idles until the playhead moves, instead of running ahead
+            # through the entire clip (the old "continue buffering" pass had no
+            # horizon and did exactly that, burning compute on frames that a
+            # seek or pause would discard).
             self._last_plan = time.time()
             return
 

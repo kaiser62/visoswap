@@ -25,6 +25,50 @@ if TYPE_CHECKING:
 
 torchvision.disable_beta_transforms_warning()
 
+class DetectionInterpolator:
+    """Skip RetinaFace on frames bracketed by two nearby real detections.
+
+    Stream generation fills frames coarse-to-fine, so a frame usually has a
+    detected neighbour on each side a few frames away. For a single face that
+    barely moved, the landmarks are linearly interpolated between them. Anything
+    else (several faces, large motion, wide gap, no bracket) falls back to the
+    detector. Only real detections are stored, so errors never compound.
+    Shared across engines (workers) in the process, keyed by the video.
+    """
+
+    MAX_GAP = 4          # frames between the bracketing detections
+    MAX_MOVE = 0.03      # of image width, per landmark
+    MAX_ENTRIES = 1024   # per key
+    _lock = threading.Lock()
+    _store: dict = {}
+
+    @classmethod
+    def lookup(cls, key, frame, width):
+        with cls._lock:
+            d = cls._store.get(key)
+            if not d:
+                return None
+            lo = max((f for f in d if f < frame), default=None)
+            hi = min((f for f in d if f > frame), default=None)
+            if lo is None or hi is None or hi - lo > cls.MAX_GAP:
+                return None
+            a, b = d[lo], d[hi]
+        t = (frame - lo) / (hi - lo)
+        if any(len(x[1]) != 1 for x in (a, b)):
+            return None
+        if np.abs(a[1] - b[1]).max() > cls.MAX_MOVE * width:
+            return None
+        return tuple(x0 + (x1 - x0) * t for x0, x1 in zip(a, b))
+
+    @classmethod
+    def record(cls, key, frame, bboxes, kpss_5, kpss):
+        with cls._lock:
+            d = cls._store.setdefault(key, {})
+            if len(d) >= cls.MAX_ENTRIES:
+                d.pop(next(iter(d)))
+            d[frame] = (np.asarray(bboxes, dtype=np.float32), np.asarray(kpss_5, dtype=np.float32), np.asarray(kpss, dtype=np.float32))
+
+
 class FrameWorker(threading.Thread):
     def __init__(self, frame, context: 'EngineContext', frame_number, is_single_frame=False):
         super().__init__()
@@ -129,7 +173,18 @@ class FrameWorker(threading.Thread):
             # force to use from_points in landmark detector when edit face is enabled.
             from_points = True
 
-        bboxes, kpss_5, kpss = self.models_processor.run_detect(img, control['DetectorModelSelection'], max_num=control['MaxFacesToDetectSlider'], score=control['DetectorScoreSlider']/100.0, input_size=(512, 512), use_landmark_detection=use_landmark_detection, landmark_detect_mode=landmark_detect_mode, landmark_score=control["LandmarkDetectScoreSlider"]/100.0, from_points=from_points, rotation_angles=[0] if not control["AutoRotationToggle"] else [0, 90, 180, 270])
+        dkey = getattr(self.context, "detect_key", None)
+        if dkey is not None and not control["AutoRotationToggle"] and not control['ManualRotationEnableToggle']:
+            dkey = dkey + (tuple(img.shape), control['DetectorModelSelection'], use_landmark_detection, landmark_detect_mode)
+            interp = DetectionInterpolator.lookup(dkey, self.frame_number, img.shape[2])
+        else:
+            dkey = interp = None
+        if interp is not None:
+            bboxes, kpss_5, kpss = interp
+        else:
+            bboxes, kpss_5, kpss = self.models_processor.run_detect(img, control['DetectorModelSelection'], max_num=control['MaxFacesToDetectSlider'], score=control['DetectorScoreSlider']/100.0, input_size=(512, 512), use_landmark_detection=use_landmark_detection, landmark_detect_mode=landmark_detect_mode, landmark_score=control["LandmarkDetectScoreSlider"]/100.0, from_points=from_points, rotation_angles=[0] if not control["AutoRotationToggle"] else [0, 90, 180, 270])
+            if dkey is not None and len(kpss_5) == 1:
+                DetectionInterpolator.record(dkey, self.frame_number, bboxes, kpss_5, kpss)
         
         det_faces_data = []
         if len(kpss_5)>0:

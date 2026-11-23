@@ -357,6 +357,7 @@ class Engine:
                 self._reader.release()
             self._reader = capture
             self._video_path = path
+            self.context.detect_key = (os.path.realpath(path), os.stat(path).st_mtime_ns)
             self._fps = fps
             self._frame_count = frame_count
             self._reader_pos = 0
