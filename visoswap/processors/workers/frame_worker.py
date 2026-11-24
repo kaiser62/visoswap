@@ -3,6 +3,8 @@
 # This file was vendored into VisoSwap and may have been modified from upstream.
 # See NOTICE for vendoring provenance and LICENSE for the full GPLv3 text.
 
+import os
+import time
 import traceback
 from typing import TYPE_CHECKING
 import threading
@@ -24,6 +26,54 @@ if TYPE_CHECKING:
     from visoswap.processors.context import EngineContext
 
 torchvision.disable_beta_transforms_warning()
+
+class StageProfiler:
+    """Opt-in per-stage timing: VISOSWAP_PROFILE=1 logs mean ms per stage every 50 frames.
+
+    Synchronises CUDA at every mark so GPU work is attributed to the stage that queued
+    it; that slows the pipeline a little, so leave it off for real benchmarks.
+    """
+    enabled = os.environ.get("VISOSWAP_PROFILE") == "1"
+    _lock = threading.Lock()
+    _sums: dict = {}
+    _frames = 0
+
+    def __init__(self):
+        self._t = None
+        self._acc = {}
+
+    def start(self):
+        if self.enabled:
+            self._sync()
+            self._t = time.perf_counter()
+
+    def mark(self, name):
+        if self._t is None:
+            return
+        self._sync()
+        now = time.perf_counter()
+        self._acc[name] = self._acc.get(name, 0.0) + (now - self._t)
+        self._t = now
+
+    @staticmethod
+    def _sync():
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+    def finish(self):
+        if self._t is None:
+            return
+        cls = StageProfiler
+        with cls._lock:
+            for k, v in self._acc.items():
+                cls._sums[k] = cls._sums.get(k, 0.0) + v
+            cls._frames += 1
+            if cls._frames % 50 == 0:
+                total = sum(cls._sums.values())
+                parts = " ".join("%s=%.1f" % (k, v * 1000.0 / cls._frames) for k, v in cls._sums.items())
+                print("[PROFILE] frames=%d total=%.1fms %s" % (cls._frames, total * 1000.0 / cls._frames, parts), flush=True)
+        self._t = None
+
 
 class DetectionInterpolator:
     """Skip RetinaFace on frames bracketed by two nearby real detections.
@@ -120,6 +170,8 @@ class FrameWorker(threading.Thread):
     
     # @misc_helpers.benchmark
     def process_frame(self):
+        prof = self._prof = StageProfiler()
+        prof.start()
         # Load frame into VRAM
         img = torch.from_numpy(self.frame.astype('uint8')).to(self.models_processor.device) #HxWxc
         img = img.permute(2,0,1)#cxHxW
@@ -156,6 +208,7 @@ class FrameWorker(threading.Thread):
 
             # det_scale = torch.div(new_height, img_y)
 
+        prof.mark('upload')
         control = self.context.control.copy()
         # Rotate the frame
         if control['ManualRotationEnableToggle']:
@@ -186,6 +239,7 @@ class FrameWorker(threading.Thread):
             if dkey is not None and len(kpss_5) == 1:
                 DetectionInterpolator.record(dkey, self.frame_number, bboxes, kpss_5, kpss)
         
+        prof.mark('detect')
         det_faces_data = []
         if len(kpss_5)>0:
             for i in range(kpss_5.shape[0]):
@@ -194,6 +248,7 @@ class FrameWorker(threading.Thread):
                 face_emb, _ = self.models_processor.run_recognize_direct(img, face_kps_5, control['SimilarityTypeSelection'], control['RecognitionModelSelection'])
                 det_faces_data.append({'kps_5': face_kps_5, 'kps_all': face_kps_all, 'embedding': face_emb, 'bbox': bboxes[i]})
 
+        prof.mark('recognize')
         compare_mode = self.is_compare_mode()
         if det_faces_data:
             # Loop through target faces to see if they match our found face embeddings
@@ -224,6 +279,7 @@ class FrameWorker(threading.Thread):
                                 if self.context.edit_faces_enabled:
                                     img = self.swap_edit_face_core(img, fface['kps_all'], parameters, control)
 
+        prof.mark('swap')
         if control['ManualRotationEnableToggle']:
             img = v2.functional.rotate(img, angle=-control['ManualRotationAngleSlider'], interpolation=v2.InterpolationMode.BILINEAR, expand=True)
 
@@ -241,8 +297,11 @@ class FrameWorker(threading.Thread):
         if control['FrameEnhancerEnableToggle'] and not compare_mode:
             img = self.enhance_core(img, control=control)
 
+        prof.mark('post')
         img = img.permute(1,2,0)
         img = img.cpu().numpy()
+        prof.mark('download')
+        prof.finish()
         # RGB to BGR
         return img[..., ::-1]
     
@@ -625,6 +684,8 @@ class FrameWorker(threading.Thread):
         # Grab 512 face from image and create 256 and 128 copys
         original_face_512, original_face_384, original_face_256, original_face_128 = self.get_transformed_and_scaled_faces(tform, img)
         original_faces = (original_face_512, original_face_384, original_face_256, original_face_128)
+        _prof = getattr(self, '_prof', None)
+        if _prof: _prof.mark('sw_prep')
         dim=1
         if (s_e is not None and len(s_e) > 0) or (swapper_model == 'DeepFaceLive (DFM)' and dfm_model):
 
@@ -653,6 +714,7 @@ class FrameWorker(threading.Thread):
                 prev_face = torch.div(swap, 255.)
                 prev_face = prev_face.permute(1, 2, 0)
 
+        if _prof: _prof.mark('sw_model')
         if parameters['StrengthEnableToggle']:
             if itex == 0:
                 swap = original_face_512.clone()
@@ -788,6 +850,7 @@ class FrameWorker(threading.Thread):
             gaussian_blur = transforms.GaussianBlur(kernel_size=kernel_size, sigma=sigma)
             swap = gaussian_blur(swap)
 
+        if _prof: _prof.mark('sw_masks')
         # Add blur to swap_mask results
         gauss = transforms.GaussianBlur(parameters['OverallMaskBlendAmountSlider'] * 2 + 1, (parameters['OverallMaskBlendAmountSlider'] + 1) * 0.2)
         swap_mask = gauss(swap_mask)
