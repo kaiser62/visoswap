@@ -15,6 +15,10 @@ never logged.
 from __future__ import annotations
 
 import hmac
+import math
+import threading
+import time
+from typing import Dict, List, Optional
 from urllib.parse import parse_qsl
 
 from fastapi import APIRouter, Request
@@ -35,6 +39,11 @@ LOGIN_PATH = "/api/auth/session"
 #: FastAPI's schema UI and JSON: open by default, and a public tunnel makes them a
 #: map of the whole API. Protected whenever a key is set.
 PROTECTED_DOCS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"})
+#: failed-login throttle: this many wrong keys per IP inside the window answers 429
+LOGIN_MAX_FAILS = 10
+LOGIN_WINDOW_S = 60.0
+#: cap on tracked addresses: a client that rotates spoofed headers must not grow the dict forever
+LOGIN_MAX_TRACKED_IPS = 4096
 
 router = APIRouter(tags=["auth"])
 
@@ -120,14 +129,102 @@ class LoginBody(BaseModel):
     key: str = ""
 
 
+class _LoginLimiter:
+    """Failed-login throttle, keyed by client IP. In-memory and per-process: it exists to
+    stop online guessing against a public tunnel, not to be a shared quota across workers.
+
+    Only *failures* are recorded, and the key is compared before the limiter is consulted,
+    so a caller holding the right key is never blocked (a slow retry after a typo still works).
+    """
+
+    def __init__(self, max_fails: int = LOGIN_MAX_FAILS, window_s: float = LOGIN_WINDOW_S) -> None:
+        self.max_fails = max_fails
+        self.window_s = window_s
+        self._lock = threading.Lock()
+        self._fails: Dict[str, List[float]] = {}
+
+    @staticmethod
+    def client_ip(request: Request) -> str:
+        """The tunnel sits in front of us, so the socket peer is always the tunnel.
+
+        CF-Connecting-IP is set by Cloudflare and is the only value worth trusting when
+        present; X-Forwarded-For is the fallback for other proxies and its first hop is the
+        original client. Both are spoofable by anyone who reaches the app directly, which is
+        why this is a throttle and not an authorization decision.
+        """
+        for header in ("cf-connecting-ip", "x-forwarded-for"):
+            raw = request.headers.get(header, "")
+            if raw:
+                first = raw.split(",")[0].strip()
+                if first:
+                    return first
+        return request.client.host if request.client else "unknown"
+
+    def retry_after(self, ip: str, now: Optional[float] = None) -> int:
+        """0 when allowed, else whole seconds to wait before the next attempt."""
+        now = time.monotonic() if now is None else now
+        with self._lock:
+            hits = self._prune(ip, now)
+            if len(hits) < self.max_fails:
+                return 0
+            # the window is a sliding one: the block lifts when the oldest failure ages out
+            return max(1, int(math.ceil(self.window_s - (now - hits[0]))))
+
+    def fail(self, ip: str, now: Optional[float] = None) -> None:
+        now = time.monotonic() if now is None else now
+        with self._lock:
+            hits = self._prune(ip, now)
+            hits.append(now)
+            if len(hits) > self.max_fails * 4:      # bounded: a flood cannot grow this forever
+                del hits[: -self.max_fails]
+            self._fails[ip] = hits
+            # A guesser can rotate spoofed headers, so the number of tracked addresses has to
+            # be bounded too, or the throttle becomes its own memory leak. Evict the least
+            # recently active buckets; the flood loses its own history first.
+            if len(self._fails) > LOGIN_MAX_TRACKED_IPS:
+                for stale in sorted(self._fails, key=lambda k: self._fails[k][-1])[: len(self._fails) - LOGIN_MAX_TRACKED_IPS]:
+                    del self._fails[stale]
+
+    def reset(self, ip: str) -> None:
+        with self._lock:
+            self._fails.pop(ip, None)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._fails.clear()
+
+    def _prune(self, ip: str, now: float) -> List[float]:
+        hits = [t for t in self._fails.get(ip, ()) if now - t < self.window_s]
+        if hits:
+            self._fails[ip] = hits
+        else:
+            self._fails.pop(ip, None)
+        return hits
+
+
+login_limiter = _LoginLimiter()
+
+
 @router.post(LOGIN_PATH)
 async def login(body: LoginBody, request: Request) -> JSONResponse:
     """Trade the key for an HttpOnly cookie so media elements and sockets work."""
     expected = get_settings().api_key
     if not expected:
         return JSONResponse({"ok": True, "auth": "off"})
+    ip = _LoginLimiter.client_ip(request)
+    # Compare first: a caller with the right key is never throttled, and a guesser cannot
+    # reach the cookie path without beating the constant-time comparison anyway.
     if not _matches(body.key, expected):
+        wait = login_limiter.retry_after(ip)
+        if wait:
+            return JSONResponse(
+                {"detail": "too many failed attempts"},
+                status_code=429,
+                headers={"Retry-After": str(wait)},
+            )
+        login_limiter.fail(ip)
         return JSONResponse({"detail": DENIED_DETAIL}, status_code=401)
+    login_limiter.reset(ip)
     proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
     secure = (proto or request.url.scheme) == "https"
     resp = JSONResponse({"ok": True, "auth": "required"})
