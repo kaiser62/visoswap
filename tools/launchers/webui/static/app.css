@@ -20,6 +20,7 @@ textarea{width:100%;min-height:90px;font-family:var(--mono);font-size:.85rem}inp
 .chip::before{content:"";width:9px;height:9px;border-radius:50%;background:currentColor}
 .s-healthy,.s-ok{color:var(--ok);background:var(--okbg);border-color:var(--ok)}
 .s-running,.s-starting,.s-stopping,.s-queued{color:var(--run);background:var(--runbg);border-color:var(--run)}
+.s-unreachable{color:var(--warn);background:var(--warnbg);border-color:var(--warn)}
 .s-queued,.s-warn,.s-low{color:var(--warn);background:var(--warnbg);border-color:var(--warn)}
 .s-error,.s-bad,.s-empty,.s-invalid,.s-missing{color:var(--bad);background:var(--badbg);border-color:var(--bad)}
 .s-down,.s-unknown{color:var(--mut)}

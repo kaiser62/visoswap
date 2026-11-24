@@ -16,9 +16,10 @@ from vs_common import http_get, write_private
 
 KAGGLE_DEFAULT_MAX_MIN = 90        # MAX_RUNTIME_MIN in visoswap_kaggle.ipynb
 HEALTH_KEYS = ("status", "concurrency", "auth", "default_backend", "version", "ffmpeg", "ytdlp")
-STATES = ("down", "starting", "queued", "running", "healthy", "stopping", "error", "unknown")
+STATES = ("down", "starting", "queued", "running", "unreachable", "healthy", "stopping", "error", "unknown")
 STATE_HELP = {
-    "down": "not running", "starting": "an action is starting it", "queued": "waiting for a GPU", "running": "running, backend not answering yet",
+    "down": "not running", "starting": "an action is starting it", "queued": "waiting for a GPU",
+    "unreachable": "the platform says it runs, but nothing answers: it may be dead or still booting",
     "healthy": "running and answering", "stopping": "being stopped", "error": "needs attention", "unknown": "checking...",
 }
 
@@ -178,6 +179,15 @@ def process_mode(settings: Optional[dict]) -> Optional[str]:
 
 # --------------------------------------------------------------------------- per-target view
 def normalize_state(target: str, status: Optional[dict], busy_action: Optional[str]) -> str:
+    """The one place a launcher result becomes a card state.
+
+    The platform's own view is necessary but not sufficient. `kaggle kernels status` reports
+    what Kaggle last recorded, and a Colab session can exist while its backend is dead, so
+    "RUNNING" with a failing public health probe used to render as a green *running* card
+    while the host answered 530 and nothing was actually serving. The rule here: a run is
+    only `healthy` when the backend itself answered, and a platform that says running while
+    nothing answers is `unreachable` — visible as its own state, never as running.
+    """
     if busy_action in ("launch", "start", "restart", "provision"):
         return "starting"
     if busy_action == "stop":
@@ -190,7 +200,9 @@ def normalize_state(target: str, status: Optional[dict], busy_action: Optional[s
     if raw == "QUEUED":
         return "queued"
     if raw == "RUNNING":
-        return "healthy" if status.get("healthy") else "running"
+        # healthy means the backend answered /api/health. Anything else is a claim the
+        # platform has not backed up, including "no URL to probe at all".
+        return "healthy" if status.get("healthy") else "unreachable"
     if raw in ("MISSING", "COMPLETE", "CANCEL", "NO_SESSION", "SESSION_ONLY", "DRY-RUN"):
         return "down"
     if raw in ("ERROR", "AUTH", "UNKNOWN"):
@@ -214,7 +226,10 @@ def compose_target(target: str, status: Optional[dict], health: Optional[dict], 
         "uptime_s": None, "uptime_source": None, "max_minutes": None, "time_left_s": None, "last_options": rec.get("last_options") or {},
         "warnings": [],
     }
-    live = st in ("healthy", "running", "starting") and not busy_action
+    # An unreachable run still holds a GPU and still bills, so it is "live" for the
+    # purposes of what the card offers and shows (uptime, Stop). It is only excluded
+    # from being called healthy.
+    live = st in ("healthy", "running", "starting", "unreachable") and not busy_action
     if target == "colab":
         out["gpu"] = status.get("gpu")
         if status.get("settings") is not None and raw in ("RUNNING", "SESSION_ONLY"):

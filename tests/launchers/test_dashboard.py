@@ -1,6 +1,7 @@
 """Dashboard additions: launcher flags (--quota, --logs, --kaggle-json-stdin, --colab-token-stdin) and the web UI endpoints."""
 import json, os, pathlib, subprocess, sys
 from pathlib import Path
+from types import SimpleNamespace
 import pytest
 
 L = Path(__file__).resolve().parents[2] / "tools" / "launchers"
@@ -187,7 +188,9 @@ def test_compose_states_and_kaggle_time_left():
     assert c["max_minutes"] == 90 and c["max_minutes_source"]                         # not launched from here: assumed default, labelled
     c = D.compose_target("kaggle", {**run, "started_at": now - 85 * 60}, None, {}, None, now)
     assert c["warnings"] and "stops itself" in c["warnings"][0]
-    assert D.compose_target("kaggle", {**run, "healthy": False}, None, {}, None, now)["state"] == "running"
+    # a platform "running" whose probe fails is unreachable, not running: this assertion
+    # used to pin the stale-status bug itself (see the stale-status tests below).
+    assert D.compose_target("kaggle", {**run, "healthy": False}, None, {}, None, now)["state"] == "unreachable"
     assert D.compose_target("kaggle", {"ok": True, "state": "QUEUED"}, None, {}, None, now)["state"] == "queued"
     assert D.compose_target("kaggle", {"ok": True, "state": "MISSING"}, None, {}, None, now)["state"] == "down"
     assert D.compose_target("kaggle", {"ok": False, "error": "x"}, None, {}, None, now)["state"] == "error"
@@ -721,3 +724,108 @@ def test_access_key_is_needed_by_both_launchers():
     for src, name in ((k, "kaggle"), (c, "colab")):
         assert "--api-key-file" in src and "--no-api-key" in src, name
         assert "VISOSWAP_API_KEY" in src, name
+
+
+# ---------- stale status: the platform list alone must not claim "running"
+def test_platform_running_with_a_failing_probe_is_not_shown_as_running():
+    """The real bug: Kaggle said RUNNING with a URL while the host answered 530.
+
+    The kernel listing only knows what Kaggle last recorded, so a deleted kernel or a dead
+    tunnel kept the card green. A platform "running" whose public health probe fails is
+    *reachable* nowhere: it must read as unreachable, never as running.
+    """
+    now = 1_000_000.0
+    run = {"ok": True, "state": "RUNNING", "healthy": False, "url": "https://swap.example",
+           "started_at": now - 600, "started_source": "kaggle lastRunTime"}
+    assert D.normalize_state("kaggle", run, None) == "unreachable"
+    assert D.compose_target("kaggle", run, None, {}, None, now)["state"] == "unreachable"
+
+
+def test_platform_gone_is_down_even_if_a_previous_probe_was_healthy():
+    """Kernel deleted / session stopped: the card must be down, not running."""
+    now = 1_000_000.0
+    for state in ("MISSING", "NO_SESSION", "COMPLETE", "CANCEL"):
+        st = {"ok": True, "state": state, "healthy": True, "url": "https://swap.example"}
+        assert D.normalize_state("kaggle", st, None) == "down", state
+
+
+def test_a_healthy_probe_of_a_running_platform_backend_stays_healthy():
+    now = 1_000_000.0
+    st = {"ok": True, "state": "RUNNING", "healthy": True, "url": "https://swap.example"}
+    assert D.normalize_state("kaggle", st, None) == "healthy"
+
+
+def test_no_url_means_no_claim_of_health():
+    """configured but no URL: the platform may say running, yet nothing is reachable."""
+    now = 1_000_000.0
+    st = {"ok": True, "state": "RUNNING", "healthy": False, "url": None}
+    assert D.normalize_state("kaggle", st, None) == "unreachable"
+
+
+def test_unreachable_is_a_known_state_in_both_shells():
+    """A state the UI does not know renders as a blank chip."""
+    for name in ("app.js", "mobile.js"):
+        js = (L / "webui" / "static" / name).read_text()
+        assert "unreachable" in js, f"{name} must label the unreachable state"
+    for name in ("app.css", "mobile.css"):
+        css = (L / "webui" / "static" / name).read_text()
+        assert ".s-unreachable" in css, f"{name} must style .s-unreachable"
+    assert "unreachable" in D.STATE_HELP
+
+
+def test_stop_is_offered_for_an_unreachable_run_and_start_is_not():
+    """An unreachable run still bills: the card must offer Stop, not Start."""
+    js = (L / "webui" / "static" / "app.js").read_text()
+    assert 'd.state === "unreachable"' in js
+
+
+def test_status_probe_failure_is_not_cached_as_the_previous_state(tmp_path, monkeypatch):
+    """A probe that raises must not leave the last good value in place past its TTL."""
+    sys.path.insert(0, str(L / "webui"))
+    import importlib, app as A
+    A = importlib.reload(A)
+    calls = {"n": 0}
+
+    def boom(target, force=False, block=True):
+        calls["n"] += 1
+        return {"ok": False, "error": "probe failed (fake)"}, 0.0, False, None
+    monkeypatch.setattr(A, "_status", boom)
+    monkeypatch.setattr(A, "TARGETS", ("kaggle",))
+    from fastapi.testclient import TestClient
+    c = TestClient(A.app)
+    c.headers.update({"Authorization": "Bearer " + A.state().token})
+    got = c.get("/api/dashboard").json()
+    assert got["targets"]["kaggle"]["state"] == "error", got["targets"]["kaggle"]
+
+
+def test_a_dead_colab_runtime_reports_a_stopped_backend_not_an_error():
+    """A stopped/disconnected Colab runtime could not answer the probe, and that raised, so the
+    whole status came back ok:False and the card went red as "error". The truth is duller: the
+    session is listed, nothing inside it answers, nothing is serving."""
+    from types import SimpleNamespace
+
+    class Co:
+        session = "l4"
+
+        def sessions(self):
+            return [{"name": "l4", "hardware": "NVIDIA L4"}]
+
+        def probe(self):
+            raise CL.LaunchError("could not query the Colab session: no output", "check the runtime")
+
+        def health(self, url):
+            return False
+    cfg = {"TUNNEL_MODE": "named", "VISOSWAP_HOSTNAME": "clswap.example.org"}
+    res = CL.status(SimpleNamespace(), cfg, SimpleNamespace(log=lambda *a: None), SimpleNamespace(dry_run=False), Co())
+    assert res["ok"] is True and res["state"] == "SESSION_ONLY"
+    assert res["healthy"] is False and res.get("probe_failed") is True
+    assert "did not answer the probe" in res["summary"]
+
+
+def test_a_dead_colab_runtime_renders_down_with_a_billing_warning():
+    st = {"ok": True, "state": "SESSION_ONLY", "healthy": False, "url": "https://clswap.example.org",
+          "session": "l4", "settings": {}, "probe_failed": True}
+    card = D.compose_target("colab", st, None, {}, None, 1_000_000.0)
+    assert card["state"] == "down"
+    assert any("compute units" in w for w in card["warnings"])
+

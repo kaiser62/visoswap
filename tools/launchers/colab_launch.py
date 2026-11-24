@@ -523,7 +523,18 @@ def status(args, cfg, rep, run, co: Colab) -> dict:
         return {"ok": True, "state": "NO_SESSION", "healthy": False, "url": public_url(cfg), "configured": bool(public_url(cfg)),
                 "summary": "no Colab session; launch to create one"}
     co.session = d["session"]
-    probe = co.probe()
+    try:
+        probe = co.probe()
+    except LaunchError as exc:
+        # A stopped or disconnected runtime cannot answer the probe. That used to fail the whole
+        # status call, which the dashboard rendered as `error` — a scary red card for a backend
+        # that is simply not running. Report the truth instead: the session is listed, but
+        # nothing inside it answered, so nothing is serving.
+        return {"ok": True, "state": "SESSION_ONLY", "healthy": False, "url": public_url(cfg),
+                "session": co.session, "gpu": None, "settings": {},
+                "configured": bool(public_url(cfg)), "probe_failed": True,
+                "summary": f"session {co.session}: did not answer the probe ({str(exc)[:120]}); "
+                           "the runtime may be stopped or disconnected"}
     url = resolve_url(cfg, probe)
     healthy = bool(url and co.health(url))
     state = "RUNNING" if probe.get("health") else "SESSION_ONLY"

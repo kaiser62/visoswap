@@ -5,7 +5,7 @@
    a prompt are posted once and cleared. */
 const NAMES = { kaggle: "Kaggle", colab: "Colab" };
 const SUBS = { kaggle: "T4 x2 notebook kernel", colab: "L4 / T4 session" };
-const STATE_LABEL = { down: "Down", starting: "Starting", queued: "Queued", running: "Running", healthy: "Healthy", stopping: "Stopping", error: "Error", unknown: "Checking" };
+const STATE_LABEL = { down: "Down", starting: "Starting", queued: "Queued", running: "Running", unreachable: "Unreachable", healthy: "Healthy", stopping: "Stopping", error: "Error", unknown: "Checking" };
 const $ = (id) => document.getElementById(id);
 let token = null;
 try { token = localStorage.getItem("vs_token"); } catch (e) { /* storage may be blocked */ }
@@ -206,7 +206,7 @@ function updateCard(t, d) {
     r.bar.setAttribute("aria-label", Math.round(pct) + " percent of the time cap left");
   }
   const busy = d.busy || !!activeJob;
-  r.start.disabled = busy || d.state === "healthy" || d.state === "running";
+  r.start.disabled = busy || d.state === "healthy" || d.state === "running" || d.state === "unreachable";
   r.restart.disabled = busy || d.state === "down" || d.state === "queued";
   r.stop.disabled = busy || d.state === "down";
   if (!c.filled) { r.opts.fill(d.last_options || {}); c.filled = true; }

@@ -106,6 +106,7 @@ main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: con
 .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .s-healthy, .s-ok { color: var(--good); border-color: color-mix(in srgb, var(--good) 45%, transparent); background: color-mix(in srgb, var(--good) 12%, transparent); }
 .s-running, .s-starting, .s-stopping, .s-queued { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.s-unreachable { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .s-error, .s-bad, .s-empty, .s-invalid, .s-missing { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); background: color-mix(in srgb, var(--bad) 12%, transparent); }
 .s-down, .s-unknown { color: var(--muted); }
 
