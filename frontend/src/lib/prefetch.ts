@@ -8,7 +8,7 @@ import { entriesAfter, type FrameIndex } from './frameindex'
 export const PREFETCH_SECONDS = 4
 /** Parallel image loads. High enough to cover tunnel latency, low enough not to
  * starve generation traffic or the browser's per-host connection limit. */
-export const PREFETCH_CONCURRENCY = 8
+export const PREFETCH_CONCURRENCY = 16
 /** Decoded images kept referenced so the browser cannot drop them early. */
 const MAX_KEPT = 160
 
