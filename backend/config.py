@@ -142,7 +142,14 @@ class Settings(BaseSettings):
     @classmethod
     def _strip_api_key(cls, v: object) -> str:
         # Pasted secrets routinely carry a trailing newline.
-        return "" if v is None else str(v).strip()
+        key = "" if v is None else str(v).strip()
+        # Header and cookie values are latin-1 on the wire; a non-ASCII key could
+        # never round-trip reliably between clients, so refuse it up front.
+        if not key.isascii() or not key.isprintable() or any(c in key for c in ' ;,"\\'):
+            raise ValueError(
+                "VISOSWAP_API_KEY must be printable ASCII without spaces, ; , \" or \\"
+            )
+        return key
 
     @field_validator("default_backend")
     @classmethod

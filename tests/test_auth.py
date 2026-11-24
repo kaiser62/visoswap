@@ -78,11 +78,20 @@ def test_non_ascii_header_is_401_not_500(on):
     assert r.status_code == 401
 
 
-def test_key_with_non_ascii_chars_matches(monkeypatch, tmp_path):
-    app = _app(monkeypatch, tmp_path, KEY)
+def test_non_ascii_key_refused_at_config_load(monkeypatch, tmp_path):
+    with pytest.raises(Exception, match="printable ASCII"):
+        _app(monkeypatch, tmp_path, KEY)
+    get_settings.cache_clear()
+
+
+def test_punctuated_key_roundtrips_via_header_and_cookie(monkeypatch, tmp_path):
+    key = "aB3-_.~!@#$%^&*()+=/:?[]{}|<>"
+    app = _app(monkeypatch, tmp_path, key)
     with TestClient(app) as c:
-        assert c.post("/api/auth/session", json={"key": KEY}).status_code == 200
+        assert c.get("/api/projects", headers={H: key.encode("utf-8")}).status_code == 200
+        assert c.post("/api/auth/session", json={"key": key}).status_code == 200
         assert c.get("/api/projects").status_code == 200
+    get_settings.cache_clear()
 
 
 def test_query_param_key_not_accepted(on):
