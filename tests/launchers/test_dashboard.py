@@ -463,6 +463,81 @@ def test_hostdir_overlay_shares_the_mac_kaggle_credentials():
     assert "${HOME}/.kaggle:/data/visoswap/home/.kaggle" in yml
 
 
+# ---------- mobile shell
+def _webui_module(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi"); pytest.importorskip("httpx")
+    monkeypatch.setenv("VISOSWAP_HOME", str(tmp_path)); monkeypatch.setenv("LAUNCHER_FAKE", "1")
+    sys.path.insert(0, str(L / "webui"))
+    import importlib, app as A
+    return importlib.reload(A)
+
+
+def test_mobile_shell_is_served(tmp_path, monkeypatch):
+    A = _webui_module(tmp_path, monkeypatch)
+    from fastapi.testclient import TestClient
+    c = TestClient(A.app)
+    r = c.get("/mobile")
+    assert r.status_code == 200 and "mobile.js" in r.text and "viewport-fit=cover" in r.text
+    assert c.get("/static/mobile.css").status_code == 200
+    js = c.get("/static/mobile.js")
+    assert js.status_code == 200 and "api/dashboard" in js.text
+
+
+def test_mobile_shell_uses_the_studio_design_tokens():
+    """The phone shell must reuse frontend/src/index.css (@theme), not invent its own palette."""
+    css = (L / "webui" / "static" / "mobile.css").read_text()
+    tokens = (L.parents[1] / "frontend" / "src" / "index.css").read_text()
+    want = {}
+    for line in tokens.splitlines():
+        line = line.strip()
+        if line.startswith("--color-"):
+            k, _, v = line.rstrip(";").partition(": ")
+            want[k] = v.strip()
+    assert want, "no --color-* tokens found in frontend/src/index.css"
+    body = css.split(":root {", 1)[1].split("}", 1)[0]
+    mapped = {}
+    for line in body.splitlines():
+        line = line.strip()
+        if line.startswith("--") and ":" in line:
+            k, _, v = line.rstrip(";").partition(": ")
+            mapped[k.strip()] = v.strip()
+    for k, v in want.items():
+        short = "--" + k[len("--color-"):]
+        assert mapped.get(short) == v, f"{short} must be {v} (from frontend/src/index.css)"
+
+
+def test_mobile_shell_builds_dom_without_innerhtml():
+    """Security posture of app.js carries over: no innerHTML, no eval, no template injection."""
+    js = (L / "webui" / "static" / "mobile.js").read_text()
+    code = "\n".join(l for l in js.splitlines() if not l.strip().startswith("/*") and not l.strip().startswith("*"))
+    assert ".innerHTML" not in code
+    assert "eval(" not in code
+    assert "document.write" not in code
+
+
+def test_mobile_shell_never_puts_secrets_in_localstorage():
+    js = (L / "webui" / "static" / "mobile.js").read_text()
+    for line in js.splitlines():
+        if "localStorage.setItem" in line:
+            assert "vs_token" in line, line
+
+
+def test_mobile_shell_has_real_tap_targets():
+    """Every control a thumb reaches must clear ~36px; secret inputs need 44px or iOS zooms on focus."""
+    css = (L / "webui" / "static" / "mobile.css").read_text()
+    js = (L / "webui" / "static" / "mobile.js").read_text()
+    # the prompt/secret inputs are built by JS, so they must carry a class the stylesheet can size
+    assert 'class: "secretinput"' in js
+    assert ".secretinput" in css
+    # and that rule must set a thumb-sized minimum
+    rule = css.split(".secretinput", 1)[1].split("}", 1)[0]
+    assert "min-height: 44px" in rule or "min-height: 44px" in css.split(".secretinput")[0][-200:], rule
+    # no interactive control may be smaller than 36px
+    for sel in (".btn {", ".btn.sm {"):
+        block = css.split(sel, 1)[1].split("}", 1)[0]
+        assert "min-height: 36px" in block or "min-height: 44px" in block, block
+
+
 # ---------- backup logins
 def test_kaggle_json_backup_login_endpoint(tmp_path, monkeypatch):
     A, c, H = _webui(tmp_path, monkeypatch)

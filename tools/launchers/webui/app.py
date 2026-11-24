@@ -621,6 +621,12 @@ def index():
     return FileResponse(HERE / "static" / "index.html")
 
 
+@app.get("/mobile")
+def mobile():
+    """Phone-first shell: same API, same token, no separate build step."""
+    return FileResponse(HERE / "static" / "mobile.html")
+
+
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
 

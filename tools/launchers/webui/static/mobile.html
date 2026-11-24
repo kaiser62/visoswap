@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="VisoSwap">
+<meta name="theme-color" content="#090c0f">
+<title>VisoSwap Dashboard</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/mobile.css">
+<script src="/static/mobile.js" defer></script>
+</head>
+<body>
+<header class="hdr">
+  <div class="hdr-l">
+    <span class="hdr-title">VisoSwap</span>
+    <span class="hdr-sub" id="hdrsub">Dashboard</span>
+  </div>
+  <div class="hdr-r">
+    <span class="pill" id="livepill" hidden><i></i><span id="livetxt">Live</span></span>
+    <button class="iconbtn" id="refresh" type="button" aria-label="Refresh">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 10-2.3 6.3M20 5v6h-6"/></svg>
+    </button>
+    <button class="iconbtn" id="lock" type="button" aria-label="Sign out">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 12H4m0 0l3.5-3.5M4 12l3.5 3.5M13 5h5a2 2 0 012 2v10a2 2 0 01-2 2h-5"/></svg>
+    </button>
+  </div>
+</header>
+
+<p class="banner" id="banner" role="status" aria-live="polite" hidden></p>
+
+<section id="login" class="login" hidden aria-labelledby="lh">
+  <h2 id="lh">Sign in</h2>
+  <p class="muted">Paste the dashboard access token.</p>
+  <form id="lf" class="stack">
+    <input id="tok" type="password" autocomplete="off" placeholder="access token" required aria-label="Access token">
+    <button class="btn primary" type="submit">Sign in</button>
+  </form>
+  <p class="err" id="lerr" role="alert"></p>
+</section>
+
+<main id="app" hidden>
+  <!-- live job sheet -->
+  <section id="jobbox" class="card job" hidden aria-labelledby="jh">
+    <div class="cardhead">
+      <h3 id="jh">Working</h3>
+      <span class="chip" id="jobstate"></span>
+    </div>
+    <pre id="log" class="log" tabindex="0" aria-label="Live job log"></pre>
+    <div id="prompt" class="prompt" hidden></div>
+    <button id="cancel" class="btn ghost sm" type="button" hidden>Cancel</button>
+  </section>
+
+  <div class="view" id="v-status">
+    <div class="stack" id="cards"></div>
+  </div>
+
+  <div class="view" id="v-quota" hidden>
+    <h2 class="sec">Weekly quota</h2>
+    <div class="statgrid" id="quotas"></div>
+  </div>
+
+  <div class="view" id="v-login" hidden>
+    <h2 class="sec">Logins</h2>
+    <div class="stack" id="logins"></div>
+  </div>
+
+  <div class="view" id="v-logs" hidden>
+    <h2 class="sec">Logs</h2>
+    <div class="card">
+      <div class="frow">
+        <label class="field"><span>Source</span><select id="lgsrc"></select></label>
+        <label class="field"><span>Lines</span><select id="lgn"><option>100</option><option selected>200</option><option>500</option><option>1000</option></select></label>
+      </div>
+      <div class="frow">
+        <button id="lgload" class="btn sm" type="button">Load</button>
+        <button id="lgcopy" class="btn ghost sm" type="button">Copy</button>
+      </div>
+      <p class="muted xs" id="lgmeta"></p>
+      <pre id="lgview" class="log tall" tabindex="0" aria-label="Log tail">Pick a log and press Load.</pre>
+    </div>
+  </div>
+</main>
+
+<nav class="tabs" id="tabs" hidden aria-label="Sections">
+  <button class="tab on" data-tab="status" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M14.8 11.2l-3.2-2.1a1 1 0 00-1.6.8v4.3a1 1 0 001.6.8l3.2-2.1a1 1 0 000-1.7z"/></svg>
+    <span>Status</span></button>
+  <button class="tab" data-tab="quota" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 3a9 9 0 109 9"/><path d="M12 8v4l3 2"/></svg>
+    <span>Quota</span></button>
+  <button class="tab" data-tab="login" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M15 7a4 4 0 11-3.2 6.4L7 18H4v-3l4.6-4.6A4 4 0 0115 7z"/></svg>
+    <span>Logins</span></button>
+  <button class="tab" data-tab="logs" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+    <span>Logs</span></button>
+</nav>
+
+<dialog id="confirm" aria-labelledby="confirm-title"><h2 id="confirm-title"></h2><p id="confirm-text"></p>
+  <form method="dialog"><button class="btn ghost" value="no">Cancel</button><button class="btn danger" id="confirm-ok" value="yes"></button></form></dialog>
+</body></html>
