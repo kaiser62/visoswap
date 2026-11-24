@@ -2,9 +2,12 @@ FROM python:3.13-slim
 # Self-contained for a plain Linux Docker host: kaggle CLI, colab CLI, cloudflared (tunnel create via the launcher), and
 # keyrings.alt so the colab CLI can keep its Google login in a FILE (no macOS Keychain / Secret Service in a container).
 ARG TARGETARCH=amd64
-RUN pip install --no-cache-dir fastapi==0.115.6 uvicorn==0.34.0 kaggle google-colab-cli keyrings.alt \
- && python -c "import urllib.request as u;u.urlretrieve('https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${TARGETARCH}','/usr/local/bin/cloudflared')" \
- && chmod 755 /usr/local/bin/cloudflared && /usr/local/bin/cloudflared --version \
+COPY fetch_cloudflared.py /tmp/fetch_cloudflared.py
+# six is pinned explicitly: kaggle 2.2.5 imports it at module scope but does not declare it, so a clean
+# python:3.13-slim gets no transitive copy and every `kaggle` subcommand dies with ModuleNotFoundError.
+RUN pip install --no-cache-dir fastapi==0.115.6 uvicorn==0.34.0 kaggle six==1.17.0 google-colab-cli keyrings.alt \
+ && python /tmp/fetch_cloudflared.py ${TARGETARCH} && chmod 755 /usr/local/bin/cloudflared && /usr/local/bin/cloudflared --version \
+ && kaggle --version && colab version \
  && useradd -m -u 1000 app && install -d -o 1000 -g 1000 -m 700 /data/visoswap /data/visoswap/home /data/visoswap/xdg /data/visoswap/kaggle
 # Everything mutable lives under /data/visoswap (the persisted volume): env files, webui_token, Kaggle config, a writable HOME
 # for the Colab token.json import. The image root stays read-only.
