@@ -6,7 +6,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -131,6 +131,16 @@ class Settings(BaseSettings):
     api_key: str = Field(
         default="", validation_alias=AliasChoices("VISOSWAP_API_KEY"), repr=False
     )
+    #: Refuse to boot without a key. Off by default because LAN/dev runs are
+    #: keyless; set it on any backend exposed through a tunnel, where "auth off"
+    #: means anyone with the URL can drive the GPU.
+    require_api_key: bool = Field(
+        default=False, validation_alias=AliasChoices("VISOSWAP_REQUIRE_API_KEY")
+    )
+    #: Consecutive generator-bind failures across all workers before the project
+    #: is failed with a visible error instead of retrying forever (see
+    #: backend/workers/generation_worker.py).
+    max_bind_failures: int = Field(default=3, alias="VISOSWAP_MAX_BIND_FAILURES")
 
     enable_ytdlp: bool = True
 
@@ -237,6 +247,23 @@ class Settings(BaseSettings):
     @property
     def faces_dir(self) -> Path:
         return self.data_dir / "faces"
+
+    @model_validator(mode="after")
+    def _require_api_key_when_asked(self) -> "Settings":
+        """Refuse a keyless boot when the operator said a key is mandatory.
+
+        A backend behind a tunnel with no key lets anyone who finds the URL drive
+        the GPU. The flag is off by default so LAN and test runs stay keyless, and
+        it is deliberately a startup refusal rather than a warning: a warning in a
+        notebook log is exactly what gets scrolled past.
+        """
+        if self.require_api_key and not self.api_key:
+            raise ValueError(
+                "VISOSWAP_REQUIRE_API_KEY is set but VISOSWAP_API_KEY is empty: "
+                "this backend would be reachable without a key. Set a key, or "
+                "unset VISOSWAP_REQUIRE_API_KEY to allow keyless access."
+            )
+        return self
 
 
 @lru_cache

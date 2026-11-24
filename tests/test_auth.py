@@ -345,3 +345,47 @@ def test_tracker_is_bounded_under_ip_rotation():
     lim.fail("192.0.2.1", now=0.0)
     lim.fail("192.0.2.1", now=0.0)
     assert lim.retry_after("192.0.2.1", now=0.0) > 0
+
+
+# --- VISOSWAP_REQUIRE_API_KEY: refuse a keyless boot when the operator says so ----
+from pydantic import ValidationError  # noqa: E402
+
+from backend.config import Settings  # noqa: E402
+
+
+@pytest.fixture()
+def _clean_settings(monkeypatch):
+    for var in ("VISOSWAP_API_KEY", "VISOSWAP_REQUIRE_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    yield
+    get_settings.cache_clear()
+
+
+def test_require_flag_refuses_a_keyless_boot(_clean_settings, monkeypatch):
+    monkeypatch.setenv("VISOSWAP_REQUIRE_API_KEY", "1")
+    with pytest.raises(ValidationError, match="VISOSWAP_API_KEY is empty"):
+        Settings()
+
+
+def test_require_flag_boots_when_a_key_is_set(_clean_settings, monkeypatch):
+    monkeypatch.setenv("VISOSWAP_REQUIRE_API_KEY", "1")
+    monkeypatch.setenv("VISOSWAP_API_KEY", ASCII_KEY)
+    s = Settings()
+    assert s.require_api_key is True and s.api_key == ASCII_KEY
+
+
+def test_require_flag_defaults_off_so_lan_and_tests_stay_keyless(_clean_settings):
+    s = Settings()
+    assert s.require_api_key is False and s.api_key == ""
+
+
+@pytest.mark.parametrize("value", ["0", "false", "no"])
+def test_require_flag_falsy_values_do_not_refuse(_clean_settings, monkeypatch, value):
+    monkeypatch.setenv("VISOSWAP_REQUIRE_API_KEY", value)
+    assert Settings().require_api_key is False
+
+
+def test_require_flag_never_leaks_the_key(_clean_settings, monkeypatch):
+    monkeypatch.setenv("VISOSWAP_REQUIRE_API_KEY", "1")
+    monkeypatch.setenv("VISOSWAP_API_KEY", ASCII_KEY)
+    assert ASCII_KEY not in repr(Settings())
