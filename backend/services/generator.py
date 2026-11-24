@@ -44,9 +44,19 @@ class FrameGenerator(abc.ABC):
 
 
 def build_generator(
-    project: dict[str, Any], timeout: float, worker_index: int = 0
+    project: dict[str, Any], timeout: float, worker_index: int = 0, pooled: bool = False
 ) -> FrameGenerator:
-    """Build the sole current generator; later backends return through this seam."""
+    """Build the sole current generator; later backends return through this seam.
+
+    `pooled` marks a long-lived scheduler worker. With VISOSWAP_PROCESS_WORKERS=1
+    such workers get their engine in a child process (no GIL sharing, spread over
+    the GPUs); short-lived callers (validate, preview) stay in-process.
+    """
+    if pooled:
+        from backend.services.process_generator import ProcessEngineGenerator, process_workers_enabled
+
+        if process_workers_enabled():
+            return ProcessEngineGenerator.from_project(project, timeout, worker_index)
     from backend.services.engine_backend import EngineFrameGenerator
 
     return EngineFrameGenerator.from_project(project, timeout, worker_index)

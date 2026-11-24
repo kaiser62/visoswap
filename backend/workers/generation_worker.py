@@ -60,7 +60,7 @@ async def run_worker(scheduler: ProjectScheduler, index: int) -> None:
                 if generator is not None:
                     await generator.unbind()
                     await generator.close()
-                generator = build_generator(project, 0.0, index)
+                generator = build_generator(project, 0.0, index, pooled=True)
                 generator_key = key
                 # Per-run setup the backend only pays for once. Binding can fail
                 # on a config problem or a cold GPU; hand the claimed frame back
