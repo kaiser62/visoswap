@@ -58,9 +58,8 @@ is never touched). Colab runs `colab usage` with piped stdio, shows the Google s
 URL is ever rendered as a link) and feeds the pasted code to the CLI. If `usage` already works nothing is asked. A driver
 that cannot answer (plain `--json`, stdin at EOF) gets an immediate failure, not a hang. Pasted values are registered
 with the redactor the moment they arrive and never appear in logs, results or error bodies.
-**Colab in Docker cannot keep the login** (the CLI stores it in the OS keyring, which a container lacks, so it would ask
-again on every command); the UI says so and `run.sh native` is the supported path for Colab. The same goes for Kaggle,
-whose `~/.kaggle` is read-only in the container.
+**Colab in Docker**: the CLI keeps its login in the OS keyring, which a container lacks. The dashboard offers two routes
+(see "Logins" below): the host bridge (the Mac runs the launcher, Keychain intact) or importing a `token.json`.
 
 `--cf-api-token-stdin` creates the tunnel and DNS from a Cloudflare API token read from stdin (Account: Cloudflare Tunnel
 Edit, Zone: DNS Edit). The API token lives in memory for that run; only the resulting tunnel token and hostname are
@@ -119,7 +118,7 @@ a GPU with retries every 30 s up to `--max-wait` (re-checking `colab sessions` a
 |---|---|
 | `Kaggle CLI is not authenticated` | credentials expired: `tools/launchers/kaggle-launch.sh --login` |
 | `kernel status ... was denied` | Kaggle's message for a kernel that does not exist; the launcher cross-checks `kernels list` and refuses to guess if they disagree |
-| Colab: `no Google login stored` / login expired | run `tools/launchers/colab-launch.sh --login` in a terminal (it runs `colab usage`; paste the code; the launcher does this itself when run from a terminal); cannot be done from the web UI or Docker |
+| Colab: `no Google login stored` / login expired | run `tools/launchers/colab-launch.sh --login` in a terminal (it runs `colab usage`; paste the code; the launcher does this itself when run from a terminal); from the dashboard use Logins (relay code, token file, or the host bridge) |
 | `--check` says `unknown` | CLI timed out or no network; nothing was changed and no login was started: retry |
 | Kernel QUEUED forever | launcher deletes and re-pushes every 5 min; otherwise Kaggle has no free GPU |
 | Push fails / GPU session limit | max 2 GPU kernels per account; run `--down` on old ones, check phone verification |
@@ -157,9 +156,53 @@ Phone access:
 - Away from home: put it behind a Cloudflare tunnel with **Cloudflare Access** (SSO) in front, keeping the bind
   on 127.0.0.1. Not set up by this repo.
 
-Logins in Docker: the Colab CLI keeps its Google login in the OS keyring (macOS Keychain), which a Linux container
-cannot read or persist, and `~/.kaggle` is mounted read-only. The containerised UI therefore cannot log in to Colab or
-Kaggle and says so; use `run.sh native` (the supported path for both).
+## Dashboard
+
+The page is a dashboard for both backends. Cards show state (down, starting, queued, running, healthy, error; always with a
+text label), URL, health detail (concurrency, process mode, access key on/off), GPU, uptime, and for Kaggle time left of
+`--max-minutes`. Uptime and time left are estimates: Kaggle uses `lastRunTime` from `kernels list` (fallback: the time
+the launcher recorded), Colab uses the uvicorn process age; unknown values read "unknown", never a guess. Data is cached
+(stale-while-revalidate, single-flight) so polling never hammers the CLIs; the page refreshes every 15 s, every 2.5 s
+while an action runs.
+
+- **Start / Restart / Stop**: Stop asks for confirmation. Options (fixed lists only, no free-form flags): Colab GPU L4/T4
+  (new session only), concurrency, profiling, access key on/off (uses `~/.visoswap/api_key`); Kaggle concurrency,
+  profiling, max minutes. The live job log streams below the cards.
+- **Quotas**: Kaggle GPU hours with reset date, Colab compute units with burn rate and hours left. Cached 10 min,
+  refresh button, warning when low (`QUOTA_LOW_HOURS`, `QUOTA_LOW_UNITS`).
+- **Logs**: launcher job log (kept across restarts), Kaggle kernel log, Colab uvicorn and tunnel logs; tail 10-1000 lines;
+  everything redacted.
+- Endpoints (all bearer-authed except `/healthz`): `GET /api/dashboard`, `/api/quotas`, `/api/checks`,
+  `/api/logs/{target}/{source}`, `POST /api/targets/{t}/{start|launch|restart|stop|provision|login}`, secret forms
+  `cloudflare-token`, `cloudflare-api-token`, `kaggle-json`, `colab-token`; jobs under `/api/jobs/{id}`.
+
+### Logins (backup methods) and where each works
+
+| Method | Native | Docker | Docker + bridge |
+|---|---|---|---|
+| Kaggle: paste API token (`access_token`) | yes | yes (stored in the volume `kaggle/`) | yes |
+| Kaggle: upload `kaggle.json` (legacy key, validated in an isolated HOME) | yes | yes | yes |
+| Colab: Google relay code (open link, paste code) | yes | no (no keyring) | yes (runs on the Mac) |
+| Colab: import `~/.config/colab-cli/token.json` (legacy token-file fallback, no keyring needed) | yes | yes (HOME is the volume) | yes |
+| Colab: native command shown in the UI | yes | shown only | shown only |
+| Cloudflare: tunnel token paste (stored mode 600, never shown) | yes | yes | yes |
+| Cloudflare: API token (creates tunnel and DNS, not stored) | yes | yes | yes |
+
+Host bridge (macOS): `run.sh bridge start` (also done by `run.sh start` on macOS; `WEBUI_BRIDGE=0` skips) runs
+`bridge.py` on the Mac, authenticated by the same `webui_token`. The container sets `LAUNCHER_BRIDGE_URL=http://host.docker.internal:8766`
+and the bridge runs the launcher on the host, so the Keychain-backed Colab login is used and the relay code works.
+Tradeoff: a host process listens on the bridge port (`BRIDGE_HOST`, default 0.0.0.0 so Docker can reach it; set it to the
+docker0/Desktop gateway address to narrow it) and anyone holding the token can start launcher jobs through it; it only
+accepts the same fixed action allowlist. Linux hosts have no Keychain issue: use the token-file import.
+
+Docker layout: one volume `${VISOSWAP_HOME:-~/.visoswap}` at `/data/visoswap` holds env files, `webui_token`, `api_key`,
+`kaggle/` (Kaggle config) and `home/` (writable HOME). The repo is mounted read-only; no `~/.kaggle` or colab mounts.
+
+### Not verified
+
+Everything above is covered by tests with fake `kaggle`/`colab` binaries and by driving the UI in fake mode. Not yet
+verified: a real `docker compose build/up`, container-to-host bridge reachability, real CLI behaviour for the new flags,
+non-root/volume persistence/healthcheck on a Docker host.
 
 ### Threat model
 
@@ -168,9 +211,9 @@ The UI can spend GPU quota and its host holds credentials. Controls: bearer toke
 per minute; one running action per target; fixed target/action allowlist (no arguments from the client); Stop
 needs an explicit confirm; loopback bind by default; no endpoint returns env-file or credential contents and all
 streamed output passes a redactor (known secret values, JWT/token shapes, `--token X`); CSP, `no-store`; container
-runs as non-root, read-only root fs, all capabilities dropped, repo and `~/.kaggle` mounted read-only.
+runs as non-root, read-only root fs, all capabilities dropped, repo mounted read-only.
 Credentials you submit through the UI (Kaggle token, Colab code, Cloudflare tokens) cross the LAN in plain HTTP: use it only on a network you trust, or terminate TLS in front. The server never logs, echoes or stores them beyond the destination file; error bodies are generic. Not covered: TLS (use Cloudflare/Access or a trusted LAN), anyone with the token (full control), a compromised
-host. `~/.visoswap` is mounted read-write because launchers save URLs and tokens there.
+host. `~/.visoswap` is mounted read-write because launchers save URLs and tokens there; the bridge (if enabled) is an extra host listener, see Logins.
 
 ## Tests
 
