@@ -86,30 +86,37 @@ class DetectionInterpolator:
     Shared across engines (workers) in the process, keyed by the video.
     """
 
-    MAX_GAP = 4          # frames between the bracketing detections
+    MAX_GAP = 8          # frames between the bracketing detections
     MAX_MOVE = 0.03      # of image width, per landmark
     MAX_ENTRIES = 1024   # per key
     _lock = threading.Lock()
     _store: dict = {}
     _emb: dict = {}
 
+    EMB_GAP = 12         # frames an embedding stays reusable if the face barely moved
+
     @classmethod
-    def record_emb(cls, key, frame, emb):
+    def record_emb(cls, key, frame, emb, kps5):
         with cls._lock:
             d = cls._emb.setdefault(key, {})
             if len(d) >= cls.MAX_ENTRIES:
                 d.pop(next(iter(d)))
-            d[frame] = emb
+            d[frame] = (emb, np.asarray(kps5, dtype=np.float32))
 
     @classmethod
-    def lookup_emb(cls, key, frame):
-        """Embedding of the nearest real-recognition frame within MAX_GAP, else None."""
+    def lookup_emb(cls, key, frame, kps5, width):
+        """Embedding of the nearest recognised frame, if its face sat in the same place."""
         with cls._lock:
             d = cls._emb.get(key)
             if not d:
                 return None
             near = min(d, key=lambda f: abs(f - frame))
-            return d[near] if abs(near - frame) <= cls.MAX_GAP else None
+            if abs(near - frame) > cls.EMB_GAP:
+                return None
+            emb, k = d[near]
+        if np.abs(np.asarray(kps5, dtype=np.float32) - k).max() > cls.MAX_MOVE * width:
+            return None
+        return emb
 
     @classmethod
     def lookup(cls, key, frame, width):
@@ -265,12 +272,14 @@ class FrameWorker(threading.Thread):
                 face_kps_5 = kpss_5[i]
                 face_kps_all = kpss[i]
                 face_emb = None
-                if interp is not None and dkey is not None and kpss_5.shape[0] == 1:
-                    face_emb = DetectionInterpolator.lookup_emb(dkey + (control['RecognitionModelSelection'], control['SimilarityTypeSelection']), self.frame_number)
+                ekey = None
+                if dkey is not None and kpss_5.shape[0] == 1:
+                    ekey = dkey + (control['RecognitionModelSelection'], control['SimilarityTypeSelection'])
+                    face_emb = DetectionInterpolator.lookup_emb(ekey, self.frame_number, face_kps_5, img.shape[2])
                 if face_emb is None:
                     face_emb, _ = self.models_processor.run_recognize_direct(img, face_kps_5, control['SimilarityTypeSelection'], control['RecognitionModelSelection'])
-                    if interp is None and dkey is not None and kpss_5.shape[0] == 1:
-                        DetectionInterpolator.record_emb(dkey + (control['RecognitionModelSelection'], control['SimilarityTypeSelection']), self.frame_number, face_emb)
+                    if ekey is not None and interp is None:
+                        DetectionInterpolator.record_emb(ekey, self.frame_number, face_emb, face_kps_5)
                 det_faces_data.append({'kps_5': face_kps_5, 'kps_all': face_kps_all, 'embedding': face_emb, 'bbox': bboxes[i]})
 
         prof.mark('recognize')

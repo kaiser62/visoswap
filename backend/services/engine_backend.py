@@ -147,3 +147,22 @@ class EngineFrameGenerator(FrameGenerator):
 
     async def close(self) -> None:
         await self.unbind()
+        engine, self._engine = self._engine, None
+        if engine is not None:
+            # Without this every project leaves its models on the GPU, and a
+            # second project OOMs a 15 GB card (CUBLAS alloc failure on bind).
+            def _free() -> None:
+                import gc
+                try:
+                    engine._release()
+                    engine.context.models_processor.clear_gpu_memory()
+                except Exception:
+                    pass
+                del engine
+                gc.collect()
+                try:
+                    import torch
+                    torch.cuda.empty_cache()
+                except Exception:
+                    pass
+            await asyncio.to_thread(_free)
