@@ -432,6 +432,37 @@ def test_dockerfile_pins_six_for_the_kaggle_cli():
     assert "colab version" in df
 
 
+def test_dockerfile_kaggle_config_dir_matches_home():
+    """kagglesdk hardcodes $HOME/.kaggle/{credentials.json,access_token} and ignores KAGGLE_CONFIG_DIR for them.
+
+    If the image points KAGGLE_CONFIG_DIR anywhere else, every login the launcher stores is invisible to the
+    CLI, so this invariant is what keeps the dashboard's Kaggle path working.
+    """
+    df = (L / "webui" / "Dockerfile").read_text()
+    env = {}
+    for line in df.replace("\\\n", " ").splitlines():
+        if line.strip().startswith(("ENV ", "HOME=", "KAGGLE_CONFIG_DIR=", "VISOSWAP_HOME=")):
+            for tok in line.split():
+                if "=" in tok:
+                    k, _, v = tok.partition("=")
+                    if k in ("HOME", "KAGGLE_CONFIG_DIR", "VISOSWAP_HOME"):
+                        env[k] = v.rstrip("\\")
+    assert env["KAGGLE_CONFIG_DIR"] == env["HOME"] + "/.kaggle", env
+
+
+def test_run_sh_creates_the_kaggle_dir_where_the_cli_reads_it():
+    """Same invariant for the host bind-mount path: mkdir must target $HOME/.kaggle, not a sibling 'kaggle'."""
+    sh = (L / "webui" / "run.sh").read_text()
+    assert 'mkdir -p "$home/home/.kaggle"' in sh
+    assert '"$home/kaggle"' not in sh
+
+
+def test_hostdir_overlay_shares_the_mac_kaggle_credentials():
+    """The macOS overlay must mount ~/.kaggle at $HOME/.kaggle, or the container cannot see the native login."""
+    yml = (L / "webui" / "docker-compose.hostdir.yml").read_text()
+    assert "${HOME}/.kaggle:/data/visoswap/home/.kaggle" in yml
+
+
 # ---------- backup logins
 def test_kaggle_json_backup_login_endpoint(tmp_path, monkeypatch):
     A, c, H = _webui(tmp_path, monkeypatch)

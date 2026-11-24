@@ -19,9 +19,10 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Linux; Docker Desktop provides it already
     volumes:
-      # Persistent state in a NAMED volume (survives rebuilds): env files, *_url, webui_token, api_key, kaggle/ config,
-      # home/ (colab session list), xdg/ (Colab Google login, file keyring), job logs. Mac: add -f docker-compose.hostdir.yml
-      # (run.sh start does) to use ~/.visoswap instead so the native launchers and the container share state.
+      # Persistent state in a NAMED volume (survives rebuilds): env files, *_url, webui_token, api_key, home/.kaggle
+      # (the Kaggle config; kagglesdk only reads $HOME/.kaggle), home/ (colab session list), xdg/ (Colab Google login,
+      # file keyring), job logs. Mac: add -f docker-compose.hostdir.yml (run.sh start does) to use ~/.visoswap instead so
+      # the native launchers and the container share state; it also mounts ~/.kaggle so both read the same credentials.
       - state:/data/visoswap
       - ../../..:/repo:ro                      # launchers + visoswap_kaggle.ipynb, read-only
     read_only: true

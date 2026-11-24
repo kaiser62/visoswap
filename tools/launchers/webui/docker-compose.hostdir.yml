@@ -4,4 +4,8 @@ services:
     volumes:
       - !override
         - ${VISOSWAP_HOME:-${HOME}/.visoswap}:/data/visoswap
+        # kagglesdk only ever reads $HOME/.kaggle, so pointing KAGGLE_CONFIG_DIR anywhere under /data/visoswap would
+        # hide the login the native launcher already stored in ~/.kaggle on the Mac. Mount it at $HOME/.kaggle instead
+        # and both sides read the same credentials.
+        - ${HOME}/.kaggle:/data/visoswap/home/.kaggle
         - ../../..:/repo:ro
