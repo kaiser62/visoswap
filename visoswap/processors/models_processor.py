@@ -241,10 +241,15 @@ class ModelsProcessor:
             # QApplication.processEvents()
             # if not is_file_exists(self.models_path[model_name]):
             #     download_file(model_name, self.models_path[model_name], self.models_data[model_name]['hash'], self.models_data[model_name]['url'])
+            providers = self.providers
+            if 'ArcFace' in model_name:
+                # cuDNN frontend rejects the arcface convs (Conv_19) on Turing with any
+                # algo search except DEFAULT; keep the fast HEURISTIC for everything else.
+                providers = [(p[0], {**p[1], 'cudnn_conv_algo_search': 'DEFAULT'}) if isinstance(p, tuple) and p[0] == 'CUDAExecutionProvider' else p for p in providers]
             if session_options is None:
-                model_instance = onnxruntime.InferenceSession(self.models_path[model_name], providers=self.providers)
+                model_instance = onnxruntime.InferenceSession(self.models_path[model_name], providers=providers)
             else:
-                model_instance = onnxruntime.InferenceSession(self.models_path[model_name], sess_options=session_options, providers=self.providers)
+                model_instance = onnxruntime.InferenceSession(self.models_path[model_name], sess_options=session_options, providers=providers)
 
             active_providers = model_instance.get_providers()
             if self.device == "cuda" and not any(p in active_providers for p in ("CUDAExecutionProvider", "TensorrtExecutionProvider")):
