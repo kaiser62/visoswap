@@ -121,6 +121,10 @@ def _patch_cuda_libraries():
 
 _patch_cuda_libraries()
 
+# EXHAUSTIVE algo search (ORT default) makes cuDNN Frontend reject some Convs
+# on Turing GPUs (e.g. Kaggle T4, cuDNN 9.27: "No valid engine configs").
+CUDA_EP_OPTIONS = {'cudnn_conv_algo_search': 'DEFAULT'}
+
 import onnxruntime
 from torchvision.transforms import v2
 try:
@@ -171,7 +175,7 @@ class ModelsProcessor:
             'trt_builder_optimization_level': 5,
         }
         self.providers = [
-            'CUDAExecutionProvider',
+            ('CUDAExecutionProvider', CUDA_EP_OPTIONS),
             ('TensorrtExecutionProvider', self.trt_ep_options),
             'CPUExecutionProvider'
         ]       
@@ -332,7 +336,7 @@ class ModelsProcessor:
             case "TensorRT" | "TensorRT-Engine":
                 providers = [
                                 ('TensorrtExecutionProvider', self.trt_ep_options),
-                                'CUDAExecutionProvider',
+                                ('CUDAExecutionProvider', CUDA_EP_OPTIONS),
                                 'CPUExecutionProvider'
                             ]
                 self.device = 'cuda'
@@ -347,7 +351,7 @@ class ModelsProcessor:
                 self.device = 'cpu'
             case "CUDA":
                 providers = [
-                                'CUDAExecutionProvider',
+                                ('CUDAExecutionProvider', CUDA_EP_OPTIONS),
                                 'CPUExecutionProvider'
                             ]
                 self.device = 'cuda'
