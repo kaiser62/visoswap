@@ -310,7 +310,10 @@ def relay_login(args, cfg, rep, run, co: Colab, url_wait: float = 60.0) -> dict:
         rep.log("[dry-run] would run the Colab OAuth copy-paste login via the web UI")
         return {"ok": True, "summary": "dry run"}
     buf: List[str] = []
-    p = subprocess.Popen([co.exe, "usage"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    try:
+        p = subprocess.Popen([co.exe, "usage"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    except OSError:
+        raise LaunchError("colab CLI not found", "uv tool install google-colab-cli  (or set COLAB_BIN)")
 
     def pump():
         for ln in p.stdout:

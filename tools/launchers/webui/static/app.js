@@ -55,13 +55,15 @@ function checksPanel(t) {
     const dot = document.createElement("span"); dot.className = "pill " + (c.state === "ok" ? "ok" : (c.state === "unknown" || !c.blocking ? "warn" : "bad")); dot.textContent = c.state; row.append(dot);
     const l = document.createElement("span"); l.textContent = c.service + (c.detail ? ": " + c.detail : ""); row.append(l);
     if (c.state !== "ok" && c.state !== "unknown") {
-      if (c.id === "cloudflare") {
+      if (c.id === "cloudflare" && !/paste a tunnel token/.test(c.fix || "")) {   // an automatic route exists (API token / cloudflared login)
+        const b = document.createElement("button"); b.textContent = "Create tunnel + DNS now"; b.onclick = () => run(t, "provision"); row.append(b);
+      } else if (c.id === "cloudflare") {
         row.append(secretForm("tunnel token (stored mode 600, never shown)", "Save token", async (v) => {
           try { const r = await api(`/api/targets/${t}/cloudflare-token`, {method: "POST", body: JSON.stringify({token: v})}); $("log").textContent = r.ok ? "Token stored." : "Not stored: " + r.error; loadChecks(true); }
           catch (er) { $("log").textContent = "Refused: " + er.message; } }));
         row.append(secretForm("or a Cloudflare API token: creates tunnel + DNS (used once, not stored)", "Create tunnel", async (v) => {
           $("log").textContent = "Creating the tunnel and DNS record...";
-          try { const r = await api(`/api/targets/${t}/cloudflare-api-token`, {method: "POST", body: JSON.stringify({token: v})}); $("log").textContent = r.ok ? (r.summary || "Tunnel ready.") : "Failed: " + r.error; loadChecks(true); continueAfterLogin(t); }
+          try { const r = await api(`/api/targets/${t}/cloudflare-api-token`, {method: "POST", body: JSON.stringify({token: v})}); $("log").textContent = r.ok ? (r.summary || "Tunnel ready.") : "Failed: " + r.error; loadChecks(true); if (r.ok) continueAfterLogin(t); }
           catch (er) { $("log").textContent = "Refused: " + er.message; } }));
       } else if (c.id.endsWith(".auth") || c.id.endsWith(".login")) {
         if (canLogin) {
@@ -81,7 +83,7 @@ async function loadChecks(force) {
 function continueAfterLogin(t) { if (pending && pending.t === t && !activeJob) { const p = pending; pending = null; $("log").textContent += "\nContinuing: " + p.act + "\n"; run(p.t, p.act, true); } }
 async function run(t, act, auto) {
   let body = {};
-  if (act === "stop" && !auto) { if (!confirm("Stop " + t + "? The backend goes offline" + (t === "colab" ? " and a new T4 may be hard to get." : "."))) return; body = {confirm: true}; }
+  if (act === "stop" && !auto) { if (!confirm("Stop " + t + "? The backend goes offline" + (t === "colab" ? " and a new GPU session may be hard to get (and costs compute units)." : "."))) return; body = {confirm: true}; }
   try { const r = await api(`/api/targets/${t}/${act}`, {method: "POST", body: JSON.stringify(body)}); follow(r.job, t + " " + act, t, act); }
   catch (e) { $("log").textContent = "Refused: " + e.message; }
 }

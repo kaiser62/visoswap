@@ -669,6 +669,7 @@ GOODTOK = "GOODTOKEN-abcdef0123456789"
 
 
 def test_kaggle_token_install_validates_in_isolation_and_stores_600(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_DIR", str(tmp_path))
     monkeypatch.setenv("FAKE_KAUTH", "expired")
     (tmp_path / "kaggle_ok").write_text("1")                       # an OAuth login exists and would mask a bad token
     kdir = Path(os.environ["KAGGLE_CONFIG_DIR"]); kdir.mkdir(parents=True)
@@ -686,10 +687,16 @@ def test_kaggle_token_install_validates_in_isolation_and_stores_600(tmp_path, mo
     assert GOODTOK not in buf.getvalue() and "BADTOKEN-abcdef0123456789" not in buf.getvalue()
     cs = P.kaggle_checks({"KAGGLE_BIN": str(FAKES / "fake_kaggle.py")}, C.Runner(C.Reporter()))
     assert next(c for c in cs if c.id == "kaggle.auth").state == "ok"
-    assert not any("BADTOKEN" in c or GOODTOK in c for c in calls(tmp_path))     # token travels by env, never argv
+    assert calls(tmp_path) and not any("BADTOKEN" in c or GOODTOK in c for c in calls(tmp_path))     # token travels by env, never argv
+    probes = (tmp_path / "env.log").read_text().splitlines()[:2]                    # the two validation probes ran in a throwaway HOME
+    for ln in probes:
+        home, cfgdir, tok = ln.split("|")
+        assert home != os.environ["HOME"] and cfgdir != os.environ["KAGGLE_CONFIG_DIR"] and tok == "token" and "visoswap-kcheck-" in home
+    assert not Path(probes[0].split("|")[0]).exists()                               # and it was removed
 
 
-def test_kaggle_token_rejects_garbage_without_calling_cli(tmp_path):
+def test_kaggle_token_rejects_garbage_without_calling_cli(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_DIR", str(tmp_path))
     rep = C.Reporter(); run = C.Runner(rep)
     kg = K.Kaggle({"KAGGLE_BIN": str(FAKES / "fake_kaggle.py")}, rep, run)
     for bad in ("", "short", "has space inside the token value"):
@@ -803,6 +810,31 @@ def test_valid_logins_launch_asks_nothing_even_on_a_tty(tmp_path, monkeypatch):
     assert not any(c.startswith("auth login") for c in calls(tmp_path))
 
 
+def _booby_trap(monkeypatch, mod):
+    boom = lambda *a, **k: (_ for _ in ()).throw(AssertionError("prompted / ran a login although every login is valid"))
+    monkeypatch.setattr(mod, "can_prompt", lambda a: True)
+    monkeypatch.setattr(vs_cf, "prompt_secret", boom)
+    monkeypatch.setattr(C.Runner, "interactive", boom)
+
+
+def test_plain_kaggle_launch_with_valid_login_asks_nothing(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_DIR", str(tmp_path)); monkeypatch.setenv("FAKE_KSTATE", "RUNNING")
+    _booby_trap(monkeypatch, K)
+    cfg = {"KAGGLE_BIN": str(FAKES / "fake_kaggle.py"), "KAGGLE_KERNEL": "faker/visoswap-studio", "CF_TUNNEL_TOKEN": TOKEN, "VISOSWAP_HOSTNAME": "h.example.org"}
+    rep = C.Reporter(); run = C.Runner(rep)
+    kg = K.Kaggle(cfg, rep, run, health=lambda u: True)
+    res = K.launch(K.build_parser().parse_args(["--yes", "--no-clipboard"]), cfg, rep, run, kg, home=tmp_path / "home")
+    assert res["ok"] and res["state"] == "RUNNING"
+
+
+def test_plain_colab_launch_with_valid_login_asks_nothing(tmp_path, monkeypatch):
+    co, clk, d = _colab(tmp_path, monkeypatch, sessions=SESS)
+    monkeypatch.setenv("VISOSWAP_HOME", str(tmp_path / "home"))
+    _booby_trap(monkeypatch, CL)
+    CL.launch(CL.build_parser().parse_args(["--yes", "--no-clipboard"]), {"VISOSWAP_HOSTNAME": "h.example.org", "CF_TUNNEL_TOKEN": TOKEN},
+              co.rep, co.run, co, home=tmp_path / "home")
+
+
 # ---------- Colab: L4 default, burn/units, real rejection strings
 def test_colab_default_is_l4_session_named_after_gpu(tmp_path, monkeypatch):
     co, clk, d = _colab(tmp_path, monkeypatch)
@@ -849,6 +881,16 @@ def test_remote_scripts_match_what_worked_on_l4():
     for src in (d, st, m):
         compile(vs_remote.render(src, repo_dir="/r", token_file="/t", ref="m", repo_url="u", subset="default", restart=False,
                                  profile=None, concurrency=None, wait=1, which=[], lines=1, poll=1), "x", "exec")
+
+
+def test_models_inner_job_code_compiles():
+    src = vs_remote.render(vs_remote.MODELS, repo_dir="/r", token_file="/t", ref="m", repo_url="u", subset="default", restart=False,
+                           profile=None, concurrency=None, wait=1, which=[], lines=1, poll=1)
+    head = src[:src.index("os.makedirs(MODELS")]
+    ns = {}
+    exec(head, ns)                                               # builds the inner job source; no side effects before makedirs
+    compile(ns["code"], "models_job", "exec")
+    assert "repair(models_dir=Path('/r/model_assets_owned')" in ns["code"]
 
 
 def test_models_step_polls_until_done(tmp_path, monkeypatch):

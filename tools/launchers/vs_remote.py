@@ -55,11 +55,13 @@ if need:
 if not shutil.which("ffmpeg"):
     sh("apt-get update -qq && apt-get install -y -qq ffmpeg >/dev/null 2>&1", timeout=600)
 # onnxruntime-gpu must match torch's CUDA major (same rule as visoswap_kaggle.ipynb cell 4); torch is never touched
-rc, prov = sh([sys.executable, "-c", "import onnxruntime as o;print('CUDAExecutionProvider' in o.get_available_providers())"])
-if "True" not in prov:
-    rc, cu = sh([sys.executable, "-c", "import torch;print((torch.version.cuda or '0').split('.')[0])"])
-    cu = cu.strip().splitlines()[-1] if cu.strip() else "0"
-    print("CUDA major from torch:", cu)
+rc, cu = sh([sys.executable, "-c", "import torch;print((torch.version.cuda or '0').split('.')[0])"])
+cu = cu.strip().splitlines()[-1] if cu.strip() else "0"
+rc, prov = sh([sys.executable, "-c", "import onnxruntime as o;v=tuple(int(x) for x in o.__version__.split('.')[:2]);print('CUDAExecutionProvider' in o.get_available_providers(), v>=(1,27))"])
+# the provider list only says the wheel was BUILT with CUDA: also require the wheel generation to match torch's CUDA major
+# (onnxruntime-gpu >=1.27 is CUDA 13, older is CUDA 12), otherwise the libraries will not load at session creation
+if not prov.strip().startswith("True") or prov.strip().endswith("True") != (cu != "12"):
+    print("CUDA major from torch:", cu, "| installed onnxruntime:", prov.strip())
     sh([sys.executable, "-m", "pip", "uninstall", "-y", "onnxruntime", "onnxruntime-gpu"])
     if cu == "12":
         pip("onnxruntime-gpu>=1.20,<1.27", "nvidia-cudnn-cu12", "nvidia-cuda-runtime-cu12", "nvidia-cublas-cu12", "nvidia-cufft-cu12", "nvidia-curand-cu12", "nvidia-cusolver-cu12", "nvidia-cusparse-cu12", "nvidia-nvjitlink-cu12")
