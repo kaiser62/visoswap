@@ -626,6 +626,17 @@ def test_cert_path_reads_stdout_only_despite_stderr_warnings(tmp_path, monkeypat
     assert not any("--overwrite-dns" in c or " delete" in c for c in calls(tmp_path))
 
 
+def test_cert_path_zero_time_deleted_at_means_live(tmp_path, monkeypatch):
+    """Live run: cloudflared reports deleted_at "0001-01-01T00:00:00Z" for live tunnels; that must not trigger a create."""
+    assert not vs_cf.is_deleted({"deleted_at": "0001-01-01T00:00:00Z"})
+    assert not vs_cf.is_deleted({}) and vs_cf.is_deleted({"deleted_at": "2026-01-01T00:00:00Z"})
+    monkeypatch.setenv("FAKE_DIR", str(tmp_path)); monkeypatch.setenv("FAKE_CF_DELETED", "1")
+    (tmp_path / "home" / ".cloudflared").mkdir(parents=True); (tmp_path / "home" / ".cloudflared" / "cert.pem").write_text("x")
+    rep = C.Reporter()
+    vs_cf.ensure_tunnel("kaggle", {"CLOUDFLARED_BIN": str(FAKE_CF), "VISOSWAP_HOSTNAME": "s.example.org"}, rep, C.Runner(rep), home=tmp_path / "home")
+    assert any(c.startswith("tunnel create") for c in calls(tmp_path))     # only a really deleted one is recreated
+
+
 def test_cert_path_rejects_garbage_token_and_unparsable_list(tmp_path, monkeypatch):
     monkeypatch.setenv("FAKE_DIR", str(tmp_path)); monkeypatch.setenv("FAKE_CF_BAD_TOKEN", "1")
     (tmp_path / "home" / ".cloudflared").mkdir(parents=True); (tmp_path / "home" / ".cloudflared" / "cert.pem").write_text("x")

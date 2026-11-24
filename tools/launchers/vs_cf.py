@@ -109,13 +109,20 @@ def provision_api(cfg: Dict[str, str], target: str, name: str, hostname: str, re
     return tok if isinstance(tok, str) else ""
 
 
+def is_deleted(t: dict) -> bool:
+    """`cloudflared tunnel list --output json` sets deleted_at to Go's zero time ("0001-01-01T00:00:00Z")
+    for live tunnels, so a non-empty value alone does not mean deleted."""
+    v = t.get("deleted_at")
+    return bool(v) and not str(v).startswith("0001-01-01")
+
+
 def provision_cert(cfg: Dict[str, str], name: str, hostname: str, rep: Reporter, run: Runner) -> str:
     exe = cloudflared_bin(cfg)
     r = run.run([exe, "tunnel", "list", "--output", "json", "--name", name])
     if r.rc != 0:
         raise LaunchError("cloudflared could not list tunnels: " + r.out[:200], "run `cloudflared tunnel login` and retry")
     try:
-        existing = [t for t in json.loads(r.stdout or "[]") if t.get("name") == name and not t.get("deleted_at")]
+        existing = [t for t in json.loads(r.stdout or "[]") if t.get("name") == name and not is_deleted(t)]
     except (ValueError, AttributeError):
         # never assume "no such tunnel" from output we could not parse
         raise LaunchError("could not parse `cloudflared tunnel list` output", "run `cloudflared tunnel list` yourself; store the token via --setup")
