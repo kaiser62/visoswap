@@ -14,11 +14,12 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from backend.api.deps import get_db, get_project
+from backend.api.schemas import FramePackRequest
 from backend.models.database import STATUS_COMPLETED, Database
-from backend.services import cache, frame_variants, recorder
+from backend.services import cache, frame_variants, framepack, recorder
 from backend.services.scheduler import (
     effective_interval,
     grid_rate,
@@ -249,6 +250,98 @@ async def get_frame(
             headers=immutable,
         )
     return FileResponse(variant, media_type="image/jpeg", headers=immutable)
+
+
+@router.post("/{project_id}/frames/pack")
+async def pack_frames(
+    payload: FramePackRequest,
+    project: dict[str, Any] = Depends(get_project),
+    db: Database = Depends(get_db),
+):
+    """Many frames in one response: one round trip instead of one per frame.
+
+    A key that is missing or not generated yet is reported in the header with
+    `status: 404` and zero length rather than failing the batch -- during
+    playback the next frames are usually still being written, and a client that
+    lost the whole pack would stall the video.
+    """
+    try:
+        framepack.check_request(payload.keys)
+    except framepack.PackError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    frames: list[framepack.PackedFrame] = []
+    for key in payload.keys:
+        frames.append(await _pack_one(project["id"], key, db, payload.w, payload.q))
+
+    if framepack.total_bytes(frames) > framepack.MAX_BYTES:
+        # Drop from the tail rather than refusing: the client asked for a batch
+        # and can use what fit, and a 413 would cost it a second round trip.
+        kept: list[framepack.PackedFrame] = []
+        running = 0
+        for frame in frames:
+            size = len(frame.data) if frame.data else 0
+            if running + size > framepack.MAX_BYTES:
+                kept.append(
+                    framepack.PackedFrame(frame.key, 0, 0, 413)
+                )
+                continue
+            running += size
+            kept.append(frame)
+        frames = kept
+
+    body = framepack.build(frames)
+    return Response(
+        content=body,
+        media_type=framepack.MAGIC_CONTENT_TYPE,
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Frame-Count": str(len([f for f in frames if f.data])),
+        },
+    )
+
+
+async def _pack_one(
+    project_id: str, key: str, db: Database, w: int | None, q: int | None
+) -> framepack.PackedFrame:
+    """One frame's bytes for the pack, or a 404/400 entry explaining why not."""
+    try:
+        ts = cache.key_to_timestamp(key)
+    except ValueError:
+        return framepack.PackedFrame(key, 0, 0, 400)
+
+    row = await db.get_frame(project_id, ts)
+    if row is None or row["status"] != STATUS_COMPLETED or not row["generated_frame_path"]:
+        return framepack.PackedFrame(key, 0, 0, 404)
+
+    path = cache.to_absolute(row["generated_frame_path"])
+    try:
+        path = cache.assert_within_project(path, project_id)
+    except cache.UnsafePathError:
+        return framepack.PackedFrame(key, 0, 0, 403)
+    if not path.is_file():
+        return framepack.PackedFrame(key, 0, 0, 404)
+
+    if w is None and q is None:
+        try:
+            return framepack.PackedFrame(key, 0, 0, 200, path.read_bytes())
+        except OSError:
+            return framepack.PackedFrame(key, 0, 0, 404)
+
+    width, quality = frame_variants.clamp(
+        w if w is not None else frame_variants.MAX_WIDTH,
+        q if q is not None else frame_variants.DEFAULT_QUALITY,
+    )
+    variant = frame_variants.get_or_create(project_id, key, path, width, quality)
+    if variant is None:
+        try:
+            return framepack.PackedFrame(key, 0, 0, 200, path.read_bytes())
+        except OSError:
+            return framepack.PackedFrame(key, 0, 0, 404)
+    try:
+        return framepack.PackedFrame(key, 0, 0, 200, variant.read_bytes())
+    except OSError:
+        return framepack.PackedFrame(key, 0, 0, 404)
 
 
 @router.get("/{project_id}/frame-at")

@@ -21,7 +21,7 @@ from PIL import Image
 from backend.config import get_settings
 from backend.main import create_app
 from backend.models.database import STATUS_COMPLETED, db
-from backend.services import cache, frame_variants
+from backend.services import cache, frame_variants, framepack
 
 
 # --------------------------------------------------------------------------- fixtures
@@ -213,3 +213,158 @@ def test_an_unknown_frame_key_is_still_a_404(client):
 def test_a_malformed_key_is_still_a_400(client):
     pid = _pid(client)
     assert client.get(f"/api/projects/{pid}/frame/not-a-key?w=720&q=70").status_code == 400
+
+
+# --------------------------------------------------------------------------- task 2: pack
+def test_a_pack_round_trips_and_offsets_are_absolute_within_the_payload(client):
+    pid = _pid(client)
+    keys = _seed(pid, [0.0, 1.0, 2.0])
+    originals = {k: (cache.generated_dir(pid) / f"{k}.jpg").read_bytes() for k in keys}
+    r = client.post(f"/api/projects/{pid}/frames/pack", json={"keys": keys})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/x-visoswap-pack"
+    header, frames = framepack.parse(r.content)
+    assert [e["key"] for e in header["frames"]] == keys
+    assert frames == originals
+    # offsets are contiguous from zero, in request order
+    offset = 0
+    for entry in header["frames"]:
+        assert entry["offset"] == offset
+        offset += entry["length"]
+
+
+def test_a_pack_can_carry_downscaled_variants_for_every_frame(client):
+    pid = _pid(client)
+    keys = _seed(pid, [0.0, 1.0], width=1280)
+    r = client.post(f"/api/projects/{pid}/frames/pack", json={"keys": keys, "w": 720, "q": 70})
+    assert r.status_code == 200
+    _, frames = framepack.parse(r.content)
+    assert set(frames) == set(keys)
+    for data in frames.values():
+        assert _size(data)[0] == 720
+        assert data[:2] == b"\xff\xd8"          # JPEG SOI
+
+
+def test_a_pack_is_smaller_than_the_originals(client):
+    pid = _pid(client)
+    keys = _seed(pid, [0.0, 1.0, 2.0], width=1280)
+    big = client.post(f"/api/projects/{pid}/frames/pack", json={"keys": keys}).content
+    small = client.post(f"/api/projects/{pid}/frames/pack", json={"keys": keys, "w": 720, "q": 70}).content
+    assert len(small) < len(big) / 2
+
+
+def test_a_missing_key_is_reported_without_failing_the_pack(client):
+    pid = _pid(client)
+    keys = _seed(pid, [0.0])
+    requested = [keys[0], "000999.000"]
+    r = client.post(f"/api/projects/{pid}/frames/pack", json={"keys": requested})
+    assert r.status_code == 200
+    header, frames = framepack.parse(r.content)
+    by_key = {e["key"]: e for e in header["frames"]}
+    assert by_key[keys[0]]["status"] == 200
+    assert by_key["000999.000"]["status"] == 404
+    assert by_key["000999.000"]["length"] == 0
+    assert set(frames) == {keys[0]}
+
+
+def test_a_pending_frame_is_reported_as_404_not_served(client):
+    pid = _pid(client)
+    keys = _seed(pid, [0.0])
+
+    async def pend():
+        await db.enqueue_frames(pid, [5.0], priority=1)
+
+    asyncio.run(pend())
+    pending_key = cache.timestamp_key(5.0)
+    r = client.post(f"/api/projects/{pid}/frames/pack", json={"keys": [keys[0], pending_key]})
+    header, _ = framepack.parse(r.content)
+    by_key = {e["key"]: e for e in header["frames"]}
+    assert by_key[pending_key]["status"] == 404
+
+
+def test_a_malformed_key_is_reported_as_400_per_frame(client):
+    pid = _pid(client)
+    keys = _seed(pid, [0.0])
+    r = client.post(f"/api/projects/{pid}/frames/pack", json={"keys": [keys[0], "junk"]})
+    assert r.status_code == 200
+    header, frames = framepack.parse(r.content)
+    by_key = {e["key"]: e for e in header["frames"]}
+    assert by_key["junk"]["status"] == 400
+    assert set(frames) == {keys[0]}
+
+
+def test_an_empty_key_list_is_422_from_validation(client):
+    pid = _pid(client)
+    assert client.post(f"/api/projects/{pid}/frames/pack", json={"keys": []}).status_code == 422
+
+
+def test_too_many_keys_is_refused(client):
+    pid = _pid(client)
+    keys = [cache.timestamp_key(float(i)) for i in range(framepack.MAX_KEYS + 1)]
+    r = client.post(f"/api/projects/{pid}/frames/pack", json={"keys": keys})
+    assert r.status_code == 422, "schema max_length rejects it before the handler"
+
+
+def test_duplicate_keys_are_refused(client):
+    pid = _pid(client)
+    keys = _seed(pid, [0.0])
+    r = client.post(f"/api/projects/{pid}/frames/pack", json={"keys": keys * 2})
+    assert r.status_code == 400
+    assert "unique" in r.json()["detail"]
+
+
+def test_the_size_cap_drops_the_tail_instead_of_failing(client, monkeypatch):
+    pid = _pid(client)
+    keys = _seed(pid, [0.0, 1.0, 2.0], width=1280)
+    monkeypatch.setattr(framepack, "MAX_BYTES", 1)
+    r = client.post(f"/api/projects/{pid}/frames/pack", json={"keys": keys})
+    assert r.status_code == 200, "a size cap must not cost the client a round trip"
+    header, frames = framepack.parse(r.content)
+    assert frames == {}
+    assert [e["status"] for e in header["frames"]] == [413, 413, 413]
+
+
+def test_the_pack_rejects_an_unknown_project(client):
+    r = client.post("/api/projects/00000000000000000000000000000000/frames/pack",
+                    json={"keys": ["000000.000"]})
+    assert r.status_code == 404
+
+
+def test_pack_w_and_q_are_validated(client):
+    pid = _pid(client)
+    keys = _seed(pid, [0.0])
+    assert client.post(f"/api/projects/{pid}/frames/pack", json={"keys": keys, "w": 10}).status_code == 422
+    assert client.post(f"/api/projects/{pid}/frames/pack", json={"keys": keys, "q": 5}).status_code == 422
+
+
+def test_the_header_length_prefix_matches_the_header(client):
+    pid = _pid(client)
+    keys = _seed(pid, [0.0])
+    body = client.post(f"/api/projects/{pid}/frames/pack", json={"keys": keys}).content
+    (declared,) = struct.unpack(">I", body[:4])
+    parsed = json.loads(body[4 : 4 + declared])
+    assert "frames" in parsed
+    assert len(body) - 4 - declared == sum(e["length"] for e in parsed["frames"])
+
+
+def test_a_truncated_pack_is_rejected_by_the_parser():
+    good = framepack.build([framepack.PackedFrame("000000.000", 0, 0, 200, b"abc")])
+    for bad in (b"", b"\x00", good[:6], good[:-1]):
+        with pytest.raises(framepack.PackError):
+            framepack.parse(bad)
+
+
+def test_a_header_claiming_too_much_is_rejected():
+    import struct as st
+
+    blob = st.pack(">I", 10**6) + b"{}"
+    with pytest.raises(framepack.PackError):
+        framepack.parse(blob)
+
+
+def test_a_pack_of_nothing_but_404s_is_still_a_valid_response(client):
+    pid = _pid(client)
+    r = client.post(f"/api/projects/{pid}/frames/pack", json={"keys": ["000999.000"]})
+    assert r.status_code == 200
+    header, frames = framepack.parse(r.content)
+    assert frames == {} and header["frames"][0]["status"] == 404

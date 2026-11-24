@@ -225,3 +225,12 @@ class FaceGroupsApply(BaseModel):
 
     assignments: list[FaceGroupAssignment] = Field(..., min_length=1)
     overwrite: bool = False
+
+
+# --- batched frame delivery --------------------------------------------------
+class FramePackRequest(BaseModel):
+    """Keys are canonical `000123.450` forms; `w`/`q` apply to every frame."""
+
+    keys: list[str] = Field(..., min_length=1, max_length=64)
+    w: int | None = Field(default=None, ge=160, le=1920)
+    q: int | None = Field(default=None, ge=30, le=95)
