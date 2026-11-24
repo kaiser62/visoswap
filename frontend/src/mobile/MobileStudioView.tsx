@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { reportPlayback, setSourceUrl, uploadSource, MAX_UPLOAD_BYTES } from '../lib/api'
-import { entriesAfter, frameAtOrBefore } from '../lib/frameindex'
+import { frameAtOrBefore } from '../lib/frameindex'
+import { createPrefetcher } from '../lib/prefetch'
 import { useMedia, type MediaMode } from '../state/MediaContext'
 
 const PLAYBACK_THROTTLE_MS = 500
-const PREFETCH_FRAMES = 3
 
 const MODES: { id: MediaMode; label: string }[] = [
   { id: 'live', label: 'Stream-Live' },
@@ -89,15 +89,9 @@ export function MobileStudioView({ onGoToFaces, onOpenProjects }: MobileStudioVi
     indexRef.current = index
   }, [index])
 
-  const prefetchedRef = useRef(new Set<string>())
+  const prefetcherRef = useRef(createPrefetcher())
   const prefetchAhead = useCallback((t: number) => {
-    for (const entry of entriesAfter(indexRef.current, t, PREFETCH_FRAMES)) {
-      if (prefetchedRef.current.has(entry.url)) continue
-      prefetchedRef.current.add(entry.url)
-      const img = new Image()
-      img.src = entry.url
-      void img.decode?.().catch(() => {})
-    }
+    prefetcherRef.current.warm(indexRef.current, t, 24)
   }, [])
 
   const report = useCallback(
