@@ -95,7 +95,7 @@ def status(cfg: dict[str, str], slug: str) -> str:
     return "UNKNOWN" if "not found" not in out.lower() and "404" not in out else "MISSING"
 
 
-def build_bundle(cfg: dict[str, str], slug: str, concurrency: int | None = None, profile: bool = False) -> Path:
+def build_bundle(cfg: dict[str, str], slug: str, concurrency: int | None = None, profile: bool = False, max_minutes: int | None = None) -> Path:
     """Private temp copy of the notebook with the tunnel token filled in."""
     nb = json.loads(NOTEBOOK.read_text())
     token, host = cfg.get("CF_TUNNEL_TOKEN", ""), cfg.get("VISOSWAP_HOSTNAME", "")
@@ -106,6 +106,10 @@ def build_bundle(cfg: dict[str, str], slug: str, concurrency: int | None = None,
         if "CF_TUNNEL_TOKEN = ''" in src:
             src = src.replace("CF_TUNNEL_TOKEN = ''", f"CF_TUNNEL_TOKEN = {token!r}")
             src = src.replace("CF_HOSTNAME = ''", f"CF_HOSTNAME = {host!r}")
+            lines = src.split("\n")
+            cell["source"] = [l + "\n" for l in lines[:-1]] + [lines[-1]]
+        if max_minutes is not None and "MAX_RUNTIME_MIN = 90" in src:
+            src = src.replace("MAX_RUNTIME_MIN = 90", f"MAX_RUNTIME_MIN = {int(max_minutes)}")
             lines = src.split("\n")
             cell["source"] = [l + "\n" for l in lines[:-1]] + [lines[-1]]
         if "GENERATION_CONCURRENCY = '2'" in src:
@@ -148,6 +152,7 @@ def main() -> None:
     ap.add_argument("--restart", action="store_true", help="delete and relaunch even if running")
     ap.add_argument("--concurrency", type=int, help="generation workers on the GPU (default 2)")
     ap.add_argument("--profile", action="store_true", help="log per-stage ms every 50 frames (VISOSWAP_PROFILE=1)")
+    ap.add_argument("--max-minutes", type=int, help="kernel self-terminates after N minutes (default 90, 0 = never)")
     ap.add_argument("--down", action="store_true", help="delete the kernel and exit")
     args = ap.parse_args()
 
@@ -173,7 +178,7 @@ def main() -> None:
             print("  deleting old kernel (frees the 2-session GPU limit)")
             kaggle(cfg, "kernels", "delete", slug, "-y")
             time.sleep(3)
-        bundle = build_bundle(cfg, slug, args.concurrency, args.profile)
+        bundle = build_bundle(cfg, slug, args.concurrency, args.profile, args.max_minutes)
         try:
             push(cfg, bundle)
             pushed_at = time.time()
