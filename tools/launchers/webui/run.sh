@@ -35,9 +35,9 @@ case "${1:-}" in
   start)  ensure_token; export HOST_UID="$(id -u)" HOST_GID="$(id -g)" VISOSWAP_HOME="$home"
           mkdir -p "$home/kaggle" "$home/home"
           if [ "$(uname)" = Darwin ] && [ "${WEBUI_BRIDGE:-1}" != 0 ]; then bridge start; export LAUNCHER_BRIDGE_URL="http://host.docker.internal:${BRIDGE_PORT:-8766}"; fi
-          docker compose -f "$here/docker-compose.yml" up -d --build
+          docker compose -f "$here/docker-compose.yml" -f "$here/docker-compose.hostdir.yml" up -d --build
           echo "UI: http://${WEBUI_BIND:-127.0.0.1}:${WEBUI_PORT:-8765}/" ;;
-  stop)   docker compose -f "$here/docker-compose.yml" down; bridge stop ;;
+  stop)   docker compose -f "$here/docker-compose.yml" -f "$here/docker-compose.hostdir.yml" down; bridge stop ;;
   bridge) bridge "${2:-status}" ;;
   native) ensure_token; exec "$py" "$here/app.py" ;;
   fake)   home="${VISOSWAP_HOME:-$(mktemp -d)/vshome}"; export VISOSWAP_HOME="$home" KAGGLE_CONFIG_DIR="${KAGGLE_CONFIG_DIR:-$home/kaggle}"

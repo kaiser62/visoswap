@@ -1,3 +1,4 @@
+# Linux server: docker compose -p visoswap-dashboard up -d --build   (env: WEBUI_BIND=<lan ip>, WEBUI_PORT=8765)
 # Start with: ./run.sh start   (creates the access token first and shows it once)
 # The container listens on 0.0.0.0; WHO can reach it is decided by the published address below.
 # Default 127.0.0.1 (this machine only). For your LAN set WEBUI_BIND=0.0.0.0 -- see docs/launchers.md.
@@ -14,14 +15,19 @@ services:
       # Host bridge (macOS Keychain-backed Colab login). Empty = off. run.sh start sets it when the bridge runs.
       LAUNCHER_BRIDGE_URL: "${LAUNCHER_BRIDGE_URL:-}"
       LAUNCHER_FAKE: "${LAUNCHER_FAKE:-}"
+      FAKE_NEEDS_LOGIN: "${FAKE_NEEDS_LOGIN:-}"
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Linux; Docker Desktop provides it already
     volumes:
-      # Persistent state: env files, *_url, webui_token, api_key, kaggle/ config, home/ (Colab token.json), job logs.
-      - ${VISOSWAP_HOME:-${HOME}/.visoswap}:/data/visoswap
+      # Persistent state in a NAMED volume (survives rebuilds): env files, *_url, webui_token, api_key, kaggle/ config,
+      # home/ (colab session list), xdg/ (Colab Google login, file keyring), job logs. Mac: add -f docker-compose.hostdir.yml
+      # (run.sh start does) to use ~/.visoswap instead so the native launchers and the container share state.
+      - state:/data/visoswap
       - ../../..:/repo:ro                      # launchers + visoswap_kaggle.ipynb, read-only
     read_only: true
     tmpfs:
       - /tmp
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+volumes:
+  state:

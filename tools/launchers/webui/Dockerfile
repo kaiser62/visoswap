@@ -1,11 +1,11 @@
-FROM python:3.11-slim
+FROM python:3.13-slim
 # Self-contained for a plain Linux Docker host: kaggle CLI, colab CLI, cloudflared (tunnel create via the launcher), and
 # keyrings.alt so the colab CLI can keep its Google login in a FILE (no macOS Keychain / Secret Service in a container).
 ARG TARGETARCH=amd64
 RUN pip install --no-cache-dir fastapi==0.115.6 uvicorn==0.34.0 kaggle google-colab-cli keyrings.alt \
  && python -c "import urllib.request as u;u.urlretrieve('https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${TARGETARCH}','/usr/local/bin/cloudflared')" \
  && chmod 755 /usr/local/bin/cloudflared && /usr/local/bin/cloudflared --version \
- && useradd -m -u 1000 app
+ && useradd -m -u 1000 app && install -d -o 1000 -g 1000 -m 700 /data/visoswap /data/visoswap/home /data/visoswap/xdg /data/visoswap/kaggle
 # Everything mutable lives under /data/visoswap (the persisted volume): env files, webui_token, Kaggle config, a writable HOME
 # for the Colab token.json import. The image root stays read-only.
 ENV PYTHONUNBUFFERED=1 WEBUI_IN_DOCKER=1 \

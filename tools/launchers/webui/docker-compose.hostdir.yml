@@ -1,0 +1,7 @@
+# Overlay for macOS: share ~/.visoswap with the native launchers instead of the named volume.
+services:
+  launcher-ui:
+    volumes:
+      - !override
+        - ${VISOSWAP_HOME:-${HOME}/.visoswap}:/data/visoswap
+        - ../../..:/repo:ro
