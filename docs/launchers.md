@@ -158,9 +158,17 @@ Phone access:
 
 ## Dashboard
 
-The page is a dashboard for both backends. Cards show state (down, starting, queued, running, healthy, error; always with a
-text label), URL, health detail (concurrency, process mode, access key on/off), GPU, uptime, and for Kaggle time left of
-`--max-minutes`. Uptime and time left are estimates: Kaggle uses `lastRunTime` from `kernels list` (fallback: the time
+The page is a dashboard for both backends. Cards show state (down, starting, queued, running, unreachable, healthy, error;
+always with a text label), URL, health detail (concurrency, process mode, access key on/off), GPU, uptime, and for Kaggle
+time left of `--max-minutes`.
+
+A card never says "running" unless the backend itself answered `/api/health`. The platform's own view is necessary but not
+sufficient: `kaggle kernels status` reports what Kaggle last recorded, so a deleted kernel kept showing a green running
+card with a URL while the public host answered 530, and a Colab session whose runtime had stopped failed the probe and
+turned the whole card red as "error". Those are now `unreachable` (platform says running, nothing answers) and `down` (no
+session, or a probe that could not reach it), respectively. `unreachable` still holds a GPU and still bills, so it warns
+and offers Stop rather than Start; it is only excluded from being called healthy. A stopped Colab runtime reports
+`SESSION_ONLY` with a compute-units warning instead of an error. Uptime and time left are estimates: Kaggle uses `lastRunTime` from `kernels list` (fallback: the time
 the launcher recorded), Colab uses the uvicorn process age; unknown values read "unknown", never a guess. Data is cached
 (stale-while-revalidate, single-flight) so polling never hammers the CLIs; the page refreshes every 15 s, every 2.5 s
 while an action runs.
@@ -171,7 +179,11 @@ while an action runs.
 - **Quotas**: Kaggle GPU hours with reset date, Colab compute units with burn rate and hours left. Cached 10 min,
   refresh button, warning when low (`QUOTA_LOW_HOURS`, `QUOTA_LOW_UNITS`).
 - **Logs**: launcher job log (kept across restarts), Kaggle kernel log, Colab uvicorn and tunnel logs; tail 10-1000 lines;
-  everything redacted.
+  everything redacted. The Kaggle pane also links to the kernel page (`https://www.kaggle.com/code/<owner>/<slug>`) above
+  the log, because `kaggle kernels logs` prints nothing without `-f` while a kernel is still starting: the pane can be
+  legitimately empty and the live log is only on that page. `/api/logs/...` returns `log_url` (always present, empty when
+  there is no page, e.g. the job log) and the shells render it with `textContent`/`h()`, never `innerHTML`. Only an
+  `https` URL on a known console host is passed through.
 - Endpoints (all bearer-authed except `/healthz`): `GET /api/dashboard`, `/api/quotas`, `/api/checks`,
   `/api/logs/{target}/{source}`, `POST /api/targets/{t}/{start|launch|restart|stop|provision|login}`, secret forms
   `cloudflare-token`, `cloudflare-api-token`, `kaggle-json`, `colab-token`; jobs under `/api/jobs/{id}`.
