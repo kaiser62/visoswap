@@ -186,9 +186,16 @@ async def retry_failed(
 async def _status(project_id: str, db: Database) -> dict[str, Any]:
     scheduler = registry.peek(project_id)
     counts = await db.counts(project_id)
+    # `status`/`error` are repeated here because a run can fail between two
+    # project polls (the engine could not bind at all). A client that only polls
+    # this endpoint would otherwise see `running: false` with every frame still
+    # pending and no reason for it.
+    project = await db.get_project(project_id)
     return {
         "project_id": project_id,
         "running": bool(scheduler and scheduler.running),
+        "status": (project or {}).get("status"),
+        "error": (project or {}).get("error"),
         "full_video_mode": bool(scheduler and scheduler.full_video_mode),
         "current_time": scheduler.current_time if scheduler else 0.0,
         "counts": counts,

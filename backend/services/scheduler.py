@@ -284,6 +284,14 @@ class ProjectScheduler:
         self.target_range: tuple[float, float] | None = None
         self._range_cursor: float | None = None
         self.recorder: Recorder | None = None
+        #: Consecutive `generator.bind()` failures across all workers. A bind that fails
+        #: every time means the engine cannot run on this box at all (no CUDA build, a
+        #: driver mismatch, a model that will not load), and retrying forever leaves the
+        #: queue reading "183 pending, 0 failed" while nothing happens: the UI and every
+        #: client just hang with no error to show. Past the threshold the project is
+        #: failed loudly instead.
+        self._bind_failures = 0
+        self._bind_error: str | None = None
         #: A forced stop's detached cleanup, kept so a caller that needs the
         #: encoder's file handle back can wait for it. See `wait_closed`.
         self._reaper: asyncio.Task[None] | None = None
@@ -327,9 +335,48 @@ class ProjectScheduler:
         log.info("[SCHEDULER] project=%s started full_video=%s",
                  self.project_id, self.full_video_mode)
 
+    # -- bind failure circuit breaker -----------------------------------------
+
+    async def note_bind_failure(self, exc: BaseException) -> bool:
+        """Record a `generator.bind()` failure. True when the run was just failed.
+
+        A bind failure is not a frame failure: it means the engine could not come
+        up at all. Retrying it forever is what produced "183 pending, 0 failed"
+        with a frozen UI, so after `max_bind_failures` consecutive failures across
+        every worker the project is marked `error` with the exception's first line
+        and the run is stopped. Any successful bind clears the count, so a
+        transient cold-GPU failure still self-heals.
+        """
+        self._bind_failures += 1
+        first_line = (str(exc).strip().splitlines() or [type(exc).__name__])[0][:300]
+        self._bind_error = first_line or type(exc).__name__
+        limit = max(1, int(getattr(self.settings, "max_bind_failures", 3)))
+        if self._bind_failures < limit or not self.running:
+            return False
+        log.error(
+            "[SCHEDULER] project=%s engine cannot start: %d consecutive bind failures, failing the run: %s",
+            self.project_id, self._bind_failures, self._bind_error,
+        )
+        message = f"I could not start the engine: {self._bind_error}"
+        self.running = False
+        await self.db.update_project(self.project_id, status="error", error=message)
+        hub.publish(
+            self.project_id,
+            {"type": "generation_failed", "timestamp": self.current_time, "error": message},
+        )
+        hub.publish(self.project_id, {"type": "scheduler_stopped", "reason": "error"})
+        return True
+
+    def note_bind_success(self) -> None:
+        """A bind worked: forget earlier failures, so only *consecutive* ones count."""
+        if self._bind_failures:
+            log.info("[SCHEDULER] project=%s engine recovered after %d bind failure(s)",
+                     self.project_id, self._bind_failures)
+        self._bind_failures = 0
+        self._bind_error = None
+
     async def _start_recorder(self, project: dict[str, Any]) -> None:
         """Bring up the mp4 recorder, or run without one.
-
         A recorder that cannot start must never take the run down with it: the
         generated frames are the product, the recording is a convenience on top.
         """

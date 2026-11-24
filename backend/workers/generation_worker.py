@@ -80,8 +80,15 @@ async def run_worker(scheduler: ProjectScheduler, index: int) -> None:
                         "[WORKER] project=%s index=%d bind failed: %s",
                         project_id, index, exc,
                     )
+                    # Every worker failing to bind is not a transient frame error: it means
+                    # the engine cannot run on this box. Let the scheduler decide whether
+                    # this is still worth retrying, and stop the run if it is not.
+                    if await scheduler.note_bind_failure(exc):
+                        return
                     await asyncio.sleep(ERROR_BACKOFF)
                     continue
+                else:
+                    scheduler.note_bind_success()
 
             await _process_frame(scheduler, project, frame, generator)
             scheduler.notify_worker_progress()
