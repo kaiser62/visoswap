@@ -233,6 +233,51 @@ def test_cache_single_flight_and_stale_while_revalidate():
     assert c.get("k", 60, slow)[0] == {"n": 2}
 
 
+def test_cache_drop_after_a_mutation_hides_the_old_value():
+    """After a start/stop the old status is wrong, not merely old: it must not be served at all."""
+    c = D.Cache()
+    c.get("status:kaggle", 60, lambda: {"state": "MISSING"}, block=True)
+    assert c.get("status:kaggle", 60, lambda: {"state": "MISSING"})[0] == {"state": "MISSING"}
+    c.drop("status:kaggle", keep_value=False)
+    v, age, pending = c.get("status:kaggle", 60, lambda: {"state": "RUNNING"})
+    assert v is None and pending is True                                      # shows "checking", never the stale value
+    time.sleep(0.3)
+    assert c.get("status:kaggle", 60, lambda: {"state": "RUNNING"})[0] == {"state": "RUNNING"}
+
+
+def test_cache_discards_a_probe_that_started_before_the_drop():
+    """The race that made the dashboard report MISSING after a successful launch: a probe already in
+    flight when drop() happened describes the pre-job world, so its result must be thrown away."""
+    c = D.Cache()
+    started, release = threading.Event(), threading.Event()
+
+    def slow_old():
+        started.set(); release.wait(2.0); return {"state": "MISSING"}
+
+    c.get("status:kaggle", 60, slow_old)          # probe in flight, describing the OLD state
+    assert started.wait(2.0)
+    c.drop("status:kaggle", keep_value=False)      # the launch job finishes here
+    release.set()
+    time.sleep(0.3)
+    v = c.get("status:kaggle", 60, lambda: {"state": "RUNNING"}, block=True)
+    # the stale probe must not have been written back
+    assert v[0] == {"state": "RUNNING"}
+
+
+def test_dashboard_discards_status_after_a_mutating_job(tmp_path, monkeypatch):
+    """Wiring check: the job finally-block must discard (not merely age) status after a mutation."""
+    A, client, H = _webui(tmp_path, monkeypatch)
+    dash(client, H)
+    assert "mutated" in (A.drop_caches.__doc__ or "")
+    assert A.READONLY_ACTIONS == frozenset({"status", "check", "quota", "logs"})
+    # a read-only action keeps stale-while-revalidate; a mutation does not
+    assert "login" not in A.READONLY_ACTIONS and "start" not in A.READONLY_ACTIONS
+    src = (L / "webui" / "app.py").read_text()
+    assert "drop_caches(target, quota=True, mutated=" in src
+    assert "drop_caches(target, mutated=True)" in src
+    A.state().cache.drop("nothing")   # unknown key must be a no-op, not an error
+
+
 # ---------- dashboard endpoint: the first real view is both backends down
 def test_dashboard_requires_auth_and_starts_down(tmp_path, monkeypatch):
     A, c, H = _webui(tmp_path, monkeypatch)

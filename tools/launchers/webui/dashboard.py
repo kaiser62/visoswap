@@ -101,7 +101,11 @@ class JobLog:
 # --------------------------------------------------------------------------- non-blocking single-flight cache
 class Cache:
     """get(key, ttl, fn): fresh -> value; stale -> value + refresh in the background (one at a time per key, however many
-    clients ask); never computed -> None + pending (or wait for it with block=True). One CLI call serves every client."""
+    clients ask); never computed -> None + pending (or wait for it with block=True). One CLI call serves every client.
+
+    drop() bumps a per-key generation. A refresh that was already running when drop() happened describes the
+    OLD state, so its result is discarded instead of being written back: without that, a probe started before
+    a start/stop job could land afterwards and show pre-job state for a full TTL."""
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -111,36 +115,43 @@ class Cache:
         e = self.d.get(key)
         return (e["v"], time.time() - e["t"]) if e and e["v"] is not None else None
 
-    def drop(self, key: str) -> None:
+    def drop(self, key: str, keep_value: bool = True) -> None:
+        """keep_value=True: stale-while-revalidate (TTL expiry). keep_value=False: the caller mutated the
+        world, so the old value must not be shown at all -- callers see pending and poll."""
         with self.lock:
             e = self.d.get(key)
-            if e:
-                e["t"] = 0.0          # stale, but the last value stays visible while it refreshes
+            if not e:
+                return
+            e["gen"] += 1          # anything in flight now belongs to the previous generation
+            e["t"] = 0.0
+            if not keep_value:
+                e["v"] = None
 
     def get(self, key: str, ttl: float, fn: Callable[[], Any], block: bool = False, timeout: float = 200.0):
         """-> (value or None, age seconds or None, pending bool)"""
         with self.lock:
-            e = self.d.setdefault(key, {"v": None, "t": 0.0, "run": None})
+            e = self.d.setdefault(key, {"v": None, "t": 0.0, "run": None, "gen": 0})
             age = time.time() - e["t"]
             if e["v"] is not None and age < ttl:
                 return e["v"], age, e["run"] is not None
             ev = e["run"]
             if ev is None:
                 ev = e["run"] = threading.Event()
-                threading.Thread(target=self._do, args=(e, fn, ev), daemon=True).start()
+                threading.Thread(target=self._do, args=(e, e["gen"], fn, ev), daemon=True).start()
         if block:
             ev.wait(timeout)
         v = e["v"]
         return v, (time.time() - e["t"]) if v is not None else None, e["run"] is not None
 
-    @staticmethod
-    def _do(e: dict, fn: Callable[[], Any], ev: threading.Event) -> None:
+    def _do(self, e: dict, gen: int, fn: Callable[[], Any], ev: threading.Event) -> None:
         try:
             v = fn()
         except Exception as exc:  # never leak internals into the cache
             v = {"ok": False, "error": f"internal error: {type(exc).__name__}"}
-        e["v"], e["t"] = v, time.time()
-        e["run"] = None
+        with self.lock:
+            if e["gen"] == gen:        # dropped while we ran: this result is about the old state, drop it
+                e["v"], e["t"] = v, time.time()
+            e["run"] = None
         ev.set()
 
 

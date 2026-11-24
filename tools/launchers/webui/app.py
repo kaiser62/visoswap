@@ -40,6 +40,8 @@ FAKE = os.environ.get("LAUNCHER_FAKE") == "1"
 TARGETS = {"kaggle": "kaggle_launch.py", "colab": "colab_launch.py"}
 ACTIONS = argspec.JOB_OPS
 RELAY_ACTIONS = argspec.RELAY_OPS      # jobs that keep stdin open and may ask the browser for a secret / code
+#: actions that never change backend state, so their caches may keep the old value visible while refreshing
+READONLY_ACTIONS = frozenset({"status", "check", "quota", "logs"})
 GOOGLE_HOSTS = ("accounts.google.com",)
 IN_DOCKER = os.environ.get("WEBUI_IN_DOCKER") == "1"
 DOCKER_COLAB_MSG = ("Colab cannot keep its Google login inside this container (no file-based keyring is configured and no host bridge). Set "
@@ -234,10 +236,12 @@ def busy_action(target: str) -> Optional[str]:
     return j["action"] if j else "config"
 
 
-def drop_caches(target: str, quota: bool = False) -> None:
+def drop_caches(target: str, quota: bool = False, mutated: bool = False) -> None:
+    """mutated=True: the world changed (start/stop/login), so the previous value must not be served at all --
+    otherwise the dashboard keeps showing pre-job state for a whole TTL after the action succeeded."""
     st = state()
     for k in (f"status:{target}", f"check:{target}") + ((f"quota:{target}",) if quota else ()):
-        st.cache.drop(k)
+        st.cache.drop(k, keep_value=not mutated)
 
 
 def start_job(target: str, action: str, options: Optional[dict] = None, confirm: bool = False) -> str:
@@ -279,7 +283,9 @@ def start_job(target: str, action: str, options: Optional[dict] = None, confirm:
         finally:
             with st.lock:
                 st.busy.pop(target, None)
-            drop_caches(target, quota=True)
+            # a read-only action (status/check/quota) never changes the world; a successful start/stop/login
+            # does, so its pre-job status is worthless and must not linger as "stale but visible"
+            drop_caches(target, quota=True, mutated=bool((job.get("result") or {}).get("ok")) and action not in READONLY_ACTIONS)
     threading.Thread(target=work, daemon=True).start()
     return jid
 
@@ -418,7 +424,7 @@ def _secret_op(target: str, op: str, stdin_text: str, timeout: float, secrets_=(
         return run_launcher(target, op, timeout=timeout, stdin_text=stdin_text, extra_secrets=secrets_)
     finally:
         st.busy.pop(target, None)
-        drop_caches(target)
+        drop_caches(target, mutated=True)
 
 
 @app.post("/api/targets/{target}/cloudflare-token", dependencies=[Depends(require_auth)])
