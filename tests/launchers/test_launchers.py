@@ -1072,3 +1072,16 @@ def test_start_script_reads_key_from_file_only():
     compile(src, "START", "exec")
     assert 'env["VISOSWAP_API_KEY"] = _key' in src and 'env.pop("VISOSWAP_API_KEY", None)' in src
     assert "print(_key" not in src and "VISOSWAP_API_KEY" not in src.split("KEYS = ")[1].split("\n")[0]
+
+
+def test_probe_retries_dropped_exec(tmp_path, monkeypatch):
+    """Live run: a 503 from the kernel proxy failed the whole --restart on the first probe."""
+    co, clk, d = _colab(tmp_path, monkeypatch, sessions=SESS)
+    outs = iter(["HTTPError: 503 Server Error: Service Unavailable"])
+    real = co.remote
+    monkeypatch.setattr(co, "remote", lambda name, *a, **k: next(outs, None) or real(name, *a, **k))
+    assert co.probe()["gpu"] == "Tesla T4" and clk.t == 10
+    outs = iter(["x"] * 5)
+    monkeypatch.setattr(co, "remote", lambda name, *a, **k: next(outs))
+    with pytest.raises(C.LaunchError, match="could not query"):
+        co.probe()

@@ -192,9 +192,15 @@ class Colab:
                 self.rep.log(line[:200])
         return r.out
 
-    def probe(self) -> dict:
-        out = self.remote("probe", vs_remote.PROBE, 120)
-        m = re.search(r"VS_PROBE (\{.*\})", out)
+    def probe(self, attempts: int = 3) -> dict:
+        # read-only, so retried: `colab exec` often drops with "Connection was lost" or a 503 from the kernel proxy
+        for i in range(attempts):
+            out = self.remote("probe", vs_remote.PROBE, 120)
+            m = re.search(r"VS_PROBE (\{.*\})", out)
+            if m or self.run.dry_run or i == attempts - 1:
+                break
+            self.rep.log(f"probe attempt {i + 1} failed ({(out.strip().splitlines() or ['no output'])[-1][:80]}); retrying")
+            self.sleep(10)
         if not m:
             raise LaunchError("could not query the Colab session: " + (out[-200:] or "no output"),
                               "the runtime may be disconnected; run `colab status -s %s` and consider --restart" % self.session)
