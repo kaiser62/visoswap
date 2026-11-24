@@ -169,3 +169,59 @@ class PresetApplyResponse(BaseModel):
 
     report: dict[str, int | list]
     values: dict[str, bool | int | float | str] = {}
+
+
+# --- similarity grouping -----------------------------------------------------
+class SimilarFace(BaseModel):
+    """One library face ranked against a target. A score, never an embedding."""
+
+    face_id: str
+    display_name: str | None = None
+    group: str | None = None
+    thumbnail_url: str | None = None
+    score: float
+
+
+class SimilarFaces(BaseModel):
+    face_id: str
+    similar: list[SimilarFace]
+
+
+class FaceClusterConflict(BaseModel):
+    """A member that already belongs to a different group.
+
+    Reported rather than applied: silently moving a face out of a group the user
+    chose is the one thing this feature must not do.
+    """
+
+    face_id: str
+    current_group: str
+
+
+class FaceClusterOut(BaseModel):
+    suggested_group: str
+    face_ids: list[str]
+    conflicts: list[FaceClusterConflict] = []
+
+
+class FaceGroupsOut(BaseModel):
+    """The read-only proposal. Nothing is written until `apply` is called."""
+
+    clusters: list[FaceClusterOut] = []
+    skipped_no_face: list[str] = []
+    computed: int = 0
+    #: Set when the work was moved to a job: the client polls
+    #: `/api/faces/group/{job_id}` for progress and the clusters arrive after.
+    job: str | None = None
+
+
+class FaceGroupAssignment(BaseModel):
+    group: str = Field(..., min_length=1, max_length=80)
+    face_ids: list[str] = Field(..., min_length=1)
+
+
+class FaceGroupsApply(BaseModel):
+    """What the user confirmed. `overwrite` moves faces out of a group they hold."""
+
+    assignments: list[FaceGroupAssignment] = Field(..., min_length=1)
+    overwrite: bool = False
