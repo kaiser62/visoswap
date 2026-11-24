@@ -10,3 +10,5 @@ button.ghost{background:transparent;color:var(--fg)}button.danger{background:var
 input{font:inherit;padding:10px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--fg);width:100%;margin-bottom:8px}
 pre{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:10px;max-height:50vh;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:.8rem}
 a{color:var(--acc);word-break:break-all}small{color:var(--mut)}
+
+.checks{border-top:1px solid var(--bd);margin-top:8px;padding-top:6px;font-size:.9rem}code{background:var(--bg);padding:2px 6px;border-radius:6px;word-break:break-all}

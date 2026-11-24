@@ -25,8 +25,9 @@ from typing import Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import vs_cf  # noqa: E402
+import vs_preflight as P  # noqa: E402
 from vs_common import (REPO_ROOT, LaunchError, Reporter, Runner, common_args, confirm, fetch_health,  # noqa: E402
-                       load_config, make_reporter, normalize_host, save_url, target_lock, visoswap_home, wait_until)
+                       can_prompt, load_config, make_reporter, normalize_host, save_url, target_lock, visoswap_home, wait_until)
 
 NOTEBOOK = REPO_ROOT / "visoswap_kaggle.ipynb"
 QUEUE_RETRY_S = 300       # a kernel queued this long has been unstuck by delete + re-push before
@@ -42,7 +43,9 @@ def classify_status(out: str) -> str:
     """Map `kaggle kernels status` output to a state. 'AUTH' = credentials problem,
     'MISSING' = kernel does not exist (Kaggle says 'was denied' for that), else 'UNKNOWN'."""
     low = out.lower()
-    if "authentication required" in low or "401" in low and "unauthorized" in low or "could not find kaggle" in low:
+    if (any(m in low for m in ("authentication required", "authentication failed", "invalid credentials", "stale or invalid",
+                               "could not find kaggle"))
+            or ("401" in low and "unauthorized" in low)):
         return "AUTH"
     for s in ("QUEUED", "RUNNING", "COMPLETE", "ERROR", "CANCEL"):
         if f"KernelWorkerStatus.{s}" in out or f"status \"{s.lower()}" in low:
@@ -223,13 +226,45 @@ def url_for(cfg) -> Optional[str]:
     return f"https://{h}" if cfg.get("CF_TUNNEL_TOKEN") and h else None
 
 
+def preflight(args, cfg, rep, run, kg: Kaggle):
+    fixers = {"kaggle.auth": lambda: run.interactive([kg.exe, "auth", "login", "--force"])}
+    return P.resolve(lambda: P.kaggle_checks(cfg, run), fixers, can_prompt(args), rep, args.dry_run)
+
+
+def check(args, cfg, rep, run, kg: Kaggle) -> dict:
+    """Read-only: the runner is in readonly mode, nothing is written, no lock is taken."""
+    return P.summarize(P.kaggle_checks(cfg, run) + [P.cloudflare_check("kaggle", cfg)])
+
+
+def login(args, cfg, rep, run, kg: Kaggle) -> dict:
+    if not kg.exe:
+        raise LaunchError("kaggle CLI not found", "pip install kaggle")
+    cmd = [kg.exe, "auth", "login", "--force"]
+    if can_prompt(args):
+        rc = run.interactive(cmd)
+    else:  # web UI / non-tty: browser flow on this host, no stdin
+        r = run.run(cmd, mutating=True, timeout=300)
+        rc = r.rc
+    state = [c for c in P.kaggle_checks(cfg, run) if c.id == "kaggle.auth"]
+    ok = bool(state and state[0].state == "ok")
+    return {"ok": ok, "summary": "Kaggle login valid" if ok else "Kaggle login not completed", "error": "" if ok else f"login did not complete (exit {rc})",
+            "next": "" if ok else P.KAGGLE_LOGIN}
+
+
+def store_cf_token(args, cfg, rep) -> dict:
+    tok = sys.stdin.readline().strip()
+    host = normalize_host(cfg.get("VISOSWAP_HOSTNAME") or vs_cf.DEFAULT_HOSTNAMES["kaggle"])
+    vs_cf.store_token("kaggle", tok, host, rep, cfg=cfg)
+    return {"ok": True, "summary": f"token stored for {host}"}
+
+
 def provision(args, cfg, rep, run, kg: Kaggle, fetch=vs_cf.default_fetch, home=None):
-    rep.step("Provision: Kaggle CLI + auth")
+    rep.step("Preflight: Kaggle CLI, login, quota")
+    preflight(args, cfg, rep, run, kg)
     kg.slug = kernel_slug(cfg)
-    kg.check_auth()
     rep.log(f"kernel: {kg.slug}")
     rep.step("Provision: Cloudflare tunnel")
-    cfg = vs_cf.ensure_tunnel("kaggle", cfg, rep, run, args.tunnel, fetch=fetch, home=home)
+    cfg = vs_cf.ensure_tunnel("kaggle", cfg, rep, run, args.tunnel, fetch=fetch, home=home, interactive=can_prompt(args))
     rep.step("Provision: model dataset")
     ds = kg.ensure_dataset(args, create=args.setup)
     return cfg, ds
@@ -239,7 +274,7 @@ def launch(args, cfg, rep, run, kg: Kaggle, fetch=vs_cf.default_fetch, home=None
     cfg, ds = provision(args, cfg, rep, run, kg, fetch, home)
     if args.setup:
         return {"ok": True, "summary": "Kaggle provisioning complete.", "state": "provisioned", "tunnel": cfg.get("TUNNEL_MODE")}
-    knobs = bool(args.concurrency or args.profile or args.max_minutes is not None)
+    knobs = bool(args.concurrency or args.profile is not None or args.max_minutes is not None)
     url = url_for(cfg) if cfg.get("TUNNEL_MODE") != "quick" else None
     log_url = f"https://www.kaggle.com/code/{kg.slug}/log"
     st = kg.state()
@@ -287,7 +322,7 @@ def launch(args, cfg, rep, run, kg: Kaggle, fetch=vs_cf.default_fetch, home=None
 def build_bundle(cfg, slug, dataset, args) -> Path:
     nb = inject_notebook(json.loads(NOTEBOOK.read_text()), cfg.get("CF_TUNNEL_TOKEN", "") if cfg.get("TUNNEL_MODE") != "quick" else "",
                          normalize_host(cfg.get("VISOSWAP_HOSTNAME", "")) if cfg.get("TUNNEL_MODE") != "quick" else "",
-                         args.concurrency, args.profile, args.max_minutes)
+                         args.concurrency if isinstance(args.concurrency, int) else None, bool(args.profile), args.max_minutes)
     d = Path(tempfile.mkdtemp(prefix="visoswap-kaggle-"))
     os.chmod(d, 0o700)
     (d / NOTEBOOK.name).write_text(json.dumps(nb, indent=1, ensure_ascii=False))
@@ -364,10 +399,17 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     cfg = load_config("kaggle")
     rep = make_reporter(args, cfg)
-    run = Runner(rep, dry_run=args.dry_run)
+    run = Runner(rep, dry_run=args.dry_run, readonly=args.check)
     kg = Kaggle(cfg, rep, run)
     try:
-        if args.status:
+        if args.check:
+            res = check(args, cfg, rep, run, kg)
+        elif args.store_cf_token:
+            res = store_cf_token(args, cfg, rep)
+        elif args.login:
+            with target_lock("kaggle", rep):
+                res = login(args, cfg, rep, run, kg)
+        elif args.status:
             res = status(args, cfg, rep, run, kg)
         elif args.down:
             if args.dry_run:

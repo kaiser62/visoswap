@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 from vs_common import (DEFAULT_HOSTNAMES, DEFAULT_TUNNEL_NAMES, LaunchError, Reporter, Runner, env_path,
-                       merge_env_file, normalize_host)
+                       load_env_file, merge_env_file, normalize_host)
 import shutil
 
 API = "https://api.cloudflare.com/client/v4"
@@ -115,8 +116,9 @@ def provision_cert(cfg: Dict[str, str], name: str, hostname: str, rep: Reporter,
         raise LaunchError("cloudflared could not list tunnels: " + r.out[:200], "run `cloudflared tunnel login` and retry")
     try:
         existing = [t for t in json.loads(r.out or "[]") if t.get("name") == name and not t.get("deleted_at")]
-    except ValueError:
-        existing = []
+    except (ValueError, AttributeError):
+        # never assume "no such tunnel" from output we could not parse
+        raise LaunchError("could not parse `cloudflared tunnel list` output", "run `cloudflared tunnel list` yourself; store the token via --setup")
     if not existing:
         c = run.run([exe, "tunnel", "create", name], mutating=True)
         if c.rc != 0:
@@ -131,8 +133,38 @@ def provision_cert(cfg: Dict[str, str], name: str, hostname: str, rep: Reporter,
     return t.out.strip() if t.rc == 0 and not run.dry_run else ""
 
 
+TOKEN_RE = re.compile(r"^[A-Za-z0-9_\-+/=.]{40,}$")
+
+
+def valid_token(tok: str) -> bool:
+    return bool(TOKEN_RE.match(tok or ""))
+
+
+def prompt_secret(label: str) -> str:
+    import getpass
+    return getpass.getpass(label)       # never echoed
+
+
+def store_token(target: str, token: str, hostname: str, rep: Reporter, home: Optional[Path] = None,
+                cfg: Optional[Dict[str, str]] = None) -> None:
+    """Persist a pasted tunnel token (mode 600). Refuses to replace a stored one."""
+    p = env_path(target, home)
+    existing = (cfg or {}).get("CF_TUNNEL_TOKEN") or load_env_file(p).get("CF_TUNNEL_TOKEN")
+    if existing:
+        raise LaunchError("a tunnel token is already stored; it is never overwritten",
+                          f"edit {p} yourself if you really want to replace it")
+    token = (token or "").strip()
+    if not valid_token(token):
+        raise LaunchError("that does not look like a Cloudflare tunnel token", "copy the long token after `--token` from Zero Trust > Networks > Tunnels > Install")
+    rep.redact.add(token)
+    merge_env_file(p, {"CF_TUNNEL_TOKEN": token, "VISOSWAP_HOSTNAME": hostname,
+                       "CF_TUNNEL_NAME": (cfg or {}).get("CF_TUNNEL_NAME") or DEFAULT_TUNNEL_NAMES[target]})
+    rep.log(f"token stored in {p} (mode 600)")
+
+
 def ensure_tunnel(target: str, cfg: Dict[str, str], rep: Reporter, run: Runner, mode: str = "auto",
-                  fetch: Fetch = default_fetch, home: Optional[Path] = None) -> Dict[str, str]:
+                  fetch: Fetch = default_fetch, home: Optional[Path] = None, interactive: bool = False,
+                  prompt: Callable[[str], str] = prompt_secret) -> Dict[str, str]:
     """Make sure cfg has CF_TUNNEL_TOKEN + VISOSWAP_HOSTNAME (persisting them to the env file) or
     decide on a quick tunnel. Returns the (possibly updated) cfg; cfg['TUNNEL_MODE'] is named|quick."""
     if mode == "quick":
@@ -150,6 +182,16 @@ def ensure_tunnel(target: str, cfg: Dict[str, str], rep: Reporter, run: Runner, 
     elif cloudflared_bin(cfg) and has_cert(home):
         rep.step(f"cloudflared login found: tunnel '{name}' -> {hostname}")
         token = provision_cert(cfg, name, hostname, rep, run)
+    elif interactive and mode != "quick":
+        rep.log("No stored token, CF_API_TOKEN or `cloudflared tunnel login`.")
+        tok = prompt(f"Paste the Cloudflare tunnel token for {hostname} (hidden; Enter = quick tunnel instead): ").strip()
+        if tok:
+            if not valid_token(tok):
+                raise LaunchError("that does not look like a Cloudflare tunnel token", "re-run --setup and paste the token after `--token`")
+            token = tok
+        else:
+            rep.log("Using a trycloudflare.com quick tunnel.")
+            return {**cfg, "TUNNEL_MODE": "quick"}
     else:
         rep.log("No Cloudflare configuration (no CF_API_TOKEN, no `cloudflared tunnel login` cert.pem).")
         if mode == "named":

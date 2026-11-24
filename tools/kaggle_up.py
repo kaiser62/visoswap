@@ -13,7 +13,7 @@ import kaggle_launch  # noqa: E402
 
 if __name__ == "__main__":
     argv = sys.argv[1:]
-    if any(a.startswith(("--concurrency", "--profile", "--max-minutes")) for a in argv) and "--restart" not in argv:
+    if any(a.startswith(("--concurrency", "--profile", "--no-profile", "--max-minutes")) for a in argv) and "--restart" not in argv:
         argv.append("--restart")
     if "--down" in argv and "--yes" not in argv and "-y" not in argv:
         argv.append("--yes")  # the old script deleted without asking

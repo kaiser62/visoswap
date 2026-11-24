@@ -28,9 +28,10 @@ from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import vs_cf  # noqa: E402
+import vs_preflight as P  # noqa: E402
 import vs_remote  # noqa: E402
 from vs_common import (REPO_URL, LaunchError, Reporter, Runner, common_args, confirm, fetch_health,  # noqa: E402
-                       load_config, make_reporter, normalize_host, save_url, target_lock, visoswap_home, wait_until)
+                       can_prompt, load_config, make_reporter, normalize_host, save_url, target_lock, visoswap_home, wait_until)
 
 REMOTE_REPO = "/content/visoswap"
 REMOTE_TOKEN = "/content/cf_token"
@@ -98,7 +99,8 @@ def markers(out: str, step: str):
 
 def auth_problem(out: str) -> bool:
     low = out.lower()
-    return any(w in low for w in ("not logged in", "oauth", "credential", "authentication", "login required", "invalid_grant", "reauth"))
+    return any(w in low for w in ("not logged in", "oauth", "credential", "authentication", "login required", "invalid_grant",
+                                  "reauth", "authorization code", "visit this url", "eoferror", "aborted!"))
 
 
 # ----------------------------------------------------------------- impure
@@ -113,9 +115,9 @@ class Colab:
     def c(self, *args, mutating=False, timeout=120):
         r = self.run.run([self.exe, *args], mutating=mutating, timeout=timeout)
         if r.rc == 127:
-            raise LaunchError("colab CLI not found", "uv tool install google-colab-cli  (or set COLAB_BIN), then run `colab sessions` once to log in")
+            raise LaunchError("colab CLI not found", "uv tool install google-colab-cli  (or set COLAB_BIN), then run `colab usage` once to log in")
         if r.rc != 0 and auth_problem(r.out):
-            raise LaunchError("Colab CLI is not logged in", "run `colab sessions` (or `colab new --help`) in a terminal and finish the Google login in the browser")
+            raise LaunchError("Colab CLI is not logged in", "run `colab usage` in a terminal, open the printed URL, sign in and paste the code it shows")
         return r
 
     def sessions(self) -> List[Dict[str, str]]:
@@ -154,7 +156,7 @@ class Colab:
 
     def remote(self, name: str, script: str, timeout: int, **cfg) -> str:
         base = dict(repo_dir=REMOTE_REPO, token_file=REMOTE_TOKEN, ref=self.ref, repo_url=REPO_URL, subset="default",
-                    restart=False, profile=False, concurrency=None, wait=240, which=["uvicorn", "tunnel"], lines=60)
+                    restart=False, profile=None, concurrency=None, wait=240, which=["uvicorn", "tunnel"], lines=60)
         base.update(cfg)
         d = Path(tempfile.mkdtemp(prefix="visoswap-colab-"))
         f = d / f"{name}.py"
@@ -227,8 +229,58 @@ def public_url(cfg) -> Optional[str]:
     return f"https://{h}" if h else None
 
 
+def settings_overrides(args, cfg) -> dict:
+    """Explicit settings only (flags beat colab.env); None = keep what the VM already runs with."""
+    conc = args.concurrency if args.concurrency is not None else (cfg.get("GENERATION_CONCURRENCY") or None)
+    if isinstance(conc, str) and conc.lower() != "auto":
+        conc = int(conc) if conc.isdigit() else None
+    prof = args.profile if args.profile is not None else {"1": True, "0": False}.get(cfg.get("VISOSWAP_PROFILE", ""))
+    return {"concurrency": conc, "profile": prof}
+
+
+def preflight(args, cfg, rep, run, co: Colab):
+    fixers = {"colab.login": lambda: run.interactive([co.exe, "usage"])}
+    return P.resolve(lambda: P.colab_checks(cfg, run), fixers, can_prompt(args), rep, args.dry_run)
+
+
+def check(args, cfg, rep, run, co: Colab) -> dict:
+    """Read-only (runner is in readonly mode): login state, units, session, token-on-VM."""
+    checks = P.colab_checks(cfg, run)
+    vm = None
+    if all(c.good for c in checks if c.id in ("colab.cli", "colab.login")) and any(c.id == "colab.login" for c in checks):
+        d = choose_session(co.sessions(), co.session)
+        if d["action"] == "reuse":
+            co.session = d["session"]
+            probe = co.probe()
+            vm = bool(probe.get("token_file"))
+            checks.append(P.Check("colab.session", "Colab session", "ok", f"'{co.session}' ({probe.get('gpu') or 'no GPU'})", blocking=False))
+        else:
+            checks.append(P.Check("colab.session", "Colab session", "missing", "no session yet; launch requests a GPU (retries, up to --max-wait)", blocking=False))
+    checks.append(P.cloudflare_check("colab", cfg, vm))
+    return P.summarize(checks)
+
+
+def login(args, cfg, rep, run, co: Colab) -> dict:
+    if not can_prompt(args):
+        raise LaunchError("the Colab login needs a terminal (browser sign-in plus a pasted code; the token goes to the OS keychain)",
+                          "run in a terminal: colab usage")
+    run.interactive([co.exe, "usage"])
+    st = [c for c in P.colab_checks(cfg, run) if c.id == "colab.login"]
+    ok = bool(st and st[0].state == "ok")
+    return {"ok": ok, "summary": "Colab login valid" if ok else "Colab login not completed", "next": "" if ok else "run: colab usage"}
+
+
+def store_cf_token(args, cfg, rep) -> dict:
+    tok = sys.stdin.readline().strip()
+    host = normalize_host(cfg.get("VISOSWAP_HOSTNAME") or vs_cf.DEFAULT_HOSTNAMES["colab"])
+    vs_cf.store_token("colab", tok, host, rep, cfg=cfg)
+    return {"ok": True, "summary": f"token stored for {host}"}
+
+
 def launch(args, cfg, rep, run, co: Colab, fetch=vs_cf.default_fetch, home=None) -> dict:
-    rep.step("Provision: Colab CLI + session")
+    rep.step("Preflight: Colab CLI, login, compute units")
+    preflight(args, cfg, rep, run, co)
+    rep.step("Provision: session")
     if co.ensure_session(args.max_wait) is None:
         return {"ok": True, "state": "dry-run", "summary": "dry run: no session exists; the real run would request a GPU session, then set up and start the backend"}
     probe = co.probe()
@@ -243,11 +295,12 @@ def launch(args, cfg, rep, run, co: Colab, fetch=vs_cf.default_fetch, home=None)
         rep.log("tunnel token already on the VM; keeping it")
         cfg = {**cfg, "VISOSWAP_HOSTNAME": cfg.get("VISOSWAP_HOSTNAME") or vs_cf.DEFAULT_HOSTNAMES["colab"], "TUNNEL_MODE": "named"}
     else:
-        cfg = vs_cf.ensure_tunnel("colab", cfg, rep, run, args.tunnel, fetch=fetch, home=home)
+        cfg = vs_cf.ensure_tunnel("colab", cfg, rep, run, args.tunnel, fetch=fetch, home=home, interactive=can_prompt(args))
     quick = cfg.get("TUNNEL_MODE") == "quick"
     url = None if quick else resolve_url(cfg, probe)
     healthy = bool(url and co.health(url))
-    steps = plan_steps(probe, healthy, args.restart, bool(args.ref), args.setup)
+    knobs = args.concurrency is not None or args.profile is not None
+    steps = plan_steps(probe, healthy, args.restart, bool(args.ref) or knobs, args.setup)
     rep.step("plan: " + (", ".join(steps) if steps else "nothing to do (already healthy)"))
     if not steps:
         if not healthy and url and not wait_until(lambda: co.health(url), 180, 10, co.sleep, co.clock,
@@ -264,8 +317,7 @@ def launch(args, cfg, rep, run, co: Colab, fetch=vs_cf.default_fetch, home=None)
     if not quick and cfg.get("CF_TUNNEL_TOKEN") and (not probe.get("token_file") or args.refresh_token):
         co.upload_token(cfg["CF_TUNNEL_TOKEN"])
     code_changed = "VS_CHANGED 1" in (repo_out or "")
-    out = co.step("start", vs_remote.START, 600, restart=bool(args.restart or code_changed), profile=args.profile,
-                  concurrency=args.concurrency)
+    out = co.step("start", vs_remote.START, 600, restart=bool(args.restart or code_changed or knobs), **settings_overrides(args, cfg))
     if run.dry_run:
         return {"ok": True, "state": "dry-run", "summary": "dry run complete", "url": url}
     if quick:
@@ -308,7 +360,7 @@ def restart(args, cfg, rep, run, co: Colab) -> dict:
     co.session = d["session"]
     probe = co.probe()
     url = None if cfg.get("TUNNEL_MODE") == "quick" or args.tunnel == "quick" else resolve_url(cfg, probe)
-    out = co.step("start", vs_remote.START, 600, restart=True, profile=args.profile, concurrency=args.concurrency)
+    out = co.step("start", vs_remote.START, 600, restart=True, **settings_overrides(args, cfg))
     if run.dry_run:
         return {"ok": True, "state": "dry-run", "summary": "dry run: would restart uvicorn and the tunnel inside the same session", "url": url}
     m = re.search(r"VS_QUICK_URL (\S+)", out)
@@ -369,10 +421,16 @@ def main(argv=None) -> int:
     if args.session:
         cfg["COLAB_SESSION"] = args.session
     rep = make_reporter(args, cfg)
-    run = Runner(rep, dry_run=args.dry_run)
+    run = Runner(rep, dry_run=args.dry_run, readonly=args.check)
     co = Colab(cfg, rep, run)
     try:
-        if args.status:
+        if args.check:
+            res = check(args, cfg, rep, run, co)
+        elif args.store_cf_token:
+            res = store_cf_token(args, cfg, rep)
+        elif args.login:
+            res = login(args, cfg, rep, run, co)
+        elif args.status:
             res = status(args, cfg, rep, run, co)
         elif args.logs:
             res = logs(args, co)

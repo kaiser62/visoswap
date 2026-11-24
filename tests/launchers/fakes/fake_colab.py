@@ -21,5 +21,12 @@ elif cmd == "exec":
         for step in ("deps", "repo", "models", "start", "logs"):
             if f'"VS_OK {step}"' in script or f"VS_OK {step}" in script:
                 print(f"VS_OK {step}")
+elif cmd == "usage":
+    if os.environ.get("FAKE_USAGE_LOGIN") and os.environ.get("FAKE_COLAB_EXPIRED"):   # the user finished the login flow
+        open(os.path.join(d, "logged_in"), "w").write("1")
+    if os.path.exists(os.path.join(d, "logged_in")) or not os.environ.get("FAKE_COLAB_EXPIRED"):
+        print("Current balance: %s compute units\nUsage rate: 0.00/hr\nActive assignments: 1" % os.environ.get("FAKE_UNITS", "12.50"))
+    else:
+        print("To authorize colab-cli, visit this URL:\n  https://accounts.example/o/oauth2?x=1\nEOFError", file=sys.stderr); sys.exit(1)
 elif cmd in ("upload", "stop"):
     print("ok")

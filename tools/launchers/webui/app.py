@@ -31,7 +31,11 @@ from vs_common import Redactor, load_env_file, secrets_of, visoswap_home  # noqa
 
 FAKE = os.environ.get("LAUNCHER_FAKE") == "1"
 TARGETS = {"kaggle": "kaggle_launch.py", "colab": "colab_launch.py"}
-ACTIONS = {"launch": [], "restart": ["--restart"], "stop": ["--down", "--yes"], "provision": ["--setup", "--yes"]}
+ACTIONS = {"launch": [], "restart": ["--restart"], "stop": ["--down", "--yes"], "provision": ["--setup", "--yes"], "login": ["--login"]}
+IN_DOCKER = os.environ.get("WEBUI_IN_DOCKER") == "1"
+#: server-side constants shown when a login cannot run from the UI (browser/Keychain/terminal needed)
+LOGIN_CMD = {"kaggle": "kaggle auth login --force", "colab": "colab usage"}
+CHECK_FIELDS = ("id", "service", "state", "detail", "fix", "runnable", "blocking")
 RESULT_FIELDS = ("ok", "state", "healthy", "url", "mobile_url", "summary", "error", "next", "session", "gpu", "kernel",
                  "configured", "log_url", "tunnel")
 MAX_LINES = 2000
@@ -91,16 +95,27 @@ def launcher_argv(target: str, extra: List[str]) -> List[str]:
 
 
 def clean_result(d: dict) -> dict:
-    return {k: d[k] for k in RESULT_FIELDS if k in d}
+    out = {k: d[k] for k in RESULT_FIELDS if k in d}
+    if isinstance(d.get("checks"), list):   # nested whitelist
+        out["checks"] = [{k: c[k] for k in CHECK_FIELDS if k in c} for c in d["checks"] if isinstance(c, dict)]
+    return out
 
 
-def run_launcher(target: str, extra: List[str], on_line=None, timeout: float = 4 * 3600) -> dict:
+def run_launcher(target: str, extra: List[str], on_line=None, timeout: float = 4 * 3600, stdin_text: Optional[str] = None) -> dict:
     st = state()
     red = st.redactor()
+    if stdin_text:
+        red.add(stdin_text.strip())
     result: dict = {"ok": False, "error": "launcher produced no result"}
     p = subprocess.Popen(launcher_argv(target, extra), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                         stdin=subprocess.DEVNULL, env={**os.environ, "PYTHONUNBUFFERED": "1"})
+                         stdin=subprocess.PIPE if stdin_text else subprocess.DEVNULL, env={**os.environ, "PYTHONUNBUFFERED": "1"})
     t0 = time.time()
+    if stdin_text:
+        try:
+            p.stdin.write(stdin_text)
+            p.stdin.close()
+        except OSError:
+            pass
     try:
         for raw in p.stdout:
             raw = raw.rstrip("\n")
@@ -146,6 +161,7 @@ def start_job(target: str, action: str) -> str:
             with st.lock:
                 st.busy.pop(target, None)
                 st.status_cache.pop(target, None)
+                st.status_cache.pop("check:" + target, None)
     threading.Thread(target=work, daemon=True).start()
     return jid
 
@@ -198,12 +214,23 @@ def targets(refresh: int = 0):
     return {t: _status(t, bool(refresh)) for t in TARGETS}
 
 
-@app.post("/api/targets/{target}/{action}", dependencies=[Depends(require_auth)])
-def act(target: str, action: str, body: Optional[dict] = None):
-    if target not in TARGETS or action not in ACTIONS:
-        raise HTTPException(404, "unknown target or action")
-    if action == "stop" and not (body or {}).get("confirm"):
-        raise HTTPException(400, "stop requires {\"confirm\": true}")
+@app.get("/api/checks", dependencies=[Depends(require_auth)])
+def checks(refresh: int = 0):
+    """Per-service login/token state (read-only `--check`), cached briefly. Returns whitelisted fields only."""
+    st = state()
+    out = {}
+    for t in TARGETS:
+        cached = st.status_cache.get("check:" + t)
+        if cached and time.time() - cached[0] < (5 if refresh else STATUS_TTL):
+            out[t] = cached[1]
+            continue
+        res = run_launcher(t, ["--check"], timeout=180)
+        st.status_cache["check:" + t] = (time.time(), res)
+        out[t] = res
+    return {"targets": out, "login_commands": LOGIN_CMD, "in_docker": IN_DOCKER}
+
+
+def _begin(target: str):
     st = state()
     with st.lock:
         now = time.time()
@@ -215,6 +242,37 @@ def act(target: str, action: str, body: Optional[dict] = None):
             raise HTTPException(409, f"{target} already has a running action")
         st.action_times.append(now)
         st.busy[target] = "pending"
+
+
+@app.post("/api/targets/{target}/cloudflare-token", dependencies=[Depends(require_auth)])
+def cloudflare_token(target: str, body: dict):
+    """Store a pasted tunnel token (mode 600, via the launcher's stdin). Never echoed; refused if one is stored."""
+    if target not in TARGETS:
+        raise HTTPException(404, "unknown target")
+    tok = str((body or {}).get("token", "")).strip()
+    if not (40 <= len(tok) <= 4096) or any(ch.isspace() for ch in tok):
+        raise HTTPException(400, "does not look like a tunnel token")
+    _begin(target)
+    st = state()
+    try:
+        res = run_launcher(target, ["--store-cf-token"], timeout=60, stdin_text=tok + "\n")
+    finally:
+        st.busy.pop(target, None)
+        st.status_cache.pop("check:" + target, None)
+    return {"ok": bool(res.get("ok")), "error": res.get("error", "") if not res.get("ok") else ""}
+
+
+@app.post("/api/targets/{target}/{action}", dependencies=[Depends(require_auth)])
+def act(target: str, action: str, body: Optional[dict] = None):
+    if target not in TARGETS or action not in ACTIONS:
+        raise HTTPException(404, "unknown target or action")
+    if action == "stop" and not (body or {}).get("confirm"):
+        raise HTTPException(400, "stop requires {\"confirm\": true}")
+    if action == "login" and (target == "colab" or IN_DOCKER):
+        # needs a terminal / the host's browser or Keychain: show the exact command instead
+        raise HTTPException(400, f"cannot run from here; run in a terminal: {LOGIN_CMD[target]}")
+    st = state()
+    _begin(target)
     try:
         return {"job": start_job(target, action)}
     except Exception:

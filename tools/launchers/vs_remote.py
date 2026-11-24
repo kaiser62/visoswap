@@ -4,6 +4,7 @@ exit status is not reliable). No script ever prints the tunnel token. Config is 
 (no secrets: the token travels as a 600 file via `colab upload`)."""
 from __future__ import annotations
 
+import inspect
 import json
 
 HEADER = '''
@@ -97,13 +98,36 @@ import shutil
 restart = CFG["restart"]; tok = CFG["token_file"]
 if not shutil.which("cloudflared"):
     sh("curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared", timeout=300)
+# --- settings: explicit override > running process env > state file from the last launch > defaults.
+# Read BEFORE anything is killed. Only whitelisted, non-secret keys are ever read or printed.
+KEYS = ["GENERATION_CONCURRENCY", "VISOSWAP_PROFILE", "VISOSWAP_PROCESS_WORKERS", "MODELS_SUBSET", "MODELS_VERIFY_MODE"]
+STATE = "/content/visoswap_launch.json"
+prev, src = {}, "defaults"
+for pid in pgrep("uvicorn backend.main"):
+    try:
+        raw = open("/proc/%s/environ" % pid, "rb").read().split(b"\\0")
+        e = dict(x.decode(errors="replace").split("=", 1) for x in raw if b"=" in x)
+        prev, src = {k: e[k] for k in KEYS if k in e}, "running process"
+        break
+    except Exception:
+        pass
+if src == "defaults" and os.path.isfile(STATE):
+    try:
+        prev, src = {k: v for k, v in json.load(open(STATE)).items() if k in KEYS}, "state file"
+    except Exception:
+        pass
+__MERGE__
+settings = merge_settings(prev, src, CFG)
+print("VS_SETTINGS " + json.dumps({"from": src, **settings}))
+try: json.dump(settings, open(STATE, "w"))
+except Exception: pass
 if restart:
     for p in pgrep("uvicorn backend.main"): sh(["kill", p])
     for p in pgrep("cloudflared tunnel"): sh(["kill", p])
     time.sleep(2)
-env = dict(os.environ, MODELS_DIR=MODELS, MODELS_VERIFY_MODE="fast", MODELS_SUBSET=CFG["subset"], VISOSWAP_PROFILE="1" if CFG["profile"] else "0",
-           VISOSWAP_PROCESS_WORKERS="auto", PYTHONPATH=REPO)
-if CFG.get("concurrency"): env["GENERATION_CONCURRENCY"] = str(CFG["concurrency"])
+env = dict(os.environ, MODELS_DIR=MODELS, PYTHONPATH=REPO)
+for _k in KEYS: env.pop(_k, None)
+env.update(settings)
 _cu = subprocess.run([sys.executable, "-c", "import torch;print((torch.version.cuda or '0').split('.')[0])"], capture_output=True, text=True).stdout.strip()
 # CUDA 12 only (pip-installed cuDNN); on CUDA 13 images torch's own libs are used and extra paths break cuDNN
 libs = [] if _cu != "12" else [p for pat in ("/usr/local/lib/python3*/dist-packages/nvidia/*/lib", "/usr/local/lib/python3*/site-packages/nvidia/*/lib") for p in glob.glob(pat)]
@@ -144,5 +168,24 @@ print("VS_OK logs")
 '''
 
 
+def merge_settings(prev, src, CFG):
+    """prev = env of the running uvicorn / saved state; CFG holds explicit overrides (None = keep)."""
+    settings = dict(prev)
+    if CFG.get("concurrency") == "auto":
+        settings.pop("GENERATION_CONCURRENCY", None)
+    elif CFG.get("concurrency"):
+        settings["GENERATION_CONCURRENCY"] = str(CFG["concurrency"])
+    if CFG.get("profile") is not None:
+        settings["VISOSWAP_PROFILE"] = "1" if CFG["profile"] else "0"
+    settings.setdefault("MODELS_SUBSET", CFG["subset"])
+    settings.setdefault("MODELS_VERIFY_MODE", "fast")
+    if src == "defaults":    # nothing known about an earlier run: the notebook's defaults
+        settings.setdefault("VISOSWAP_PROFILE", "0")
+        settings.setdefault("VISOSWAP_PROCESS_WORKERS", "auto")
+    return settings
+
+
 def render(script: str, **cfg) -> str:
+    if "__MERGE__" in script:
+        script = script.replace("__MERGE__", inspect.getsource(merge_settings))
     return script.replace("__CFG__", json.dumps(cfg))

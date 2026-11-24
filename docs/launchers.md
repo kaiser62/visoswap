@@ -16,13 +16,42 @@ Two separate launchers start the VisoSwap backend on a free cloud GPU and print 
 
 ## Flags (both)
 
-`--setup` provision only - `--status` - `--restart` - `--down` (asks first; `--yes` skips) - `--dry-run`
+`--setup` first-run walk-through / provision only - `--check` report logins, changes nothing - `--login` - `--store-cf-token` (reads stdin) - `--status` - `--restart` - `--down` (asks first; `--yes` skips) - `--dry-run`
 (mutating commands are printed, never run; read-only queries still run) - `--json` (JSON lines, last line
-is the result; used by the web UI) - `--tunnel auto|named|quick` - `--concurrency N` - `--profile` -
+is the result; used by the web UI) - `--tunnel auto|named|quick` - `--concurrency N|auto` - `--profile/--no-profile` -
 `--no-clipboard`. Kaggle: `--max-minutes N`, `--accelerator t4x2|p100|<raw>`, `--models-dir`.
 Colab: `--ref <branch|tag|sha>`, `--gpu T4|L4|...` (new sessions only), `--session NAME`, `--max-wait SECONDS`,
 `--logs [uvicorn|tunnel|both]`, `--refresh-token`.
 Env overrides: `VISOSWAP_HOME` (default `~/.visoswap`), `KAGGLE_BIN`, `COLAB_BIN`, `CLOUDFLARED_BIN`.
+
+## Preflight, login and token: one click means the launcher owns it
+
+Every launch runs the same preflight that `--check` reports and `--setup` walks through (idempotent; each step
+checks before it acts). `--check` is read-only by construction (the command runner refuses any mutating call; no
+lock, no files written) and exits non-zero if something blocking is wrong.
+
+| Service | Checked | If it fails |
+|---|---|---|
+| Kaggle CLI | installed | prints `pip install kaggle` |
+| Kaggle login | `kaggle kernels list --mine` probe; credentials rejected = *invalid* | in a terminal the launcher runs `kaggle auth login --force` and re-checks; otherwise it stops and prints that exact command |
+| Kaggle quota | `kaggle quota` (shown as information) | "unknown": never blocks. The CLI exposes no free-GPU-slot count (limit: 2 GPU kernels) |
+| Colab CLI | installed | prints `uv tool install google-colab-cli` |
+| Colab login | stored Google login exists (macOS Keychain entry existence only, never its content), then `colab usage` | in a terminal the launcher runs `colab usage`: open the printed URL, sign in, paste the code; otherwise it prints that command |
+| Colab units | `colab usage` balance, informational | 0 units = free tier, a T4 is not guaranteed; never blocks |
+| Cloudflare | token + hostname stored in `~/.visoswap/<target>.env`, or (Colab) token already on the VM | order: stored token (never re-prompted, never overwritten) -> `CF_API_TOKEN` -> `cloudflared tunnel login` cert -> hidden prompt for a pasted tunnel token, stored mode 600 and never echoed -> quick tunnel |
+
+A timeout or network error is reported as `unknown` and **never** starts a login. Prompts only happen on a real
+terminal and never with `--json`, `--dry-run` or `--check` (so the web UI never hangs on a prompt). The web UI can
+also pipe a pasted tunnel token to `--store-cf-token` (stdin); it refuses when one is already stored.
+`--login` runs the login flow: Kaggle works from a non-interactive host (it opens the host's browser); Colab needs a
+terminal because the CLI asks for a pasted code and keeps the result in the Keychain.
+
+`--restart` keeps your tuning. Precedence for `GENERATION_CONCURRENCY`, `VISOSWAP_PROFILE` and the other whitelisted
+settings: flags (`--concurrency N|auto`, `--profile/--no-profile`) > `colab.env` (`GENERATION_CONCURRENCY`,
+`VISOSWAP_PROFILE`) > the environment of the running uvicorn (read from `/proc` before it is killed; only whitelisted
+keys, and only they are printed) > `/content/visoswap_launch.json` from the last launch > defaults (profile off,
+`VISOSWAP_PROCESS_WORKERS=auto`, concurrency auto). A restart never adds `VISOSWAP_PROCESS_WORKERS` if the old process
+had none. The same logic runs when a launch restarts because the code changed.
 
 ## First-time setup
 
@@ -62,6 +91,8 @@ a GPU with retries every 30 s up to `--max-wait` (re-checking `colab sessions` a
 |---|---|
 | `Kaggle CLI is not authenticated` | credentials expired: `kaggle auth login --force` |
 | `kernel status ... was denied` | Kaggle's message for a kernel that does not exist; the launcher cross-checks `kernels list` and refuses to guess if they disagree |
+| Colab: `no Google login stored` / login expired | run `colab usage` in a terminal and paste the code (the launcher does this itself when run from a terminal); cannot be done from the web UI or Docker |
+| `--check` says `unknown` | CLI timed out or no network; nothing was changed and no login was started: retry |
 | Kernel QUEUED forever | launcher deletes and re-pushes every 5 min; otherwise Kaggle has no free GPU |
 | Push fails / GPU session limit | max 2 GPU kernels per account; run `--down` on old ones, check phone verification |
 | Kernel disappears after 90 min | `MAX_RUNTIME_MIN` guard; use `--max-minutes N` (0 = never) with `--restart` |
@@ -77,7 +108,10 @@ a GPU with retries every 30 s up to `--max-wait` (re-checking `colab sessions` a
 ## Web UI (optional)
 
 `tools/launchers/webui/`: FastAPI + a single mobile-friendly page. Shows both targets (state, health, URL, copy),
-buttons Launch / Restart / Provision / Stop and a live log. It shells out to the same launchers (`--json`).
+buttons Launch / Restart / Provision / Stop, a login-status panel per service (Kaggle, Colab, Cloudflare) and a live log.
+The panel shows each check; a failing login shows the exact command to run in a terminal, with a **Log in** button for
+Kaggle when the UI runs natively (not in Docker, where `~/.kaggle` is read-only), and a hidden-input form to paste a
+Cloudflare tunnel token (stored mode 600, never shown again, refused if one exists). It shells out to the same launchers (`--json`).
 
 ```
 tools/launchers/webui/run.sh start      # Docker, http://127.0.0.1:8765  (stop: run.sh stop)

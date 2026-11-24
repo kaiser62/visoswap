@@ -8,6 +8,7 @@ for the web UI.
 """
 from __future__ import annotations
 
+import argparse
 import contextlib
 import json
 import os
@@ -112,6 +113,11 @@ class Reporter:
             print(f"\nFAILED: {clean['error']}", file=self.stream)
             if clean.get("next"):
                 print(f"Next:   {clean['next']}", file=self.stream)
+        elif clean.get("checks"):
+            for c in clean["checks"]:
+                mark = {"ok": "OK     ", "unknown": "UNKNOWN", "invalid": "FIX    ", "missing": "MISSING"}.get(c["state"], c["state"])
+                print(f"  [{mark}] {c['service']}: {c.get('detail', '')}" + (f"\n            fix: {c['fix']}" if c.get("fix") and c["state"] != "ok" else ""), file=self.stream)
+            print(f"\n{clean.get('summary', '')}", file=self.stream)
         elif clean.get("url") and clean.get("healthy"):
             print(f"\nBackend ready:\n  web / desktop : {clean['url']}\n  mobile        : {clean['url']}/mobile", file=self.stream)
         elif clean.get("summary"):
@@ -137,20 +143,39 @@ class Runner:
     """Single choke point for subprocesses. ``mutating=True`` commands are only
     printed (redacted) when ``dry_run`` is set. Read-only commands always run."""
 
-    def __init__(self, rep: Reporter, dry_run: bool = False):
+    def __init__(self, rep: Reporter, dry_run: bool = False, readonly: bool = False):
         self.rep = rep
         self.dry_run = dry_run
+        self.readonly = readonly          # --check: any mutating call is a bug and raises
         self.history: List[List[str]] = []
+
+    def interactive(self, argv: Sequence[str]) -> int:
+        """Run with inherited stdin/stdout (login flows). Only reached when ``can_prompt`` is true."""
+        argv = [str(a) for a in argv]
+        self.history.append(argv)
+        if self.readonly:
+            raise AssertionError("interactive command in read-only mode: " + shlex.join(argv))
+        if self.dry_run:
+            self.rep.log("[dry-run] would run: " + shlex.join(argv))
+            return 0
+        try:
+            return subprocess.call(argv)
+        except FileNotFoundError:
+            return 127
 
     def run(self, argv: Sequence[str], mutating: bool = False, timeout: Optional[float] = None,
             cwd: Optional[Path] = None, input_text: Optional[str] = None) -> Result:
         argv = [str(a) for a in argv]
         self.history.append(argv)
+        if mutating and self.readonly:
+            raise AssertionError("mutating command in read-only mode: " + shlex.join(argv))
         if mutating and self.dry_run:
             self.rep.log("[dry-run] would run: " + shlex.join(argv))
             return Result(0, "", skipped=True)
         try:
-            r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=cwd, input=input_text)
+            # stdin is never inherited: a CLI that wants to prompt gets EOF instead of blocking
+            r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=cwd, input=input_text,
+                               stdin=None if input_text is not None else subprocess.DEVNULL)
             return Result(r.returncode, ((r.stdout or "") + (r.stderr or "")).strip())
         except FileNotFoundError:
             return Result(127, f"command not found: {argv[0]}")
@@ -219,7 +244,7 @@ def merge_env_file(path: Path, updates: Dict[str, str], overwrite: bool = False)
 
 ENV_KEYS = ("CF_TUNNEL_TOKEN", "VISOSWAP_HOSTNAME", "CF_TUNNEL_NAME", "CF_ZONE", "CF_API_TOKEN", "CF_ACCOUNT_ID",
             "KAGGLE_KERNEL", "KAGGLE_BIN", "KAGGLE_DATASET", "COLAB_BIN", "COLAB_SESSION", "COLAB_GPU",
-            "VISOSWAP_REF", "CLOUDFLARED_BIN")
+            "VISOSWAP_REF", "CLOUDFLARED_BIN", "GENERATION_CONCURRENCY", "VISOSWAP_PROFILE")
 
 
 def load_config(target: str, environ: Optional[dict] = None, home: Optional[Path] = None) -> Dict[str, str]:
@@ -319,19 +344,41 @@ def wait_until(pred: Callable[[], bool], timeout: float, interval: float, sleep=
         sleep(interval)
 
 
+def concurrency_arg(v: str):
+    if v.lower() == "auto":
+        return "auto"
+    try:
+        n = int(v)
+    except ValueError:
+        raise argparse.ArgumentTypeError("N or 'auto'")
+    if n < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return n
+
+
+def can_prompt(args) -> bool:
+    """The one interactivity gate: a real terminal, and not a machine/read-only/dry run."""
+    return bool(sys.stdin.isatty() and sys.stdout.isatty()
+                and not (args.json or args.dry_run or getattr(args, "check", False)))
+
+
 def common_args(ap, target: str) -> None:
     g = ap.add_argument_group("actions (default: launch / reuse)")
     g.add_argument("--setup", action="store_true", help="provision only (idempotent); nothing is launched")
     g.add_argument("--status", action="store_true", help="report state and exit")
     g.add_argument("--restart", action="store_true", help="relaunch even if running")
     g.add_argument("--down", action="store_true", help="stop %s (asks for confirmation)" % ("the Kaggle kernel" if target == "kaggle" else "the Colab session"))
+    g.add_argument("--check", action="store_true", help="report login/token/quota state; changes nothing")
+    g.add_argument("--login", action="store_true", help="run this service's login flow (non-interactive: Kaggle only)")
+    g.add_argument("--store-cf-token", action="store_true", help="read a Cloudflare tunnel token from stdin and store it (mode 600); refuses if one is stored")
     o = ap.add_argument_group("options")
     o.add_argument("--dry-run", action="store_true", help="print what would be done; mutating commands are not executed")
     o.add_argument("--json", action="store_true", help="JSON-lines output (last line is the result)")
     o.add_argument("--yes", "-y", action="store_true", help="assume yes to confirmations")
     o.add_argument("--no-clipboard", action="store_true")
-    o.add_argument("--concurrency", type=int, help="generation workers (default: auto by CPU/GPU count)")
-    o.add_argument("--profile", action="store_true", help="log per-stage ms every 50 frames")
+    o.add_argument("--concurrency", type=concurrency_arg, help="generation workers: N, or 'auto' (default: keep what is configured/running, else auto)")
+    o.add_argument("--profile", action=argparse.BooleanOptionalAction, default=None,
+                   help="per-stage timing logs on/off (--no-profile); default: keep what is configured/running, else off")
     o.add_argument("--tunnel", choices=("auto", "named", "quick"), default="auto",
                    help="auto: named Cloudflare tunnel if configured/provisionable, else trycloudflare quick tunnel")
 

@@ -7,6 +7,13 @@ sys.path.insert(0, str(L))
 import vs_common as C, vs_cf, vs_remote, kaggle_launch as K, colab_launch as CL  # noqa: E402
 
 FAKES = Path(__file__).parent / "fakes"
+@pytest.fixture(autouse=True)
+def _hermetic(monkeypatch):
+    """Never query the real macOS Keychain from tests: a fake `security` comes first on PATH."""
+    monkeypatch.setenv("PATH", str(FAKES) + os.pathsep + os.environ["PATH"])
+    monkeypatch.setenv("FAKE_SECURITY_RC", "0")
+
+
 TOKEN = "eyJhIjoiZmFrZWFjY291bnQiLCJ0IjoiZmFrZXR1bm5lbCIsInMiOiJzZWNyZXQifQ"
 
 
@@ -362,3 +369,231 @@ def test_result_redacts_before_json(capsys):
     rep = C.Reporter(True, C.Redactor())
     rep.result(False, error='boom --token ' + TOKEN)
     assert TOKEN not in capsys.readouterr().out
+
+
+# ================= preflight / login / token (new requirement) =================
+import vs_preflight as P  # noqa: E402
+
+FAKE_TOKEN2 = "eyJhIjoiZmFrZXRva2VuMiIsInQiOiJmYWtlLXR1bm5lbC1pZC0xMjM0NTYiLCJzIjoiYWJjZGVmZ2hpamtsbW5vcCJ9"
+RO_SUBCMDS = {"kernels list", "quota", "sessions", "usage", "exec", "kernels status", "datasets status", "security find-generic-password"}
+
+
+def _kg(tmp_path, monkeypatch, cfg=None, **env):
+    monkeypatch.setenv("FAKE_DIR", str(tmp_path))
+    for k, v in env.items(): monkeypatch.setenv(k, v)
+    rep = C.Reporter()
+    c = {"KAGGLE_BIN": str(FAKES / "fake_kaggle.py"), "KAGGLE_KERNEL": "faker/visoswap-studio", **(cfg or {})}
+    return c, rep, C.Runner(rep)
+
+
+def test_kaggle_expired_noninteractive_gives_exact_fix_and_never_logs_in(tmp_path, monkeypatch):
+    cfg, rep, run = _kg(tmp_path, monkeypatch, FAKE_KAUTH="expired")
+    with pytest.raises(P.PreflightFailed) as e:
+        P.resolve(lambda: P.kaggle_checks(cfg, run), {"kaggle.auth": lambda: run.interactive([cfg["KAGGLE_BIN"], "auth", "login"])}, False, rep)
+    assert "kaggle auth login --force" in e.value.next_action
+    assert not any(c.startswith("auth login") for c in calls(tmp_path))
+
+
+def test_kaggle_expired_interactive_runs_login_then_ok(tmp_path, monkeypatch):
+    cfg, rep, run = _kg(tmp_path, monkeypatch, FAKE_KAUTH="expired")
+    checks = P.resolve(lambda: P.kaggle_checks(cfg, run), {"kaggle.auth": lambda: run.interactive([cfg["KAGGLE_BIN"], "auth", "login", "--force"])}, True, rep)
+    assert [c for c in calls(tmp_path) if c.startswith("auth login")] == ["auth login --force"]
+    assert next(c for c in checks if c.id == "kaggle.auth").state == "ok"
+    assert any(c.id == "kaggle.quota" for c in checks)
+
+
+def test_network_blip_is_unknown_and_never_starts_login(tmp_path, monkeypatch):
+    cfg, rep, run = _kg(tmp_path, monkeypatch, FAKE_KAUTH="flaky")
+    checks = P.resolve(lambda: P.kaggle_checks(cfg, run), {"kaggle.auth": lambda: run.interactive(["false"])}, True, rep)
+    assert next(c for c in checks if c.id == "kaggle.auth").state == "unknown"
+    assert not any(c.startswith("auth login") for c in calls(tmp_path))
+
+
+def test_kaggle_cli_missing_reports_install_command(tmp_path, monkeypatch):
+    rep = C.Reporter()
+    cs = P.kaggle_checks({"KAGGLE_BIN": "/nonexistent/kaggle"}, C.Runner(rep))
+    assert cs[0].state == "missing" and cs[0].fix == "pip install kaggle"
+
+
+def _colab_cfg(): return {"COLAB_BIN": str(FAKES / "fake_colab.py")}
+
+
+def test_colab_not_logged_in_does_not_start_cli_flow(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_DIR", str(tmp_path)); monkeypatch.setenv("FAKE_SECURITY_RC", "44")
+    monkeypatch.setenv("PATH", str(FAKES) + os.pathsep + os.environ["PATH"]); monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(P.platform, "system", lambda: "Darwin")
+    cs = P.colab_checks(_colab_cfg(), C.Runner(C.Reporter()))
+    login = next(c for c in cs if c.id == "colab.login")
+    assert login.state == "invalid" and "colab usage" in login.fix and login.runnable
+    assert not any(c.startswith("usage") for c in calls(tmp_path))     # the CLI (which would prompt) was never invoked
+
+
+def test_colab_expired_login_detected_then_guided_login(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_DIR", str(tmp_path)); monkeypatch.setenv("FAKE_COLAB_EXPIRED", "1")
+    monkeypatch.setenv("PATH", str(FAKES) + os.pathsep + os.environ["PATH"]); monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(P.platform, "system", lambda: "Darwin")
+    cfg = _colab_cfg(); rep = C.Reporter(); run = C.Runner(rep)
+    assert next(c for c in P.colab_checks(cfg, run) if c.id == "colab.login").state == "invalid"
+    # non-interactive: exact command, no login attempted
+    with pytest.raises(P.PreflightFailed):
+        P.resolve(lambda: P.colab_checks(cfg, run), {"colab.login": lambda: 0}, False, rep)
+    # interactive: the fixer runs `colab usage` with inherited stdio, then re-checks
+    cs = P.resolve(lambda: P.colab_checks(cfg, run), {"colab.login": lambda: (os.environ.__setitem__("FAKE_USAGE_LOGIN", "1"), run.interactive([cfg["COLAB_BIN"], "usage"]))}, True, rep)
+    os.environ.pop("FAKE_USAGE_LOGIN", None)
+    assert next(c for c in cs if c.id == "colab.login").state == "ok"
+    assert "12.50 compute units" in next(c for c in cs if c.id == "colab.units").detail
+
+
+def test_colab_zero_units_warns_not_blocks(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_DIR", str(tmp_path)); monkeypatch.setenv("FAKE_UNITS", "0.00")
+    monkeypatch.setenv("PATH", str(FAKES) + os.pathsep + os.environ["PATH"]); monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(P.platform, "system", lambda: "Linux")
+    cs = P.colab_checks(_colab_cfg(), C.Runner(C.Reporter()))
+    u = next(c for c in cs if c.id == "colab.units")
+    assert "not guaranteed" in u.detail and u.good
+
+
+def test_cloudflare_stored_token_is_reused_and_never_prompted(tmp_path):
+    rep = C.Reporter(); called = []
+    cfg = {"CF_TUNNEL_TOKEN": FAKE_TOKEN2, "VISOSWAP_HOSTNAME": "h.example.org"}
+    out = vs_cf.ensure_tunnel("kaggle", cfg, rep, C.Runner(rep), interactive=True, prompt=lambda l: called.append(l) or "x", home=tmp_path)
+    assert not called and out["TUNNEL_MODE"] == "named"
+    chk = P.cloudflare_check("kaggle", cfg)
+    assert chk.state == "ok" and FAKE_TOKEN2 not in json.dumps(chk.as_dict())
+
+
+def test_cloudflare_missing_noninteractive_is_quick_and_interactive_prompts_and_stores_600(tmp_path, monkeypatch):
+    monkeypatch.setattr(vs_cf, "cloudflared_bin", lambda c: None)
+    rep = C.Reporter()
+    assert vs_cf.ensure_tunnel("kaggle", {}, rep, C.Runner(rep), interactive=False, home=tmp_path)["TUNNEL_MODE"] == "quick"
+    assert P.cloudflare_check("kaggle", {}, home=tmp_path).state == "missing"
+    seen = []
+    out = vs_cf.ensure_tunnel("kaggle", {}, rep, C.Runner(rep), interactive=True, home=tmp_path,
+                              prompt=lambda l: seen.append(l) or FAKE_TOKEN2)
+    assert out["TUNNEL_MODE"] == "named" and FAKE_TOKEN2 not in "".join(seen)
+    f = tmp_path / "kaggle.env"
+    assert C.parse_env(f.read_text())["CF_TUNNEL_TOKEN"] == FAKE_TOKEN2 and oct(f.stat().st_mode & 0o777) == "0o600"
+    # empty answer -> quick tunnel; garbage -> error
+    assert vs_cf.ensure_tunnel("colab", {}, rep, C.Runner(rep), interactive=True, home=tmp_path, prompt=lambda l: "")["TUNNEL_MODE"] == "quick"
+    with pytest.raises(C.LaunchError):
+        vs_cf.ensure_tunnel("colab", {}, rep, C.Runner(rep), interactive=True, home=tmp_path, prompt=lambda l: "short")
+
+
+def test_store_token_never_overwrites_and_validates(tmp_path):
+    rep = C.Reporter()
+    vs_cf.store_token("kaggle", FAKE_TOKEN2, "h.example.org", rep, home=tmp_path)
+    with pytest.raises(C.LaunchError, match="already stored"):
+        vs_cf.store_token("kaggle", FAKE_TOKEN2 + "x", "h.example.org", rep, home=tmp_path)
+    with pytest.raises(C.LaunchError):
+        vs_cf.store_token("colab", "nope", "h", rep, home=tmp_path)
+
+
+def _snapshot(d):
+    return {str(p.relative_to(d)): (p.read_bytes(), p.stat().st_mtime_ns, p.stat().st_mode) for p in sorted(d.rglob("*")) if p.is_file()}
+
+
+def test_cli_check_is_read_only_and_prints_no_secret(tmp_path):
+    home = tmp_path / "home"; home.mkdir()
+    (home / "kaggle.env").write_text(f"CF_TUNNEL_TOKEN={FAKE_TOKEN2}\nVISOSWAP_HOSTNAME=h.example.org\nKAGGLE_KERNEL=faker/visoswap-studio\n")
+    (home / "colab.env").write_text(f"CF_TUNNEL_TOKEN={FAKE_TOKEN2}\nVISOSWAP_HOSTNAME=c.example.org\n")
+    (tmp_path / "sessions.txt").write_text(SESS)
+    before = _snapshot(home)
+    env = {"PATH": str(FAKES) + os.pathsep + os.environ["PATH"], "FAKE_SECURITY_RC": "0"}
+    k = _cli("kaggle_launch.py", ["--check", "--json"], tmp_path, {**env, "KAGGLE_BIN": str(FAKES / "fake_kaggle.py")})
+    c = _cli("colab_launch.py", ["--check", "--json"], tmp_path, {**env, "COLAB_BIN": str(FAKES / "fake_colab.py")})
+    for r in (k, c):
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert FAKE_TOKEN2 not in r.stdout + r.stderr
+    kr, cr = json.loads(k.stdout.splitlines()[-1]), json.loads(c.stdout.splitlines()[-1])
+    assert {x["id"] for x in kr["checks"]} >= {"kaggle.cli", "kaggle.auth", "cloudflare"}
+    assert {x["id"] for x in cr["checks"]} >= {"colab.cli", "colab.login", "colab.units", "colab.session", "cloudflare"}
+    assert _snapshot(home) == before                       # byte-identical, no lock file, no url files
+    for line in calls(tmp_path):
+        assert any(line.startswith(p) for p in RO_SUBCMDS), line
+
+
+def test_cli_setup_json_everything_missing_returns_promptly_with_fix(tmp_path):
+    (tmp_path / "home").mkdir()
+    r = _cli("kaggle_launch.py", ["--setup", "--json"], tmp_path, {"KAGGLE_BIN": "/nonexistent/kaggle"})
+    last = json.loads(r.stdout.strip().splitlines()[-1])
+    assert r.returncode == 1 and last["ok"] is False and "pip install kaggle" in last["next"]
+    r = _cli("colab_launch.py", ["--setup", "--json"], tmp_path, {"COLAB_BIN": "/nonexistent/colab"})
+    last = json.loads(r.stdout.strip().splitlines()[-1])
+    assert r.returncode == 1 and "google-colab-cli" in last["next"]
+
+
+def test_check_mode_runner_rejects_mutation():
+    run = C.Runner(C.Reporter(), readonly=True)
+    with pytest.raises(AssertionError):
+        run.run(["x"], mutating=True)
+    with pytest.raises(AssertionError):
+        run.interactive(["x"])
+
+
+def test_can_prompt_gate(monkeypatch):
+    import argparse
+    ns = lambda **k: argparse.Namespace(json=False, dry_run=False, check=False, **k)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True, raising=False); monkeypatch.setattr(sys.stdout, "isatty", lambda: True, raising=False)
+    assert C.can_prompt(ns())
+    for flag in ("json", "dry_run", "check"):
+        a = ns(); setattr(a, flag, True); assert not C.can_prompt(a)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False, raising=False)
+    assert not C.can_prompt(ns())
+
+
+# ---------- restart preserves settings
+def test_merge_settings_precedence():
+    M = vs_remote.merge_settings
+    live = {"GENERATION_CONCURRENCY": "3", "VISOSWAP_PROFILE": "1", "MODELS_SUBSET": "default", "MODELS_VERIFY_MODE": "fast"}
+    cfg = {"subset": "default", "concurrency": None, "profile": None}
+    s = M(live, "running process", cfg)
+    assert s["GENERATION_CONCURRENCY"] == "3" and s["VISOSWAP_PROFILE"] == "1" and "VISOSWAP_PROCESS_WORKERS" not in s
+    assert "GENERATION_CONCURRENCY" not in M(live, "running process", {**cfg, "concurrency": "auto"})
+    assert M(live, "running process", {**cfg, "concurrency": 5})["GENERATION_CONCURRENCY"] == "5"
+    assert M(live, "running process", {**cfg, "profile": False})["VISOSWAP_PROFILE"] == "0"
+    d = M({}, "defaults", cfg)
+    assert d["VISOSWAP_PROFILE"] == "0" and d["VISOSWAP_PROCESS_WORKERS"] == "auto" and "GENERATION_CONCURRENCY" not in d
+
+
+def test_settings_overrides_flags_beat_env_file():
+    ov = CL.settings_overrides
+    p = CL.build_parser().parse_args
+    assert ov(p([]), {}) == {"concurrency": None, "profile": None}
+    assert ov(p([]), {"GENERATION_CONCURRENCY": "3", "VISOSWAP_PROFILE": "1"}) == {"concurrency": "3" and 3, "profile": True}
+    assert ov(p(["--concurrency", "auto", "--no-profile"]), {"GENERATION_CONCURRENCY": "3", "VISOSWAP_PROFILE": "1"}) == {"concurrency": "auto", "profile": False}
+    assert ov(p(["--concurrency", "2", "--profile"]), {})["concurrency"] == 2
+
+
+def test_restart_and_launch_pass_preserving_settings(tmp_path, monkeypatch):
+    co, clk, d = _colab(tmp_path, monkeypatch, sessions=SESS)
+    a = CL.build_parser().parse_args(["--restart", "--no-clipboard"])
+    sent = []
+    orig = co.step
+    co.step = lambda name, script, timeout, **cfg: (sent.append((name, cfg)), orig(name, script, timeout, **cfg))[1]
+    co.health = lambda u: True
+    monkeypatch.setenv("VISOSWAP_HOME", str(tmp_path / "h"))
+    CL.restart(a, {"VISOSWAP_HOSTNAME": "h.example.org"}, co.rep, co.run, co)
+    start = next(c for n, c in sent if n == "start")
+    assert start["concurrency"] is None and start["profile"] is None and start["restart"] is True   # None = keep what runs now
+    sent.clear()
+    CL.launch(CL.build_parser().parse_args(["--yes", "--no-clipboard", "--concurrency", "3"]),
+              {"VISOSWAP_HOSTNAME": "h.example.org", "CF_TUNNEL_TOKEN": TOKEN, "VISOSWAP_PROFILE": "1"}, co.rep, co.run, co, home=tmp_path / "h")
+    st = [c for n, c in sent if n == "start"]
+    assert st and st[0]["concurrency"] == 3 and st[0]["profile"] is True
+
+
+# ---------- web UI: checks, login, token form
+def test_webui_checks_login_and_token_endpoints(tmp_path, monkeypatch):
+    A, c, H = _webui(tmp_path, monkeypatch)
+    r = c.get("/api/checks", headers=H).json()
+    assert r["targets"]["kaggle"]["checks"][0]["state"] == "ok" and set(r["targets"]["kaggle"]["checks"][0]) <= set(A.CHECK_FIELDS)
+    assert c.get("/api/checks").status_code == 401
+    assert c.post("/api/targets/colab/login", headers=H).status_code == 400            # needs a terminal: shows constant command
+    assert "colab usage" in c.post("/api/targets/colab/login", headers=H).json()["detail"]
+    assert c.post("/api/targets/kaggle/cloudflare-token", headers=H, json={"token": "short"}).status_code == 400
+    r = c.post("/api/targets/kaggle/cloudflare-token", headers=H, json={"token": FAKE_TOKEN2})
+    assert r.json() == {"ok": True, "error": ""} and FAKE_TOKEN2 not in r.text
+    assert c.post("/api/targets/kaggle/cloudflare-token", json={"token": FAKE_TOKEN2}).status_code == 401
+    monkeypatch.setattr(A, "IN_DOCKER", True)
+    assert c.post("/api/targets/kaggle/login", headers=H).status_code == 400
+    assert A.clean_result({"ok": True, "checks": [{"id": "x", "secret": "s", "state": "ok"}], "token": "t"}) == {"ok": True, "checks": [{"id": "x", "state": "ok"}]}

@@ -3,6 +3,15 @@ import os, sys
 d = os.environ["FAKE_DIR"]; a = sys.argv[1:]
 open(os.path.join(d, "calls.log"), "a").write(" ".join(a) + "\n")
 st = os.environ.get("FAKE_KSTATE", "MISSING")
+mode = os.environ.get("FAKE_KAUTH", "ok")
+if a[:2] == ["auth", "login"]:
+    open(os.path.join(d, "kaggle_ok"), "w").write("1"); print("Logged in"); sys.exit(0)
+if a[:2] == ["kernels", "list"] and mode == "expired" and not os.path.exists(os.path.join(d, "kaggle_ok")):
+    print("Authentication required to call the Kaggle API."); sys.exit(1)
+if a[:2] == ["kernels", "list"] and mode == "flaky":
+    print("Temporary failure in name resolution"); sys.exit(1)
+if a == ["quota"]:
+    print("GPU hours used 3.0 of 30"); sys.exit(0)
 if a[:2] == ["kernels", "list"]:
     print("ref title" + ("\nfaker/visoswap-studio x" if os.environ.get("FAKE_KLISTED") else ""))
 elif a[:2] == ["kernels", "status"]:
