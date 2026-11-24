@@ -18,6 +18,13 @@ def _default_cors_origins() -> str:
     return f"http://localhost:{port},http://127.0.0.1:{port}"
 
 
+
+def _auto_concurrency() -> int:
+    from backend.services.hardware import auto_concurrency
+
+    return auto_concurrency(4)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=os.environ.get("ENV_FILE", REPO_ROOT / ".env"),
@@ -77,7 +84,7 @@ class Settings(BaseSettings):
     # collapsed to under 1 fps at 8 — past four the GPU thrashes and the run is
     # worse than single-threaded. Four sustains ~18 generated fps end to end
     # (decode 7ms, swap 64ms, jpeg 23ms per frame).
-    generation_concurrency: int = Field(default=4, ge=1, le=32)
+    generation_concurrency: int = Field(default_factory=lambda: _auto_concurrency(), ge=1, le=32)
     default_interval: float = Field(default=5.0, gt=0)
     default_lookahead: float = Field(default=120.0, gt=0)
     max_retries: int = Field(default=2, ge=0)

@@ -126,9 +126,9 @@ def build_bundle(cfg: dict[str, str], slug: str, concurrency: int | None = None,
             src = src.replace("MAX_RUNTIME_MIN = 90", f"MAX_RUNTIME_MIN = {int(max_minutes)}")
             lines = src.split("\n")
             cell["source"] = [l + "\n" for l in lines[:-1]] + [lines[-1]]
-        if "GENERATION_CONCURRENCY = '2'" in src:
+        if "GENERATION_CONCURRENCY = 'auto'" in src:
             if concurrency:
-                src = src.replace("GENERATION_CONCURRENCY = '2'", f"GENERATION_CONCURRENCY = '{int(concurrency)}'")
+                src = src.replace("GENERATION_CONCURRENCY = 'auto'", f"GENERATION_CONCURRENCY = '{int(concurrency)}'")
             if profile:
                 src = src.replace("VISOSWAP_PROFILE = '0'", "VISOSWAP_PROFILE = '1'")
             lines = src.split("\n")
@@ -164,7 +164,7 @@ def healthy(url: str) -> bool:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--restart", action="store_true", help="delete and relaunch even if running")
-    ap.add_argument("--concurrency", type=int, help="generation workers on the GPU (default 2)")
+    ap.add_argument("--concurrency", type=int, help="generation workers (default: auto by CPU/GPU count)")
     ap.add_argument("--profile", action="store_true", help="log per-stage ms every 50 frames (VISOSWAP_PROFILE=1)")
     ap.add_argument("--max-minutes", type=int, help="kernel self-terminates after N minutes (default 90, 0 = never)")
     ap.add_argument("--down", action="store_true", help="delete the kernel and exit")

@@ -10,8 +10,8 @@ The child owns a plain `EngineFrameGenerator` and answers four commands over
 a pipe (bind, generate, unbind, close). The parent-side class keeps the same
 `FrameGenerator` surface, so the scheduler and worker do not change.
 
-Enable with VISOSWAP_PROCESS_WORKERS=1. GPUs are counted with `nvidia-smi -L`
-(override with VISOSWAP_GPU_COUNT); worker `i` is pinned to GPU `i % count`
+Enabled by `hardware.process_workers_enabled()` (auto, or VISOSWAP_PROCESS_WORKERS=1/0).
+GPUs are counted with `nvidia-smi -L` (override with VISOSWAP_GPU_COUNT); worker `i` is pinned to GPU `i % count`
 through CUDA_VISIBLE_DEVICES unless that variable is already set.
 """
 
@@ -21,7 +21,6 @@ import asyncio
 import logging
 import multiprocessing as mp
 import os
-import subprocess
 import threading
 import time
 import traceback
@@ -29,32 +28,11 @@ from typing import Any
 
 from backend.services.engine_backend import EngineFrameGenerator
 from backend.services.generator import GenerationResult
+from backend.services.hardware import gpu_count
 
 log = logging.getLogger(__name__)
 
 _spawn_lock = threading.Lock()
-_gpu_count: int | None = None
-
-
-def process_workers_enabled() -> bool:
-    return os.environ.get("VISOSWAP_PROCESS_WORKERS", "0").strip().lower() in {"1", "true", "yes", "on"}
-
-
-def gpu_count() -> int:
-    global _gpu_count
-    if _gpu_count is None:
-        forced = os.environ.get("VISOSWAP_GPU_COUNT", "").strip()
-        if forced.isdigit() and int(forced) > 0:
-            _gpu_count = int(forced)
-        else:
-            try:
-                out = subprocess.run(
-                    ["nvidia-smi", "-L"], capture_output=True, text=True, timeout=10
-                ).stdout
-                _gpu_count = max(1, sum(1 for line in out.splitlines() if line.startswith("GPU ")))
-            except Exception:
-                _gpu_count = 1
-    return _gpu_count
 
 
 def _child_main(conn: Any, provider: str) -> None:

@@ -53,7 +53,8 @@ def build_generator(
     the GPUs); short-lived callers (validate, preview) stay in-process.
     """
     if pooled:
-        from backend.services.process_generator import ProcessEngineGenerator, process_workers_enabled
+        from backend.services.hardware import process_workers_enabled
+        from backend.services.process_generator import ProcessEngineGenerator
 
         if process_workers_enabled():
             return ProcessEngineGenerator.from_project(project, timeout, worker_index)
