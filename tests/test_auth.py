@@ -190,3 +190,44 @@ def test_key_stripped(monkeypatch, tmp_path):
     app = _app(monkeypatch, tmp_path, ASCII_KEY + "\n")
     with TestClient(app) as c:
         assert c.get("/api/projects", headers={H: ASCII_KEY}).status_code == 200
+
+
+# --- docs/schema: open when auth is off, gated when it is on -------------------
+DOC_PATHS = ("/docs", "/redoc", "/openapi.json")
+
+
+def test_docs_open_when_auth_is_off(off):
+    for p in DOC_PATHS:
+        assert off.get(p).status_code == 200, p
+
+
+def test_docs_require_the_key_when_auth_is_on(on):
+    for p in DOC_PATHS:
+        r = on.get(p)
+        assert r.status_code == 401, p
+        assert r.json() == {"detail": "missing or invalid access key"}
+        assert on.get(p, headers={H: "nope"}).status_code == 401, p
+
+
+def test_docs_reachable_with_the_key(on):
+    for p in DOC_PATHS:
+        assert on.get(p, headers={H: ASCII_KEY}).status_code == 200, p
+    assert on.get("/openapi.json", headers={H: ASCII_KEY}).json()["info"]["version"]
+
+
+def test_docs_cookie_login_also_opens_them(on):
+    on.post("/api/auth/session", json={"key": ASCII_KEY})
+    assert on.get("/docs").status_code == 200
+
+
+def test_oauth2_redirect_is_protected_too(on):
+    # /docs/oauth2-redirect is a real route; leaving it open would be a hole in the same UI
+    assert on.get("/docs/oauth2-redirect").status_code == 401
+    assert on.get("/docs/oauth2-redirect", headers={H: ASCII_KEY}).status_code == 200
+
+
+def test_docs_exemption_does_not_leak_to_similar_paths(on):
+    """Lookalike paths must not inherit the docs exemption: they are either 404 (no such
+    route, so they reveal nothing) or 401 (under /api/*), never 200."""
+    for p in ("/docsx", "/redocx", "/openapi.jsonx", "/api/openapi.json"):
+        assert on.get(p).status_code != 200, p

@@ -32,6 +32,9 @@ DENIED_DETAIL = "missing or invalid access key"
 
 HEALTH_PATH = "/api/health"
 LOGIN_PATH = "/api/auth/session"
+#: FastAPI's schema UI and JSON: open by default, and a public tunnel makes them a
+#: map of the whole API. Protected whenever a key is set.
+PROTECTED_DOCS = frozenset({"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"})
 
 router = APIRouter(tags=["auth"])
 
@@ -69,6 +72,10 @@ def is_protected(path: str, method: str, query: str) -> bool:
         return False
     if path == LOGIN_PATH and method == "POST":
         return False
+    if path in PROTECTED_DOCS:
+        # FastAPI's own schema UI. Left open it advertises every route on a public
+        # tunnel; nothing there is needed unauthenticated.
+        return True
     if path == "/api" or path.startswith("/api/"):
         return True
     if path.startswith("/ws/"):
