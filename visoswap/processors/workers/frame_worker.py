@@ -91,6 +91,25 @@ class DetectionInterpolator:
     MAX_ENTRIES = 1024   # per key
     _lock = threading.Lock()
     _store: dict = {}
+    _emb: dict = {}
+
+    @classmethod
+    def record_emb(cls, key, frame, emb):
+        with cls._lock:
+            d = cls._emb.setdefault(key, {})
+            if len(d) >= cls.MAX_ENTRIES:
+                d.pop(next(iter(d)))
+            d[frame] = emb
+
+    @classmethod
+    def lookup_emb(cls, key, frame):
+        """Embedding of the nearest real-recognition frame within MAX_GAP, else None."""
+        with cls._lock:
+            d = cls._emb.get(key)
+            if not d:
+                return None
+            near = min(d, key=lambda f: abs(f - frame))
+            return d[near] if abs(near - frame) <= cls.MAX_GAP else None
 
     @classmethod
     def lookup(cls, key, frame, width):
@@ -245,7 +264,13 @@ class FrameWorker(threading.Thread):
             for i in range(kpss_5.shape[0]):
                 face_kps_5 = kpss_5[i]
                 face_kps_all = kpss[i]
-                face_emb, _ = self.models_processor.run_recognize_direct(img, face_kps_5, control['SimilarityTypeSelection'], control['RecognitionModelSelection'])
+                face_emb = None
+                if interp is not None and dkey is not None and kpss_5.shape[0] == 1:
+                    face_emb = DetectionInterpolator.lookup_emb(dkey + (control['RecognitionModelSelection'], control['SimilarityTypeSelection']), self.frame_number)
+                if face_emb is None:
+                    face_emb, _ = self.models_processor.run_recognize_direct(img, face_kps_5, control['SimilarityTypeSelection'], control['RecognitionModelSelection'])
+                    if interp is None and dkey is not None and kpss_5.shape[0] == 1:
+                        DetectionInterpolator.record_emb(dkey + (control['RecognitionModelSelection'], control['SimilarityTypeSelection']), self.frame_number, face_emb)
                 det_faces_data.append({'kps_5': face_kps_5, 'kps_all': face_kps_all, 'embedding': face_emb, 'bbox': bboxes[i]})
 
         prof.mark('recognize')
