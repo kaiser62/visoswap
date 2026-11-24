@@ -165,7 +165,7 @@ if not pgrep("uvicorn backend.main"):
 if not pgrep("cloudflared tunnel"):
     if os.path.isfile(tok):
         os.chmod(tok, 0o600)
-        cmd = ["cloudflared", "tunnel", "--no-autoupdate", "run", "--token-file", tok, "--url", "http://127.0.0.1:8000"]   # token stays out of argv
+        cmd = ["cloudflared", "tunnel", "--no-autoupdate", "--protocol", "http2", "run", "--token-file", tok, "--url", "http://127.0.0.1:8000"]   # token stays out of argv
     else:
         cmd = ["cloudflared", "tunnel", "--no-autoupdate", "--url", "http://127.0.0.1:8000"]
     subprocess.Popen(cmd, stdout=open("/content/tunnel.log", "w"), stderr=subprocess.STDOUT, start_new_session=True)
