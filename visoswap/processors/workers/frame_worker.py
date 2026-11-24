@@ -71,7 +71,7 @@ class StageProfiler:
             if cls._frames % 50 == 0:
                 total = sum(cls._sums.values())
                 parts = " ".join("%s=%.1f" % (k, v * 1000.0 / cls._frames) for k, v in cls._sums.items())
-                print("[PROFILE] frames=%d total=%.1fms %s" % (cls._frames, total * 1000.0 / cls._frames, parts), flush=True)
+                print("[PROFILE] frames=%d total=%.1fms %s interp=%s" % (cls._frames, total * 1000.0 / cls._frames, parts, DetectionInterpolator.stats), flush=True)
         self._t = None
 
 
@@ -92,6 +92,8 @@ class DetectionInterpolator:
     _lock = threading.Lock()
     _store: dict = {}
     _emb: dict = {}
+    stats = {'hit': 0, 'nobracket': 0, 'multi': 0, 'motion': 0, 'scale': 0}
+    MAX_MOVE_FACE = 0.4  # of the face bbox width, per landmark, across the bracket
 
     EMB_GAP = 12         # frames an embedding stays reusable if the face barely moved
 
@@ -127,13 +129,22 @@ class DetectionInterpolator:
             lo = max((f for f in d if f < frame), default=None)
             hi = min((f for f in d if f > frame), default=None)
             if lo is None or hi is None or hi - lo > cls.MAX_GAP:
+                cls.stats['nobracket'] += 1
                 return None
             a, b = d[lo], d[hi]
         t = (frame - lo) / (hi - lo)
         if any(len(x[1]) != 1 for x in (a, b)):
+            cls.stats['multi'] += 1
             return None
-        if np.abs(a[1] - b[1]).max() > cls.MAX_MOVE * width:
+        wa = float(a[0][0][2] - a[0][0][0])
+        wb = float(b[0][0][2] - b[0][0][0])
+        if wa <= 0 or wb <= 0 or not 0.8 <= wa / wb <= 1.25:
+            cls.stats['scale'] += 1
             return None
+        if np.abs(a[1] - b[1]).max() > cls.MAX_MOVE_FACE * max(wa, wb):
+            cls.stats['motion'] += 1
+            return None
+        cls.stats['hit'] += 1
         return tuple(x0 + (x1 - x0) * t for x0, x1 in zip(a, b))
 
     @classmethod
