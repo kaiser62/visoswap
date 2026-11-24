@@ -75,9 +75,22 @@ def preview_dir(project_id: str) -> Path:
     return project_dir(project_id) / "preview"
 
 
+def variant_dir(project_id: str) -> Path:
+    """Downscaled copies of generated frames, deliberately outside `generated_dir`.
+
+    Both `Recorder._generated_for` and `Composer` bisect the sorted listing of
+    `generated_dir` to decide which generated frame covers a timestamp. A variant
+    stored next to its original would sort *after* it (`000000.000.w720q70` >
+    `000000.000`), so a probe landing between two timestamps would select the
+    downscaled preview and mux a 720px picture into the recording. Variants are
+    not part of the video, so they get their own tree.
+    """
+    return project_dir(project_id) / "variants"
+
+
 def ensure_project_dirs(project_id: str) -> Path:
     root = project_dir(project_id)
-    for sub in ("source", "frames", "generated", "preview"):
+    for sub in ("source", "frames", "generated", "preview", "variants"):
         (root / sub).mkdir(parents=True, exist_ok=True)
     return root
 
@@ -90,7 +103,7 @@ def clear_frames(project_id: str) -> int:
     wrong image. Only the source video survives.
     """
     removed = 0
-    for base in (frames_dir(project_id), generated_dir(project_id)):
+    for base in (frames_dir(project_id), generated_dir(project_id), variant_dir(project_id)):
         if not base.is_dir():
             continue
         for path in base.iterdir():

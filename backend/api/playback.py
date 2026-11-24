@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from backend.api.deps import get_db, get_project
 from backend.models.database import STATUS_COMPLETED, Database
-from backend.services import cache, recorder
+from backend.services import cache, frame_variants, recorder
 from backend.services.scheduler import (
     effective_interval,
     grid_rate,
@@ -195,8 +195,18 @@ async def get_frame(
     key: str,
     project: dict[str, Any] = Depends(get_project),
     db: Database = Depends(get_db),
+    w: int | None = Query(default=None, ge=frame_variants.MIN_WIDTH, le=frame_variants.MAX_WIDTH),
+    q: int | None = Query(
+        default=None, ge=frame_variants.MIN_QUALITY, le=frame_variants.MAX_QUALITY
+    ),
 ):
-    """Serve one generated frame. `key` is the canonical `000123.450` form."""
+    """Serve one generated frame. `key` is the canonical `000123.450` form.
+
+    With no `w`/`q` the original bytes are served exactly as before, so existing
+    clients keep the exact picture they had. With either one, a downscaled JPEG
+    variant is generated once and cached; `w` never upscales. The variant is a
+    *preview*: the frame in the recording is always the original.
+    """
     try:
         ts = cache.key_to_timestamp(key)
     except ValueError as exc:
@@ -214,12 +224,31 @@ async def get_frame(
     if not path.is_file():
         raise HTTPException(status_code=404, detail="generated frame is missing")
 
-    return FileResponse(
-        path,
-        media_type=mimetypes.guess_type(path.name)[0] or "image/webp",
-        # Content at a given timestamp is immutable once generated.
-        headers={"Cache-Control": "private, max-age=31536000, immutable"},
+    # Content at a given timestamp is immutable once generated. A variant is
+    # versioned by the same frame row, so the client cannot keep a stale size.
+    immutable = {"Cache-Control": "private, max-age=31536000, immutable"}
+    if w is None and q is None:
+        return FileResponse(
+            path,
+            media_type=mimetypes.guess_type(path.name)[0] or "image/webp",
+            headers=immutable,
+        )
+
+    width, quality = frame_variants.clamp(
+        w if w is not None else frame_variants.MAX_WIDTH,
+        q if q is not None else frame_variants.DEFAULT_QUALITY,
     )
+    variant = frame_variants.get_or_create(project["id"], key, path, width, quality)
+    if variant is None:
+        # The original is still perfectly serviceable: degrade rather than fail
+        # playback because a preview could not be encoded.
+        log.warning("[VARIANT] project=%s key=%s falling back to original", project["id"], key)
+        return FileResponse(
+            path,
+            media_type=mimetypes.guess_type(path.name)[0] or "image/webp",
+            headers=immutable,
+        )
+    return FileResponse(variant, media_type="image/jpeg", headers=immutable)
 
 
 @router.get("/{project_id}/frame-at")
