@@ -299,9 +299,18 @@ def health_ok(body: str) -> bool:
     return bool(re.search(r'"status"\s*:\s*"ok"', body or ""))
 
 
+# Cloudflare answers urllib's default "Python-urllib/x.y" User-Agent with 403 "error code: 1010" (browser
+# signature ban) on these zones, so health never looked ok through the tunnel. Always send our own UA.
+USER_AGENT = "visoswap-launcher/1.0"
+
+
+def http_get(url: str, timeout: float = 10.0):
+    return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": USER_AGENT}), timeout=timeout)
+
+
 def fetch_health(url: str, timeout: float = 10.0) -> bool:
     try:
-        with urllib.request.urlopen(url.rstrip("/") + "/api/health", timeout=timeout) as r:
+        with http_get(url.rstrip("/") + "/api/health", timeout=timeout) as r:
             return r.status == 200 and health_ok(r.read(4096).decode("utf-8", "replace"))
     except (urllib.error.URLError, OSError, ValueError):
         return False

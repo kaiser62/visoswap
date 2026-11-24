@@ -15,7 +15,7 @@ import urllib.request
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
-from vs_common import (DEFAULT_HOSTNAMES, DEFAULT_TUNNEL_NAMES, LaunchError, Reporter, Runner, env_path,
+from vs_common import (USER_AGENT, DEFAULT_HOSTNAMES, DEFAULT_TUNNEL_NAMES, LaunchError, Reporter, Runner, env_path,
                        load_env_file, merge_env_file, normalize_host)
 import shutil
 
@@ -25,7 +25,7 @@ Fetch = Callable[[str, str, Dict[str, str], Optional[dict]], Tuple[int, dict]]
 
 def default_fetch(method: str, url: str, headers: Dict[str, str], body: Optional[dict]) -> Tuple[int, dict]:
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method, headers={**headers, "Content-Type": "application/json"})
+    req = urllib.request.Request(url, data=data, method=method, headers={**headers, "Content-Type": "application/json", "User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             return r.status, json.loads(r.read() or b"{}")

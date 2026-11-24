@@ -1007,3 +1007,21 @@ def test_run_launcher_redacts_per_field_and_keeps_urls(tmp_path, monkeypatch):
     out = A.redact_obj(red, {"error": 'x SECRET"VALUE-abcdef y', "url": "https://accounts.google.com/o/oauth2/auth?client_id=abc&state=s1", "n": 3})
     assert "SECRET" not in out["error"] and out["url"].endswith("state=s1") and out["n"] == 3
     assert A.safe_google_url("https://accounts.google.com/o/oauth2/auth?client_id=abc&state=s1")
+
+
+def test_health_sends_own_user_agent(monkeypatch):
+    """Live run: Cloudflare answers urllib's default UA with 403 'error code: 1010', so health never passed."""
+    seen = {}
+
+    class R:
+        status = 200
+        def read(self, n): return b'{"status":"ok"}'
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    def fake_urlopen(req, timeout=None):
+        seen["ua"] = req.get_header("User-agent")
+        return R()
+    monkeypatch.setattr(C.urllib.request, "urlopen", fake_urlopen)
+    assert C.fetch_health("https://h.example.org") is True
+    assert seen["ua"] == C.USER_AGENT and "urllib" not in seen["ua"].lower()
