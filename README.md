@@ -39,6 +39,66 @@ Set `VISOSWAP_API_KEY` to require a key on the API, WebSockets and `/url=` short
 them from your phone): `tools/launchers/kaggle-launch.sh`, `tools/launchers/colab-launch.sh`.
 See [docs/launchers.md](docs/launchers.md).
 
+## Face library: grouping by similarity
+
+The library groups faces two ways. `POST /api/faces/auto-group` with no arguments
+(the default, `mode=name`) groups by a named person detected in the uploaded
+filename. `mode=similarity` groups by *identity*: two photos of one person land
+together even when the files were named differently.
+
+```bash
+# 1. propose — read-only, writes nothing
+curl -s -H "X-VisoSwap-Key: $KEY" \
+  -X POST 'http://localhost:8000/api/faces/auto-group?mode=similarity&threshold=0.40'
+
+# 2. apply only what you accepted
+curl -s -H "X-VisoSwap-Key: $KEY" -H 'content-type: application/json' \
+  -X POST http://localhost:8000/api/faces/auto-group/apply \
+  -d '{"assignments":[{"group":"Alice","face_ids":["<id>","<id>"]}]}'
+
+# find more of one person
+curl -s -H "X-VisoSwap-Key: $KEY" \
+  'http://localhost:8000/api/faces/<id>/similar?limit=8'
+```
+
+The proposal returns `clusters` (`suggested_group`, `face_ids`, `conflicts`),
+`skipped_no_face` and `computed`. It is suggest-then-confirm: nothing is written
+until `apply` runs. A member already in a different group is listed under
+`conflicts` and is only moved when the caller sends `overwrite: true`.
+`threshold` defaults to 0.40 and is clamped to 0.20–0.80.
+
+Embedding a library on a CPU takes seconds to tens of seconds, so past 25 faces
+with no cached embedding the endpoint answers **202** with a `job` id instead of
+blocking; poll `GET /api/faces/group/{job_id}` (or listen for
+`faces_embedding_progress` on the WebSocket) and the clusters come back when
+`state` is `done`.
+
+Clustering is complete-linkage: a group only forms when *every* pair inside it
+clears the threshold, so A similar to B and B similar to C does not merge A with
+C. False merges (two people, one label) are worse than missed ones, which is why
+the threshold is the strict knob and the review step exists.
+
+### Biometric data
+
+A face embedding is biometric data. Each one is a 512-float vector stored as a
+sidecar next to its image (`<face_id>.emb.npy`) inside the face store, keyed by
+the image's content digest. It is never returned by the API — responses carry
+similarity *scores*, never vectors — and never written to logs. Deleting a face
+deletes its embedding and the "no face found" marker with it, so the store cannot
+accumulate fingerprints of images you removed. Nothing is computed until you ask
+for a grouping or a similar-faces lookup.
+
+The models are `det_10g.onnx` (SCRFD) and `w600k_r50.onnx` (ArcFace) from
+`MODELS_DIR`, run through onnxruntime on the **CPU only** — no GPU memory, no
+dependency on the swap engine, so it works on a Mac, on Kaggle and on Colab. If
+those files are missing the endpoints fail with a clear message rather than
+crashing.
+
+The 0.40 default is not yet validated against a labelled set of real faces; treat
+the proposal as a suggestion to review, not as a decision. Choosing the threshold
+properly needs precision/recall measured on real data (see
+`docs/face-similarity-grouping-plan.md`, work split item 4).
+
 ## Status
 
 Early. Phase 1 of the roadmap — vendoring the engine and stripping Qt — is in
