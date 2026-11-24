@@ -1,0 +1,22 @@
+# Start with: ./run.sh start   (creates the access token first and shows it once)
+# The container always listens on 0.0.0.0; WHO can reach it is decided here by the published address.
+# Default 127.0.0.1 (this machine only). For your LAN set WEBUI_BIND=0.0.0.0 -- see docs/launchers.md.
+services:
+  launcher-ui:
+    build: .
+    image: visoswap-launcher-ui
+    container_name: visoswap-launcher-ui
+    restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "${WEBUI_BIND:-127.0.0.1}:${WEBUI_PORT:-8765}:8765"
+    volumes:
+      - ${VISOSWAP_HOME:-~/.visoswap}:/data/visoswap            # env files, *_url, webui_token (read-write: launchers save URLs/tokens)
+      - ${KAGGLE_DIR:-~/.kaggle}:/data/kaggle:ro                 # Kaggle credentials, read-only
+      - ${COLAB_CONFIG_DIR:-~/.config/colab-cli}:/home/app/.config/colab-cli   # Colab session state (CLI writes it)
+      - ../../..:/repo:ro                                        # launchers + visoswap_kaggle.ipynb, read-only
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]

@@ -24,6 +24,10 @@ You can run VisoSwap directly on Kaggle with a free NVIDIA GPU (T4 x2 or P100):
 3. Click **Run All**.
 4. The last cell prints a public Cloudflare tunnel link (e.g. `https://xxxx.trycloudflare.com`). Open it in your desktop browser or mobile Safari/Chrome to access the full VisoSwap Studio Web UI with live streaming and theater mode!
 
+**One-click launchers** (Kaggle and Colab, with provisioning, plus an optional local web UI to run
+them from your phone): `tools/launchers/kaggle-launch.sh`, `tools/launchers/colab-launch.sh`.
+See [docs/launchers.md](docs/launchers.md).
+
 ## Status
 
 Early. Phase 1 of the roadmap — vendoring the engine and stripping Qt — is in

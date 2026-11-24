@@ -25,3 +25,15 @@ tests/artifacts/
 tests/media/
 
 tools/.vmbench/
+
+# Launcher secrets: tunnel tokens, Kaggle/Colab/Cloudflare credentials (config lives in ~/.visoswap, never here)
+*.env
+!.env.example
+kaggle.env
+colab.env
+webui_token
+kaggle.json
+credentials.json
+cf_token
+cert.pem
+.visoswap/

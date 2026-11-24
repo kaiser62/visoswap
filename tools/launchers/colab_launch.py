@@ -1,0 +1,371 @@
+#!/usr/bin/env python3
+"""One-click VisoSwap GPU backend on Google Colab (provisioning included).
+
+    colab_launch.py              obtain/reuse a T4 session, set up, start, print the URL
+    colab_launch.py --setup      provision (session, deps, repo, models, tunnel config); do not start
+    colab_launch.py --status     session + remote processes + public health
+    colab_launch.py --restart    restart uvicorn + tunnel inside the SAME session
+    colab_launch.py --logs       tail uvicorn / tunnel logs
+    colab_launch.py --down       the ONLY way a session is stopped (asks first)
+    colab_launch.py --dry-run    show what would happen; nothing mutating runs
+
+Config: ~/.visoswap/colab.env (CF_TUNNEL_TOKEN, VISOSWAP_HOSTNAME, COLAB_SESSION=t4, COLAB_GPU=T4,
+VISOSWAP_REF=master, COLAB_BIN). See docs/launchers.md.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import sys
+import tempfile
+import time
+from pathlib import Path
+from typing import Dict, List, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import vs_cf  # noqa: E402
+import vs_remote  # noqa: E402
+from vs_common import (REPO_URL, LaunchError, Reporter, Runner, common_args, confirm, fetch_health,  # noqa: E402
+                       load_config, make_reporter, normalize_host, save_url, target_lock, visoswap_home, wait_until)
+
+REMOTE_REPO = "/content/visoswap"
+REMOTE_TOKEN = "/content/cf_token"
+RETRY_INTERVAL_S = 30
+
+
+# ----------------------------------------------------------------- pure logic
+def parse_sessions(out: str) -> List[Dict[str, str]]:
+    """`[t4] gpu-t4-s-usw4b0-... | Hardware: T4 | Shape: Standard | Variant: GPU` -> dicts."""
+    res = []
+    for line in out.splitlines():
+        m = re.match(r"\s*\[([^\]]+)\]\s*(\S+)\s*(.*)", line)
+        if not m:
+            continue
+        hw = re.search(r"Hardware:\s*([^|]+)", m.group(3))
+        res.append({"name": m.group(1), "id": m.group(2), "hardware": hw.group(1).strip() if hw else ""})
+    return res
+
+
+def choose_session(sessions: List[Dict[str, str]], wanted: str) -> Dict[str, str]:
+    """Returns {'action': 'reuse'|'create'|'abort', 'session': name, 'why': ...}. Never 'create' when one exists."""
+    for s in sessions:
+        if s["name"] == wanted:
+            return {"action": "reuse", "session": wanted}
+    if len(sessions) == 1:
+        return {"action": "reuse", "session": sessions[0]["name"], "why": f"adopting the only existing session '{sessions[0]['name']}'"}
+    if not sessions:
+        return {"action": "create", "session": wanted}
+    return {"action": "abort", "session": wanted,
+            "why": f"{len(sessions)} sessions exist and none is named '{wanted}'"}
+
+
+def plan_steps(probe: dict, public_healthy: bool, restart: bool, ref_given: bool, setup_only: bool) -> List[str]:
+    """Which remote steps to run. Every step re-checks, so extra steps are cheap but this keeps launches fast."""
+    if public_healthy and not (restart or ref_given or setup_only):
+        return []
+    steps = []
+    if probe.get("deps_missing") or "onnxruntime" in probe.get("deps_missing", []):
+        steps.append("deps")
+    steps.append("repo")
+    steps.append("models")
+    if not setup_only:
+        steps.append("start")
+    return steps
+
+
+def exec_cmd(exe: str, session: str, script: Path, timeout: int) -> list:
+    return [exe, "exec", "-s", session, "-f", str(script), "--timeout", str(timeout)]
+
+
+def new_cmd(exe: str, session: str, gpu: str) -> list:
+    return [exe, "new", "-s", session, "--gpu", gpu]
+
+
+def markers(out: str, step: str):
+    """-> (ok, fail_reason)"""
+    if f"VS_OK {step}" in out:
+        return True, ""
+    m = re.search(r"VS_FAIL \S+ (.*)", out)
+    return False, (m.group(1) if m else "no completion marker (timeout or crash); see output above")
+
+
+def auth_problem(out: str) -> bool:
+    low = out.lower()
+    return any(w in low for w in ("not logged in", "oauth", "credential", "authentication", "login required", "invalid_grant", "reauth"))
+
+
+# ----------------------------------------------------------------- impure
+class Colab:
+    def __init__(self, cfg, rep: Reporter, run: Runner, sleep=time.sleep, clock=time.time, health=fetch_health):
+        self.cfg, self.rep, self.run, self.sleep, self.clock, self.health = cfg, rep, run, sleep, clock, health
+        self.exe = cfg.get("COLAB_BIN") or shutil.which("colab") or str(Path.home() / ".local/bin/colab")
+        self.session = cfg.get("COLAB_SESSION") or "t4"
+        self.gpu = cfg.get("COLAB_GPU") or "T4"
+        self.ref = cfg.get("VISOSWAP_REF") or "master"
+
+    def c(self, *args, mutating=False, timeout=120):
+        r = self.run.run([self.exe, *args], mutating=mutating, timeout=timeout)
+        if r.rc == 127:
+            raise LaunchError("colab CLI not found", "uv tool install google-colab-cli  (or set COLAB_BIN), then run `colab sessions` once to log in")
+        if r.rc != 0 and auth_problem(r.out):
+            raise LaunchError("Colab CLI is not logged in", "run `colab sessions` (or `colab new --help`) in a terminal and finish the Google login in the browser")
+        return r
+
+    def sessions(self) -> List[Dict[str, str]]:
+        return parse_sessions(self.c("sessions").out)
+
+    def ensure_session(self, max_wait: int) -> str:
+        sess = self.sessions()
+        d = choose_session(sess, self.session)
+        if d["action"] == "abort":
+            raise LaunchError(d["why"], "set COLAB_SESSION in ~/.visoswap/colab.env to the session to use; the launcher never creates a second one")
+        if d["action"] == "reuse":
+            self.session = d["session"]
+            self.rep.log(d.get("why") or f"reusing session '{self.session}'")
+            return self.session
+        self.rep.step(f"no session: requesting a {self.gpu} (retrying every {RETRY_INTERVAL_S}s for up to {max_wait // 60} min; free T4s are often 'Service Unavailable')")
+        if self.run.dry_run:
+            self.rep.log("[dry-run] would run: " + " ".join(new_cmd(self.exe, self.session, self.gpu)))
+            return None
+        t0, n = self.clock(), 0
+        while True:
+            n += 1
+            # a failed-looking `new` may have succeeded: always re-check first
+            if choose_session(self.sessions(), self.session)["action"] != "create":
+                self.rep.log(f"session available after {n - 1} attempt(s)")
+                return self.session
+            r = self.c("new", "-s", self.session, "--gpu", self.gpu, mutating=True, timeout=300)
+            why = re.search(r"Service Unavailable|Backend rejected[^.\n]*|quota[^.\n]*|[A-Za-z]*Error[^|\n]*", r.out)
+            if choose_session(self.sessions(), self.session)["action"] != "create":
+                self.rep.log(f"attempt {n}: {self.gpu} assigned")
+                return self.session
+            self.rep.log(f"attempt {n}: {why.group(0) if why else (r.out.splitlines() or ['no output'])[-1][:80]}")
+            if self.clock() - t0 + RETRY_INTERVAL_S > max_wait:
+                raise LaunchError(f"no {self.gpu} became available within {max_wait // 60} min",
+                                  "retry later, raise --max-wait, or try --gpu L4; Colab's free tier often has no T4 at peak hours")
+            self.sleep(RETRY_INTERVAL_S)
+
+    def remote(self, name: str, script: str, timeout: int, **cfg) -> str:
+        base = dict(repo_dir=REMOTE_REPO, token_file=REMOTE_TOKEN, ref=self.ref, repo_url=REPO_URL, subset="default",
+                    restart=False, profile=False, concurrency=None, wait=240, which=["uvicorn", "tunnel"], lines=60)
+        base.update(cfg)
+        d = Path(tempfile.mkdtemp(prefix="visoswap-colab-"))
+        f = d / f"{name}.py"
+        try:
+            f.write_text(vs_remote.render(script, **base))
+            os.chmod(f, 0o600)
+            r = self.c(*exec_cmd("", self.session, f, timeout)[1:], mutating=name not in ("probe", "logs"), timeout=timeout + 60)
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+        if r.skipped:
+            return ""
+        for line in r.out.splitlines()[-25:]:
+            if name != "probe" and line.strip():
+                self.rep.log(line[:200])
+        return r.out
+
+    def probe(self) -> dict:
+        out = self.remote("probe", vs_remote.PROBE, 120)
+        m = re.search(r"VS_PROBE (\{.*\})", out)
+        if not m:
+            raise LaunchError("could not query the Colab session: " + (out[-200:] or "no output"),
+                              "the runtime may be disconnected; run `colab status -s %s` and consider --restart" % self.session)
+        return json.loads(m.group(1))
+
+    def step(self, name: str, script: str, timeout: int, **cfg):
+        out = self.remote(name, script, timeout, **cfg)
+        if self.run.dry_run:
+            return out
+        ok, why = markers(out, name)
+        if not ok:
+            raise LaunchError(f"remote step '{name}' failed: {why}", f"see `colab_launch.py --logs`, then re-run (every step is idempotent)")
+        return out
+
+    def stop_session(self):
+        """The ONLY place that builds a `stop` command. Reached only via --down."""
+        return self.c("stop", "-s", self.session, mutating=True)
+
+    def upload_token(self, token: str):
+        d = Path(tempfile.mkdtemp(prefix="visoswap-tok-"))
+        f = d / "cf_token"
+        try:
+            fd = os.open(f, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w") as fh:
+                fh.write(token)
+            r = self.c("upload", str(f), REMOTE_TOKEN, "-s", self.session, mutating=True, timeout=120)
+            if r.rc != 0 and not r.skipped:
+                raise LaunchError("could not upload the tunnel token: " + r.out[:150], "retry")
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+
+def saved_url() -> Optional[str]:
+    f = visoswap_home() / "colab_url"
+    return f.read_text().strip() if f.is_file() else None
+
+
+def public_url(cfg) -> Optional[str]:
+    h = normalize_host(cfg.get("VISOSWAP_HOSTNAME", ""))
+    return f"https://{h}" if h else None
+
+
+def launch(args, cfg, rep, run, co: Colab, fetch=vs_cf.default_fetch, home=None) -> dict:
+    rep.step("Provision: Colab CLI + session")
+    if co.ensure_session(args.max_wait) is None:
+        return {"ok": True, "state": "dry-run", "summary": "dry run: no session exists; the real run would request a GPU session, then set up and start the backend"}
+    probe = co.probe()
+    rep.log(f"GPU: {probe.get('gpu') or 'NONE'}; repo {probe.get('sha') or 'not cloned'}; models {probe.get('models', 0)}; "
+            f"backend {'up' if probe.get('health') else 'down'}")
+    if not probe.get("gpu"):
+        raise LaunchError("the session has no GPU", "it was created as a CPU runtime: run --down, then launch again")
+    rep.step("Provision: Cloudflare tunnel")
+    named_ready = bool(cfg.get("CF_TUNNEL_TOKEN") and cfg.get("VISOSWAP_HOSTNAME"))
+    if not named_ready and args.tunnel != "quick" and probe.get("token_file"):
+        # older manual setup: the VM already holds /content/cf_token; only the hostname is needed locally
+        rep.log("tunnel token already on the VM; keeping it")
+        cfg = {**cfg, "VISOSWAP_HOSTNAME": cfg.get("VISOSWAP_HOSTNAME") or vs_cf.DEFAULT_HOSTNAMES["colab"], "TUNNEL_MODE": "named"}
+    else:
+        cfg = vs_cf.ensure_tunnel("colab", cfg, rep, run, args.tunnel, fetch=fetch, home=home)
+    quick = cfg.get("TUNNEL_MODE") == "quick"
+    url = None if quick else public_url(cfg)
+    healthy = bool(url and co.health(url))
+    steps = plan_steps(probe, healthy, args.restart, bool(args.ref), args.setup)
+    rep.step("plan: " + (", ".join(steps) if steps else "nothing to do (already healthy)"))
+    if not steps:
+        return finish(args, url, rep)
+    if "deps" in steps:
+        co.step("deps", vs_remote.DEPS, 1800)
+    repo_out = co.step("repo", vs_remote.REPO_STEP, 900)
+    co.step("models", vs_remote.MODELS, 3300)
+    if args.setup:
+        return {"ok": True, "state": "provisioned", "summary": "Colab provisioning complete (session, deps, repo, models).", "tunnel": cfg.get("TUNNEL_MODE")}
+    if not quick and cfg.get("CF_TUNNEL_TOKEN") and (not probe.get("token_file") or args.refresh_token):
+        co.upload_token(cfg["CF_TUNNEL_TOKEN"])
+    code_changed = "VS_CHANGED 1" in (repo_out or "")
+    out = co.step("start", vs_remote.START, 600, restart=bool(args.restart or code_changed), profile=args.profile,
+                  concurrency=args.concurrency)
+    if run.dry_run:
+        return {"ok": True, "state": "dry-run", "summary": "dry run complete", "url": url}
+    if quick:
+        m = re.search(r"VS_QUICK_URL (\S+)", out)
+        if not m:
+            raise LaunchError("quick tunnel started but no trycloudflare URL appeared", "run --logs tunnel")
+        url = m.group(1)
+    if not wait_until(lambda: co.health(url), 300, 10, co.sleep, co.clock, lambda w: rep.log(f"[{w:4d}s] waiting for {url}")):
+        raise LaunchError("backend is up inside Colab but not reachable through the tunnel (Cloudflare 1033/502)",
+                          "check the tunnel with --logs tunnel; the token or ingress (http://localhost:8000) may be wrong")
+    return finish(args, url, rep)
+
+
+def finish(args, url, rep) -> dict:
+    save_url("colab", url, rep, args.dry_run, not (args.no_clipboard or args.json))
+    return {"ok": True, "state": "RUNNING", "healthy": True, "url": url, "mobile_url": url + "/mobile"}
+
+
+def status(args, cfg, rep, run, co: Colab) -> dict:
+    sess = co.sessions()
+    d = choose_session(sess, co.session)
+    if d["action"] != "reuse":
+        return {"ok": True, "state": "NO_SESSION", "healthy": False, "url": public_url(cfg), "configured": bool(public_url(cfg)),
+                "summary": "no Colab session; launch to create one"}
+    co.session = d["session"]
+    probe = co.probe()
+    url = public_url(cfg) or saved_url()
+    healthy = bool(url and co.health(url))
+    state = "RUNNING" if probe.get("health") else "SESSION_ONLY"
+    return {"ok": True, "state": state, "healthy": healthy, "url": url, "session": co.session, "gpu": probe.get("gpu"),
+            "sha": probe.get("sha"), "uvicorn": probe.get("uvicorn"), "tunnel": probe.get("tunnel"),
+            "configured": bool(url),
+            "summary": f"session {co.session} ({probe.get('gpu')}): backend {'up' if probe.get('health') else 'down'}, public {'healthy' if healthy else 'not answering'}"}
+
+
+def restart(args, cfg, rep, run, co: Colab) -> dict:
+    d = choose_session(co.sessions(), co.session)
+    if d["action"] != "reuse":
+        raise LaunchError("no Colab session to restart processes in", "run the launcher without --restart to create one")
+    co.session = d["session"]
+    out = co.step("start", vs_remote.START, 600, restart=True, profile=args.profile, concurrency=args.concurrency)
+    url = public_url(cfg)
+    if url and not run.dry_run and not wait_until(lambda: co.health(url), 300, 10, co.sleep, co.clock):
+        raise LaunchError("restarted, but the public URL is not healthy", "run --logs")
+    return finish(args, url, rep) if url and not run.dry_run else {"ok": True, "summary": "processes restarted"}
+
+
+def down(args, cfg, rep, run, co: Colab) -> dict:
+    d = choose_session(co.sessions(), co.session)
+    if d["action"] != "reuse":
+        return {"ok": True, "state": "NO_SESSION", "summary": "no session to stop"}
+    co.session = d["session"]
+    if not confirm(f"Stop Colab session '{co.session}'? The backend goes offline and a new T4 may be hard to get.", args.yes, rep):
+        return {"ok": True, "state": "RUNNING", "summary": "aborted"}
+    co.stop_session()
+    return {"ok": True, "state": "NO_SESSION", "summary": f"stopped session {co.session}"}
+
+
+def logs(args, co: Colab) -> dict:
+    d = choose_session(co.sessions(), co.session)
+    if d["action"] != "reuse":
+        raise LaunchError("no Colab session", "launch first")
+    co.session = d["session"]
+    out = co.remote("logs", vs_remote.LOGS, 120, which=["uvicorn", "tunnel"] if args.logs == "both" else [args.logs], lines=args.lines)
+    for line in out.splitlines():
+        if not line.startswith("VS_"):
+            co.rep.log(line[:300])
+    return {"ok": True, "summary": "logs shown above"}
+
+
+def build_parser():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    common_args(ap, "colab")
+    ap.add_argument("--ref", help="git ref (branch/tag/sha) to deploy; default master (VISOSWAP_REF)")
+    ap.add_argument("--gpu", help="GPU for a NEW session: T4 (default), L4, G4, A100, H100")
+    ap.add_argument("--session", help="session name (default t4, COLAB_SESSION)")
+    ap.add_argument("--max-wait", type=int, default=1800, help="seconds to keep retrying for a GPU (default 1800)")
+    ap.add_argument("--refresh-token", action="store_true", help="re-upload the tunnel token to the VM")
+    ap.add_argument("--logs", nargs="?", const="both", choices=("uvicorn", "tunnel", "both"), help="show remote logs")
+    ap.add_argument("--lines", type=int, default=60)
+    return ap
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
+    cfg = load_config("colab")
+    if args.ref:
+        cfg["VISOSWAP_REF"] = args.ref
+    if args.gpu:
+        cfg["COLAB_GPU"] = args.gpu
+    if args.session:
+        cfg["COLAB_SESSION"] = args.session
+    rep = make_reporter(args, cfg)
+    run = Runner(rep, dry_run=args.dry_run)
+    co = Colab(cfg, rep, run)
+    try:
+        if args.status:
+            res = status(args, cfg, rep, run, co)
+        elif args.logs:
+            res = logs(args, co)
+        elif args.down:
+            with target_lock("colab", rep):
+                res = down(args, cfg, rep, run, co)
+        elif args.restart and not args.setup:
+            with target_lock("colab", rep):
+                res = restart(args, cfg, rep, run, co)
+        else:
+            with target_lock("colab", rep):
+                res = launch(args, cfg, rep, run, co)
+        ok = res.pop("ok", True)
+        rep.result(ok, **res)
+        return 0 if ok else 1
+    except LaunchError as e:
+        rep.result(False, error=str(e), next=e.next_action)
+        return 1
+    except KeyboardInterrupt:
+        rep.result(False, error="interrupted", next="re-run; every step is idempotent")
+        return 130
+
+
+if __name__ == "__main__":
+    sys.exit(main())
