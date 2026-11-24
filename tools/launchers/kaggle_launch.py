@@ -32,9 +32,9 @@ NOTEBOOK = REPO_ROOT / "visoswap_kaggle.ipynb"
 QUEUE_RETRY_S = 300       # a kernel queued this long has been unstuck by delete + re-push before
 MAX_GPU_WAIT_S = 3600
 MAX_BOOT_WAIT_S = 1200
-#: friendly name -> `kaggle kernels push --accelerator` value. NvidiaTeslaT4 is the value this
-#: project has used successfully (Kaggle then offers its T4 pair); anything else is passed through.
-ACCELERATORS = {"t4": "NvidiaTeslaT4", "t4x2": "NvidiaTeslaT4", "p100": "NvidiaTeslaP100"}
+#: friendly name -> `kaggle kernels push --accelerator` value ('NvidiaTeslaT4' = GPU T4 x2 per the CLI help;
+#: P100 is retired). Anything else (e.g. a TPU name) is passed through verbatim.
+ACCELERATORS = {"t4": "NvidiaTeslaT4", "t4x2": "NvidiaTeslaT4"}
 
 
 # ----------------------------------------------------------------- pure logic
@@ -173,7 +173,7 @@ class Kaggle:
         self.rep.log(f"model dataset {ds}: not ready ({r.out.strip()[:60]})")
         return None
 
-    def ensure_dataset(self, args) -> Optional[str]:
+    def ensure_dataset(self, args, create: bool = True) -> Optional[str]:
         ds = self.dataset()
         if ds:
             return ds
@@ -182,6 +182,9 @@ class Kaggle:
         files = sorted(src.glob("*.onnx")) if src.is_dir() else []
         if not files:
             self.rep.log(f"no local models in {src}; the kernel will download them itself (~1.3 GB, about 30 s)")
+            return None
+        if not create:
+            self.rep.log(f"model dataset {ds} not ready; run with --setup to create it from {src}. Continuing: the kernel downloads models itself")
             return None
         mb = sum(f.stat().st_size for f in files) // 2**20
         if self.run.dry_run:
@@ -228,7 +231,7 @@ def provision(args, cfg, rep, run, kg: Kaggle, fetch=vs_cf.default_fetch, home=N
     rep.step("Provision: Cloudflare tunnel")
     cfg = vs_cf.ensure_tunnel("kaggle", cfg, rep, run, args.tunnel, fetch=fetch, home=home)
     rep.step("Provision: model dataset")
-    ds = kg.ensure_dataset(args)
+    ds = kg.ensure_dataset(args, create=args.setup)
     return cfg, ds
 
 
@@ -343,6 +346,8 @@ def down(args, cfg, rep, run, kg: Kaggle) -> dict:
     if not confirm(f"Delete Kaggle kernel {kg.slug} (stops the backend)?", args.yes or args.dry_run, rep):
         return {"ok": True, "state": st, "summary": "aborted"}
     kg.delete()
+    if run.dry_run:
+        return {"ok": True, "state": "dry-run", "summary": f"dry run: would delete {kg.slug}"}
     return {"ok": True, "state": "MISSING", "summary": f"deleted {kg.slug}"}
 
 
@@ -350,7 +355,7 @@ def build_parser():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     common_args(ap, "kaggle")
     ap.add_argument("--max-minutes", type=int, help="kernel self-terminates after N minutes (default 90, 0 = never)")
-    ap.add_argument("--accelerator", default="t4x2", help="t4x2 (default), p100, or a raw `kaggle kernels push --accelerator` value")
+    ap.add_argument("--accelerator", default="t4x2", help="t4x2 (default, = NvidiaTeslaT4), or a raw `kaggle kernels push --accelerator` value")
     ap.add_argument("--models-dir", help="local model dir used to create the model dataset (default <repo>/model_assets_owned)")
     return ap
 
@@ -365,8 +370,11 @@ def main(argv=None) -> int:
         if args.status:
             res = status(args, cfg, rep, run, kg)
         elif args.down:
-            with target_lock("kaggle", rep):
+            if args.dry_run:
                 res = down(args, cfg, rep, run, kg)
+            else:
+                with target_lock("kaggle", rep):
+                    res = down(args, cfg, rep, run, kg)
         else:
             if args.dry_run:
                 res = launch(args, cfg, rep, run, kg)

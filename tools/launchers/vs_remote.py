@@ -104,7 +104,9 @@ if restart:
 env = dict(os.environ, MODELS_DIR=MODELS, MODELS_VERIFY_MODE="fast", MODELS_SUBSET=CFG["subset"], VISOSWAP_PROFILE="1" if CFG["profile"] else "0",
            VISOSWAP_PROCESS_WORKERS="auto", PYTHONPATH=REPO)
 if CFG.get("concurrency"): env["GENERATION_CONCURRENCY"] = str(CFG["concurrency"])
-libs = [p for pat in ("/usr/local/lib/python3*/dist-packages/nvidia/*/lib", "/usr/local/lib/python3*/site-packages/nvidia/*/lib") for p in glob.glob(pat)]
+_cu = subprocess.run([sys.executable, "-c", "import torch;print((torch.version.cuda or '0').split('.')[0])"], capture_output=True, text=True).stdout.strip()
+# CUDA 12 only (pip-installed cuDNN); on CUDA 13 images torch's own libs are used and extra paths break cuDNN
+libs = [] if _cu != "12" else [p for pat in ("/usr/local/lib/python3*/dist-packages/nvidia/*/lib", "/usr/local/lib/python3*/site-packages/nvidia/*/lib") for p in glob.glob(pat)]
 if libs: env["LD_LIBRARY_PATH"] = ":".join(libs + [env.get("LD_LIBRARY_PATH", "")])
 if not pgrep("uvicorn backend.main"):
     subprocess.Popen([sys.executable, "-m", "uvicorn", "backend.main:app", "--host", "127.0.0.1", "--port", "8000"], cwd=REPO, env=env,

@@ -96,7 +96,15 @@ class Reporter:
         data = {"t": "result", "ok": ok}
         data.update(fields)
         self.result_data = data
-        clean = json.loads(self.redact(json.dumps(data, ensure_ascii=False)))
+        def walk(v):
+            if isinstance(v, str):
+                return self.redact(v)
+            if isinstance(v, dict):
+                return {k: walk(x) for k, x in v.items()}
+            if isinstance(v, list):
+                return [walk(x) for x in v]
+            return v
+        clean = walk(data)
         if self.json_mode:
             print(json.dumps(clean, ensure_ascii=False), file=self.stream, flush=True)
             return

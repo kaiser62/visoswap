@@ -326,3 +326,39 @@ def test_webui_rate_limits_failed_auth(tmp_path, monkeypatch):
     A, c, H = _webui(tmp_path, monkeypatch)
     codes = [c.get("/api/targets", headers={"Authorization": "Bearer x"}).status_code for _ in range(12)]
     assert codes[-1] == 429
+
+
+# ---------- review fixes
+def test_plan_steps_locally_healthy_does_not_touch_processes():
+    assert CL.plan_steps({"health": True, "tunnel": True}, False, False, False, False) == []
+    assert CL.plan_steps({"health": True, "tunnel": True}, False, True, False, False)  # --restart still acts
+
+
+def test_colab_no_env_token_on_vm_restart_and_status_resolve_url(tmp_path, monkeypatch):
+    co, clk, d = _colab(tmp_path, monkeypatch, sessions=SESS, FAKE_TOKEN_FILE="1")
+    monkeypatch.setenv("VISOSWAP_HOME", str(tmp_path / "home"))
+    a = CL.build_parser().parse_args(["--yes", "--no-clipboard"])
+    co.health = lambda u: True
+    st = CL.status(a, {}, co.rep, co.run, co)
+    assert st["url"] == "https://" + C.DEFAULT_HOSTNAMES["colab"]
+    r = CL.restart(a, {}, co.rep, co.run, co)
+    assert r["healthy"] and r["url"] == st["url"]
+    assert not any(c.startswith(("stop", "new")) for c in calls(d))
+
+
+def test_kaggle_launch_does_not_prompt_for_dataset(tmp_path):
+    class FakeKg:
+        slug = "u/visoswap-studio"; cfg = {}
+        def __init__(self): self.rep = C.Reporter(True); self.run = C.Runner(self.rep)
+        def dataset(self): return None
+    models = tmp_path / "m"; models.mkdir(); (models / "a.onnx").write_bytes(b"x")
+    args = K.build_parser().parse_args(["--json", "--models-dir", str(models)])
+    kg = K.Kaggle({}, C.Reporter(True), C.Runner(C.Reporter(True)))
+    kg.slug = "u/visoswap-studio"; kg.dataset = lambda: None
+    assert kg.ensure_dataset(args, create=False) is None      # no LaunchError("needs confirmation")
+
+
+def test_result_redacts_before_json(capsys):
+    rep = C.Reporter(True, C.Redactor())
+    rep.result(False, error='boom --token ' + TOKEN)
+    assert TOKEN not in capsys.readouterr().out

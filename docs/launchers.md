@@ -46,7 +46,7 @@ Kaggle: CLI + auth probe -> kernel slug (`<user>/visoswap-studio`) -> Cloudflare
 `<user>/visoswap-models` (if missing and `model_assets_owned/` exists locally, offers to create it; otherwise the
 notebook downloads models itself, about 30 s) -> kernel status -> build a private bundle of
 `visoswap_kaggle.ipynb` with the token injected (temp dir, deleted afterwards) -> push -> wait for RUNNING
-(re-push once if queued for 5 min) -> wait for `/api/health` to answer `"status":"ok"` (about 5 min) -> save URL.
+(delete + re-push every 5 min while queued) -> wait for `/api/health` to answer `"status":"ok"` (about 5 min) -> save URL.
 A kernel that is already running and healthy is reused; unknown status or expired auth aborts without touching it.
 
 Colab: CLI + login -> reuse the session (`t4`, or the only existing one; **never creates a second one**) or request
@@ -62,7 +62,7 @@ a GPU with retries every 30 s up to `--max-wait` (re-checking `colab sessions` a
 |---|---|
 | `Kaggle CLI is not authenticated` | credentials expired: `kaggle auth login --force` |
 | `kernel status ... was denied` | Kaggle's message for a kernel that does not exist; the launcher cross-checks `kernels list` and refuses to guess if they disagree |
-| Kernel QUEUED forever | launcher deletes and re-pushes once after 5 min; otherwise Kaggle has no free GPU |
+| Kernel QUEUED forever | launcher deletes and re-pushes every 5 min; otherwise Kaggle has no free GPU |
 | Push fails / GPU session limit | max 2 GPU kernels per account; run `--down` on old ones, check phone verification |
 | Kernel disappears after 90 min | `MAX_RUNTIME_MIN` guard; use `--max-minutes N` (0 = never) with `--restart` |
 | Browser shows Cloudflare 1033 / 502 | tunnel or uvicorn still starting (about 5 min); health only counts when the body has `"status":"ok"` |

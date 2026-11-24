@@ -20,7 +20,7 @@ ensure_token() {
   fi
 }
 case "${1:-}" in
-  start)  ensure_token; export UID="${UID:-$(id -u)}" GID="${GID:-$(id -g)}" VISOSWAP_HOME="$home" KAGGLE_DIR="${KAGGLE_DIR:-$HOME/.kaggle}" COLAB_CONFIG_DIR="${COLAB_CONFIG_DIR:-$HOME/.config/colab-cli}"
+  start)  ensure_token; export HOST_UID="$(id -u)" HOST_GID="$(id -g)" VISOSWAP_HOME="$home" KAGGLE_DIR="${KAGGLE_DIR:-$HOME/.kaggle}" COLAB_CONFIG_DIR="${COLAB_CONFIG_DIR:-$HOME/.config/colab-cli}"
           mkdir -p "$COLAB_CONFIG_DIR" "$KAGGLE_DIR"
           docker compose -f "$here/docker-compose.yml" up -d --build
           echo "UI: http://${WEBUI_BIND:-127.0.0.1}:${WEBUI_PORT:-8765}/" ;;

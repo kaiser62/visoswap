@@ -125,7 +125,7 @@ def provision_cert(cfg: Dict[str, str], name: str, hostname: str, rep: Reporter,
         rep.log(f"tunnel '{name}' exists")
     # no --overwrite-dns: an existing record that points elsewhere is an error we surface
     d = run.run([exe, "tunnel", "route", "dns", name, hostname], mutating=True)
-    if d.rc != 0 and "already exists" not in d.out.lower():
+    if d.rc != 0 and "already configured to route to your tunnel" not in d.out.lower():
         raise LaunchError("DNS route failed: " + d.out[:200], "fix the DNS record by hand or choose another hostname")
     t = run.run([exe, "tunnel", "token", name])
     return t.out.strip() if t.rc == 0 and not run.dry_run else ""

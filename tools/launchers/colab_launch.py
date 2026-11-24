@@ -15,6 +15,7 @@ VISOSWAP_REF=master, COLAB_BIN). See docs/launchers.md.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -64,8 +65,11 @@ def choose_session(sessions: List[Dict[str, str]], wanted: str) -> Dict[str, str
 
 def plan_steps(probe: dict, public_healthy: bool, restart: bool, ref_given: bool, setup_only: bool) -> List[str]:
     """Which remote steps to run. Every step re-checks, so extra steps are cheap but this keeps launches fast."""
-    if public_healthy and not (restart or ref_given or setup_only):
-        return []
+    if not (restart or ref_given or setup_only):
+        if public_healthy:
+            return []
+        if probe.get("health") and probe.get("tunnel"):   # up on the VM: do not checkout/kill anything, just wait for the public URL
+            return []
     steps = []
     if probe.get("deps_missing") or "onnxruntime" in probe.get("deps_missing", []):
         steps.append("deps")
@@ -207,6 +211,17 @@ def saved_url() -> Optional[str]:
     return f.read_text().strip() if f.is_file() else None
 
 
+def resolve_url(cfg, probe: dict) -> Optional[str]:
+    """One resolver for launch / restart / status: env hostname, else the VM's existing token (older manual
+    setup) with the documented default hostname, else the last saved URL."""
+    u = public_url(cfg)
+    if u:
+        return u
+    if probe.get("token_file"):
+        return "https://" + vs_cf.DEFAULT_HOSTNAMES["colab"]
+    return saved_url()
+
+
 def public_url(cfg) -> Optional[str]:
     h = normalize_host(cfg.get("VISOSWAP_HOSTNAME", ""))
     return f"https://{h}" if h else None
@@ -230,11 +245,15 @@ def launch(args, cfg, rep, run, co: Colab, fetch=vs_cf.default_fetch, home=None)
     else:
         cfg = vs_cf.ensure_tunnel("colab", cfg, rep, run, args.tunnel, fetch=fetch, home=home)
     quick = cfg.get("TUNNEL_MODE") == "quick"
-    url = None if quick else public_url(cfg)
+    url = None if quick else resolve_url(cfg, probe)
     healthy = bool(url and co.health(url))
     steps = plan_steps(probe, healthy, args.restart, bool(args.ref), args.setup)
     rep.step("plan: " + (", ".join(steps) if steps else "nothing to do (already healthy)"))
     if not steps:
+        if not healthy and url and not wait_until(lambda: co.health(url), 180, 10, co.sleep, co.clock,
+                                                  lambda w: rep.log(f"[{w:4d}s] backend is up on the VM; waiting for {url}")):
+            raise LaunchError("backend and tunnel run on the VM but the public URL is not healthy",
+                              "check --logs tunnel; use --restart to restart both processes")
         return finish(args, url, rep)
     if "deps" in steps:
         co.step("deps", vs_remote.DEPS, 1800)
@@ -273,7 +292,7 @@ def status(args, cfg, rep, run, co: Colab) -> dict:
                 "summary": "no Colab session; launch to create one"}
     co.session = d["session"]
     probe = co.probe()
-    url = public_url(cfg) or saved_url()
+    url = resolve_url(cfg, probe)
     healthy = bool(url and co.health(url))
     state = "RUNNING" if probe.get("health") else "SESSION_ONLY"
     return {"ok": True, "state": state, "healthy": healthy, "url": url, "session": co.session, "gpu": probe.get("gpu"),
@@ -287,11 +306,19 @@ def restart(args, cfg, rep, run, co: Colab) -> dict:
     if d["action"] != "reuse":
         raise LaunchError("no Colab session to restart processes in", "run the launcher without --restart to create one")
     co.session = d["session"]
+    probe = co.probe()
+    url = None if cfg.get("TUNNEL_MODE") == "quick" or args.tunnel == "quick" else resolve_url(cfg, probe)
     out = co.step("start", vs_remote.START, 600, restart=True, profile=args.profile, concurrency=args.concurrency)
-    url = public_url(cfg)
-    if url and not run.dry_run and not wait_until(lambda: co.health(url), 300, 10, co.sleep, co.clock):
-        raise LaunchError("restarted, but the public URL is not healthy", "run --logs")
-    return finish(args, url, rep) if url and not run.dry_run else {"ok": True, "summary": "processes restarted"}
+    if run.dry_run:
+        return {"ok": True, "state": "dry-run", "summary": "dry run: would restart uvicorn and the tunnel inside the same session", "url": url}
+    m = re.search(r"VS_QUICK_URL (\S+)", out)
+    if m:
+        url = m.group(1)
+    if not url:
+        raise LaunchError("restarted, but no public URL is known", "set VISOSWAP_HOSTNAME in colab.env or use --logs tunnel")
+    if not wait_until(lambda: co.health(url), 300, 10, co.sleep, co.clock, lambda w: rep.log(f"[{w:4d}s] waiting for {url}")):
+        raise LaunchError("restarted, but the public URL is not healthy (Cloudflare 1033/502)", "run --logs both")
+    return finish(args, url, rep)
 
 
 def down(args, cfg, rep, run, co: Colab) -> dict:
@@ -302,6 +329,8 @@ def down(args, cfg, rep, run, co: Colab) -> dict:
     if not confirm(f"Stop Colab session '{co.session}'? The backend goes offline and a new T4 may be hard to get.", args.yes, rep):
         return {"ok": True, "state": "RUNNING", "summary": "aborted"}
     co.stop_session()
+    if run.dry_run:
+        return {"ok": True, "state": "dry-run", "summary": f"dry run: would stop session {co.session}"}
     return {"ok": True, "state": "NO_SESSION", "summary": f"stopped session {co.session}"}
 
 
@@ -347,15 +376,14 @@ def main(argv=None) -> int:
             res = status(args, cfg, rep, run, co)
         elif args.logs:
             res = logs(args, co)
-        elif args.down:
-            with target_lock("colab", rep):
-                res = down(args, cfg, rep, run, co)
-        elif args.restart and not args.setup:
-            with target_lock("colab", rep):
-                res = restart(args, cfg, rep, run, co)
         else:
-            with target_lock("colab", rep):
-                res = launch(args, cfg, rep, run, co)
+            with (contextlib.nullcontext() if args.dry_run else target_lock("colab", rep)):
+                if args.down:
+                    res = down(args, cfg, rep, run, co)
+                elif args.restart and not args.setup:
+                    res = restart(args, cfg, rep, run, co)
+                else:
+                    res = launch(args, cfg, rep, run, co)
         ok = res.pop("ok", True)
         rep.result(ok, **res)
         return 0 if ok else 1
