@@ -311,7 +311,7 @@ def test_webui_auth_token_file_and_flow(tmp_path, monkeypatch, capsys):
     assert c.get("/api/targets").status_code == 401
     assert c.get("/api/targets", headers={"Authorization": "Bearer nope"}).status_code == 401
     assert c.get("/api/targets?token=" + A.state().token).status_code == 401      # never via query string
-    assert c.get("/api/targets", headers=H).json()["kaggle"]["state"] == "RUNNING"
+    assert c.get("/api/targets", headers=H).json()["kaggle"]["state"] == "MISSING"      # the stateful fake starts with nothing running
     jid = c.post("/api/targets/colab/launch", headers=H).json()["job"]
     assert c.post("/api/targets/colab/restart", headers=H).status_code == 409      # serialized per target
     assert c.post("/api/targets/colab/rm", headers=H).status_code == 404           # fixed allowlist
@@ -321,6 +321,7 @@ def test_webui_auth_token_file_and_flow(tmp_path, monkeypatch, capsys):
         if j["state"] != "running": break
         time.sleep(0.2)
     assert j["state"] == "done" and "eyJ" not in json.dumps(j)                      # redacted
+    assert c.get("/api/targets?refresh=1", headers=H).json()["colab"]["state"] == "RUNNING"      # the launch changed what status reports
     assert A.state().token not in c.get("/", headers=H).text
 
 
@@ -588,8 +589,6 @@ def test_webui_checks_login_and_token_endpoints(tmp_path, monkeypatch):
     r = c.post("/api/targets/kaggle/cloudflare-token", headers=H, json={"token": FAKE_TOKEN2})
     assert r.json() == {"ok": True, "error": ""} and FAKE_TOKEN2 not in r.text
     assert c.post("/api/targets/kaggle/cloudflare-token", json={"token": FAKE_TOKEN2}).status_code == 401
-    monkeypatch.setattr(A, "IN_DOCKER", True)
-    assert c.post("/api/targets/kaggle/login", headers=H).status_code == 400
     assert A.clean_result({"ok": True, "checks": [{"id": "x", "secret": "s", "state": "ok"}], "token": "t"}) == {"ok": True, "checks": [{"id": "x", "state": "ok"}]}
 
 
@@ -942,15 +941,17 @@ def test_webui_kaggle_token_paste_job(tmp_path, monkeypatch):
     assert j["state"] == "done" and GOODTOK not in json.dumps(j)
 
 
-def test_webui_docker_refuses_logins_with_plain_reason(tmp_path, monkeypatch):
+def test_webui_docker_colab_login_needs_bridge_but_kaggle_works(tmp_path, monkeypatch):
     A, c, H = _webui(tmp_path, monkeypatch)
     monkeypatch.setattr(A, "IN_DOCKER", True)
     r = c.post("/api/targets/colab/login", headers=H)
-    assert r.status_code == 400 and "run.sh native" in r.json()["detail"] and "keyring" in r.json()["detail"]
-    r = c.post("/api/targets/kaggle/login", headers=H)
-    assert r.status_code == 400 and "run.sh native" in r.json()["detail"]
+    assert r.status_code == 400 and "bridge" in r.json()["detail"] and "token file" in r.json()["detail"]
+    jid = c.post("/api/targets/kaggle/login", headers=H).json()["job"]       # Kaggle's config dir is writable in the container now
+    c.post(f"/api/jobs/{jid}/cancel", headers=H)
     ch = c.get("/api/checks?refresh=1", headers=H).json()
-    assert ch["login_ui"] == {"kaggle": False, "colab": False} and "native" in ch["login_note"]["colab"]
+    assert ch["login_ui"] == {"kaggle": True, "colab": False} and "bridge" in ch["login_note"]["colab"]
+    relay = [m for m in ch["login_methods"]["colab"] if m["id"] == "relay"][0]
+    assert relay["available"] is False and [m for m in ch["login_methods"]["colab"] if m["id"] == "token-file"][0]["available"] is True
 
 
 def test_webui_cloudflare_api_token_endpoint(tmp_path, monkeypatch):
