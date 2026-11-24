@@ -87,6 +87,20 @@ def kernel_slug(cfg: dict[str, str]) -> str:
     return f"{user}/visoswap-studio"
 
 
+def models_dataset(cfg: dict[str, str], slug: str) -> str | None:
+    """<user>/visoswap-models (private model cache) if it exists and is ready; set
+    KAGGLE_DATASET=none to skip it."""
+    ds = cfg.get("KAGGLE_DATASET") or f"{slug.split('/')[0]}/visoswap-models"
+    if ds.lower() == "none":
+        return None
+    out = kaggle(cfg, "datasets", "status", ds)
+    if out.strip().endswith("ready"):
+        print(f"  attaching model dataset {ds}")
+        return ds
+    print(f"  model dataset {ds} not ready ({out.strip()[:60]}); models will be downloaded")
+    return None
+
+
 def status(cfg: dict[str, str], slug: str) -> str:
     out = kaggle(cfg, "kernels", "status", slug)
     for s in ("QUEUED", "RUNNING", "COMPLETE", "ERROR", "CANCEL"):
@@ -95,7 +109,7 @@ def status(cfg: dict[str, str], slug: str) -> str:
     return "UNKNOWN" if "not found" not in out.lower() and "404" not in out else "MISSING"
 
 
-def build_bundle(cfg: dict[str, str], slug: str, concurrency: int | None = None, profile: bool = False, max_minutes: int | None = None) -> Path:
+def build_bundle(cfg: dict[str, str], slug: str, concurrency: int | None = None, profile: bool = False, max_minutes: int | None = None, dataset: str | None = None) -> Path:
     """Private temp copy of the notebook with the tunnel token filled in."""
     nb = json.loads(NOTEBOOK.read_text())
     token, host = cfg.get("CF_TUNNEL_TOKEN", ""), cfg.get("VISOSWAP_HOSTNAME", "")
@@ -125,7 +139,7 @@ def build_bundle(cfg: dict[str, str], slug: str, concurrency: int | None = None,
         "id": slug, "title": slug.split("/")[1].replace("-", " "),
         "code_file": NOTEBOOK.name, "language": "python", "kernel_type": "notebook",
         "is_private": "true", "enable_gpu": "true", "enable_tpu": "false",
-        "enable_internet": "true", "dataset_sources": [], "competition_sources": [],
+        "enable_internet": "true", "dataset_sources": [dataset] if dataset else [], "competition_sources": [],
         "kernel_sources": [], "model_sources": [],
     }))
     os.chmod(d, 0o700)
@@ -178,7 +192,7 @@ def main() -> None:
             print("  deleting old kernel (frees the 2-session GPU limit)")
             kaggle(cfg, "kernels", "delete", slug, "-y")
             time.sleep(3)
-        bundle = build_bundle(cfg, slug, args.concurrency, args.profile, args.max_minutes)
+        bundle = build_bundle(cfg, slug, args.concurrency, args.profile, args.max_minutes, models_dataset(cfg, slug))
         try:
             push(cfg, bundle)
             pushed_at = time.time()
