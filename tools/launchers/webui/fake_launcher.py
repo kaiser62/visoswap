@@ -13,6 +13,7 @@ target, args = sys.argv[1], sys.argv[2:]
 home = os.environ.get("VISOSWAP_HOME", ".")
 out = lambda **o: print(json.dumps(o), flush=True)
 url = f"https://{target}.example.org"
+AUTH_ID = "kaggle.auth" if target == "kaggle" else "colab.login"   # same ids as the real launchers
 SF = os.path.join(home, f"fake_state_{target}.json")
 
 
@@ -44,7 +45,7 @@ def mark_login():
 if "--check" in args:
     ok = logged_in()
     out(t="result", ok=True, summary="ready", checks=[
-        {"id": f"{target}.auth", "service": f"{target} login", "state": "ok" if ok else "invalid", "detail": "credentials valid" if ok else "not logged in",
+        {"id": AUTH_ID, "service": f"{target} login", "state": "ok" if ok else "invalid", "detail": "credentials valid" if ok else "not logged in",
          "fix": "" if ok else "log in", "runnable": not ok, "blocking": True},
         {"id": "cloudflare", "service": "Cloudflare tunnel", "state": "missing", "detail": "no token stored", "fix": f"{target}-launch --setup", "runnable": True, "blocking": False}])
 elif "--login" in args and "--relay" in args:
@@ -124,7 +125,7 @@ elif "--down" in args:
     out(t="result", ok=True, state="MISSING", summary="stopped (fake)")
 elif not logged_in():
     out(t="result", ok=False, error=f"{target} login: not logged in", next="log in",
-        checks=[{"id": f"{target}.auth", "service": f"{target} login", "state": "invalid", "detail": "not logged in", "fix": "log in", "runnable": True, "blocking": True, "extra": "x"}])
+        checks=[{"id": AUTH_ID, "service": f"{target} login", "state": "invalid", "detail": "not logged in", "fix": "log in", "runnable": True, "blocking": True, "extra": "x"}])
 elif os.environ.get("FAKE_LAUNCH_FAIL"):
     out(t="step", msg="starting (fake)")
     out(t="result", ok=False, error="fake launch failure", next="see the job log")

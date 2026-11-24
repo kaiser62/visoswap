@@ -42,8 +42,9 @@ ACTIONS = argspec.JOB_OPS
 RELAY_ACTIONS = argspec.RELAY_OPS      # jobs that keep stdin open and may ask the browser for a secret / code
 GOOGLE_HOSTS = ("accounts.google.com",)
 IN_DOCKER = os.environ.get("WEBUI_IN_DOCKER") == "1"
-DOCKER_COLAB_MSG = ("Colab cannot keep its Google login inside this container (the CLI stores it in the OS keyring). Either run the host "
-                    "bridge on the Mac (tools/launchers/webui/run.sh bridge start) or import a token file below.")
+DOCKER_COLAB_MSG = ("Colab cannot keep its Google login inside this container (no file-based keyring is configured and no host bridge). Set "
+                    "PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring (the image does), run the host bridge on a Mac "
+                    "(tools/launchers/webui/run.sh bridge start) or import a token file below.")
 #: server-side constants shown when a login cannot run from the UI (browser/Keychain/terminal needed)
 LOGIN_CMD = {"kaggle": "tools/launchers/kaggle-launch.sh --login", "colab": "tools/launchers/colab-launch.sh --login"}   # run from the repo root
 COLAB_EXPORT_CMD = "security find-generic-password -s google-colab-cli -a oauth_token -w > colab-token.json"       # macOS, on a machine where Colab is logged in
@@ -80,6 +81,15 @@ def load_or_create_token() -> str:
 
 def bridge_url() -> str:
     return os.environ.get("LAUNCHER_BRIDGE_URL", "").strip()
+
+
+def file_keyring() -> bool:
+    """True when the colab CLI's keyring is a plain file under the persisted volume (Linux/Docker: no Keychain, no Secret Service)."""
+    return "keyrings.alt" in os.environ.get("PYTHON_KEYRING_BACKEND", "")
+
+
+def colab_login_possible() -> bool:
+    return (not IN_DOCKER) or file_keyring() or use_bridge("colab")
 
 
 def use_bridge(target: str) -> bool:
@@ -338,7 +348,7 @@ def targets(refresh: int = 0):
 def login_methods() -> dict:
     """Which login routes exist per service and whether each works in THIS deployment (the UI renders from this)."""
     colab_bridge = use_bridge("colab")
-    colab_relay = (not IN_DOCKER) or colab_bridge
+    colab_relay = colab_login_possible()
     return {
         "kaggle": [
             {"id": "token", "label": "Paste API token", "available": True, "hint": "kaggle.com > Settings > API > Create New Token"},
@@ -346,7 +356,7 @@ def login_methods() -> dict:
             {"id": "cli", "label": "Native command", "available": True, "command": LOGIN_CMD["kaggle"]}],
         "colab": [
             {"id": "relay", "label": "Google sign-in (paste the code)", "available": colab_relay,
-             "hint": "runs on the host through the bridge" if colab_bridge else "", "why": "" if colab_relay else DOCKER_COLAB_MSG},
+             "hint": "runs on the host through the bridge" if colab_bridge else ("the login is kept in a file inside the state volume" if IN_DOCKER and file_keyring() else ""), "why": "" if colab_relay else DOCKER_COLAB_MSG},
             {"id": "token-file", "label": "Import a token file", "available": True,
              "hint": "On a Mac where `colab` is already logged in, run the command below, upload the file here, then delete it. It holds a long-lived credential.",
              "command": COLAB_EXPORT_CMD},
@@ -376,8 +386,8 @@ def checks(refresh: int = 0):
         out[t] = v or {"ok": True, "checks": []}
     cb = use_bridge("colab")
     return {"targets": out, "login_commands": LOGIN_CMD, "in_docker": IN_DOCKER, "login_methods": login_methods(),
-            "login_ui": {"kaggle": True, "colab": (not IN_DOCKER) or cb},
-            "login_note": {"kaggle": "", "colab": "" if (not IN_DOCKER) or cb else DOCKER_COLAB_MSG}}
+            "login_ui": {"kaggle": True, "colab": colab_login_possible()},
+            "login_note": {"kaggle": "", "colab": "" if colab_login_possible() else DOCKER_COLAB_MSG}}
 
 
 def _begin(target: str):
@@ -539,7 +549,7 @@ def act(target: str, action: str, body: Optional[dict] = None):
             argspec.build_flags(target, action, options, visoswap_home(), body.get("confirm") is True)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    if action == "login" and target == "colab" and IN_DOCKER and not use_bridge("colab"):
+    if action == "login" and target == "colab" and not colab_login_possible():
         raise HTTPException(400, DOCKER_COLAB_MSG)
     st = state()
     _begin(target)

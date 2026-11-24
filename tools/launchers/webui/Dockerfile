@@ -1,6 +1,10 @@
 FROM python:3.11-slim
-# The launchers shell out to the kaggle and colab CLIs. git is not needed.
-RUN pip install --no-cache-dir fastapi==0.115.6 uvicorn==0.34.0 kaggle google-colab-cli \
+# Self-contained for a plain Linux Docker host: kaggle CLI, colab CLI, cloudflared (tunnel create via the launcher), and
+# keyrings.alt so the colab CLI can keep its Google login in a FILE (no macOS Keychain / Secret Service in a container).
+ARG TARGETARCH=amd64
+RUN pip install --no-cache-dir fastapi==0.115.6 uvicorn==0.34.0 kaggle google-colab-cli keyrings.alt \
+ && python -c "import urllib.request as u;u.urlretrieve('https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${TARGETARCH}','/usr/local/bin/cloudflared')" \
+ && chmod 755 /usr/local/bin/cloudflared && /usr/local/bin/cloudflared --version \
  && useradd -m -u 1000 app
 # Everything mutable lives under /data/visoswap (the persisted volume): env files, webui_token, Kaggle config, a writable HOME
 # for the Colab token.json import. The image root stays read-only.
@@ -10,6 +14,9 @@ ENV PYTHONUNBUFFERED=1 WEBUI_IN_DOCKER=1 \
     VISOSWAP_HOME=/data/visoswap \
     KAGGLE_CONFIG_DIR=/data/visoswap/kaggle \
     HOME=/data/visoswap/home \
+    PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring \
+    XDG_DATA_HOME=/data/visoswap/xdg \
+    CLOUDFLARED_BIN=/usr/local/bin/cloudflared \
     KAGGLE_BIN=/usr/local/bin/kaggle \
     COLAB_BIN=/usr/local/bin/colab \
     LAUNCHER_BRIDGE_URL=

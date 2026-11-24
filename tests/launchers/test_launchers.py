@@ -942,6 +942,7 @@ def test_webui_kaggle_token_paste_job(tmp_path, monkeypatch):
 
 
 def test_webui_docker_colab_login_needs_bridge_but_kaggle_works(tmp_path, monkeypatch):
+    monkeypatch.delenv("PYTHON_KEYRING_BACKEND", raising=False)
     A, c, H = _webui(tmp_path, monkeypatch)
     monkeypatch.setattr(A, "IN_DOCKER", True)
     r = c.post("/api/targets/colab/login", headers=H)
@@ -952,6 +953,19 @@ def test_webui_docker_colab_login_needs_bridge_but_kaggle_works(tmp_path, monkey
     assert ch["login_ui"] == {"kaggle": True, "colab": False} and "bridge" in ch["login_note"]["colab"]
     relay = [m for m in ch["login_methods"]["colab"] if m["id"] == "relay"][0]
     assert relay["available"] is False and [m for m in ch["login_methods"]["colab"] if m["id"] == "token-file"][0]["available"] is True
+
+
+def test_webui_docker_colab_login_allowed_with_file_keyring(tmp_path, monkeypatch):
+    """Linux/Docker host without Keychain: the image sets a file-based keyring in the volume, so the relay login works in-container."""
+    monkeypatch.setenv("PYTHON_KEYRING_BACKEND", "keyrings.alt.file.PlaintextKeyring")
+    A, c, H = _webui(tmp_path, monkeypatch)
+    monkeypatch.setattr(A, "IN_DOCKER", True)
+    ch = c.get("/api/checks?refresh=1", headers=H).json()
+    assert ch["login_ui"]["colab"] is True and ch["login_note"]["colab"] == ""
+    relay = [m for m in ch["login_methods"]["colab"] if m["id"] == "relay"][0]
+    assert relay["available"] is True and "volume" in relay["hint"]
+    jid = c.post("/api/targets/colab/login", headers=H).json()["job"]
+    c.post(f"/api/jobs/{jid}/cancel", headers=H)
 
 
 def test_webui_cloudflare_api_token_endpoint(tmp_path, monkeypatch):

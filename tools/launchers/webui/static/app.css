@@ -52,3 +52,6 @@ dialog{background:var(--card);color:var(--fg);border:1px solid var(--bd);border-
 dialog::backdrop{background:rgba(0,0,0,.55)}dialog form{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:14px}
 #lgview{min-height:8rem}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+[hidden]{display:none!important}
+.tools button{white-space:nowrap}@media(max-width:480px){.tools{width:100%}.tools button{flex:1 1 auto;padding:8px 6px}.tools .chip{order:-1}}
+#jobbox h2{margin:0}#jobbox{margin:10px 0}
