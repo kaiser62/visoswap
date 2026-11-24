@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend import auth
 from backend.api import (
     backends,
     compose,
@@ -98,9 +99,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     await db.connect()
     log.info(
-        "started | data_dir=%s backend=%s ffmpeg=%s yt-dlp=%s",
+        "started | data_dir=%s backend=%s ffmpeg=%s yt-dlp=%s auth=%s",
         settings.data_dir, settings.default_backend,
         ffmpeg_available(), ytdlp_available(),
+        "required" if settings.api_key else "off",
     )
     if not ffmpeg_available():
         log.warning("ffmpeg/ffprobe not on PATH — frame extraction will fail")
@@ -153,6 +155,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Added before CORS: the last middleware added is outermost, so CORS stays
+    # outermost (preflights pass, 401s carry CORS headers).
+    app.add_middleware(auth.AuthMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -173,6 +178,8 @@ def create_app() -> FastAPI:
             "ytdlp": ytdlp_available(),
             "default_backend": settings.default_backend,
             "concurrency": settings.generation_concurrency,
+            "auth": "required" if auth.auth_required() else "off",
+            "version": app.version,
         }
 
     @app.get("/url={target:path}")
@@ -228,6 +235,7 @@ def create_app() -> FastAPI:
         asyncio.create_task(_bind_url(project["id"], url))
         return RedirectResponse(f"/?project={project['id']}", status_code=303)
 
+    app.include_router(auth.router)
     app.include_router(projects.router)
     app.include_router(faces.router)
     app.include_router(preview.router)

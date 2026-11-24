@@ -36,7 +36,7 @@ router = APIRouter(prefix="/api/faces", tags=["faces"])
 CHUNK = 1024 * 1024
 
 # Content at a content-addressed id never changes.
-_IMMUTABLE = {"Cache-Control": "public, max-age=31536000, immutable"}
+_IMMUTABLE = {"Cache-Control": "private, max-age=31536000, immutable"}
 
 
 @router.post("", status_code=201, response_model=FaceOut)

@@ -24,6 +24,17 @@ You can run VisoSwap directly on Kaggle with a free NVIDIA GPU (T4 x2 or P100):
 3. Click **Run All**.
 4. The last cell prints a public Cloudflare tunnel link (e.g. `https://xxxx.trycloudflare.com`). Open it in your desktop browser or mobile Safari/Chrome to access the full VisoSwap Studio Web UI with live streaming and theater mode!
 
+### Access key (optional shared secret)
+
+Set `VISOSWAP_API_KEY` to require a key on the API, WebSockets and `/url=` shortcuts (empty = auth off;
+`/api/health` and the static UI stay open; `/api/health` reports `auth: "required"|"off"`). Clients send header
+`X-VisoSwap-Key`, or the web UI logs in once and keeps an HttpOnly cookie.
+
+- **Kaggle**: add a Kaggle Secret named `VISOSWAP_API_KEY` and attach it to the notebook; the notebook exports it
+  before starting the backend (never printed).
+- **Colab**: no notebook lives in this repo. The Colab launcher/agent script must pass `VISOSWAP_API_KEY` through
+  to the `uvicorn backend.main:app` process environment (e.g. `os.environ['VISOSWAP_API_KEY'] = userdata.get('VISOSWAP_API_KEY')`).
+
 ## Status
 
 Early. Phase 1 of the roadmap — vendoring the engine and stripping Qt — is in

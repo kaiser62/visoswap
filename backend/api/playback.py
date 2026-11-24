@@ -218,7 +218,7 @@ async def get_frame(
         path,
         media_type=mimetypes.guess_type(path.name)[0] or "image/webp",
         # Content at a given timestamp is immutable once generated.
-        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
     )
 
 

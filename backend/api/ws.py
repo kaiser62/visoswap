@@ -11,6 +11,7 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from backend.auth import key_ok
 from backend.models.database import db
 from backend.services.cache import UnsafePathError, validate_project_id
 from backend.services.events import hub
@@ -24,6 +25,10 @@ HEARTBEAT_SECONDS = 20.0
 
 @router.websocket("/ws/projects/{project_id}")
 async def project_events(websocket: WebSocket, project_id: str) -> None:
+    # Defence in depth: AuthMiddleware already rejects keyless handshakes.
+    if not key_ok(websocket):
+        await websocket.close(code=1008)
+        return
     try:
         validate_project_id(project_id)
     except UnsafePathError:
