@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,8 @@ from typing import Any
 from backend.config import get_settings
 from backend.services.generator import FrameGenerator, GenerationResult
 
+
+log = logging.getLogger(__name__)
 
 class EngineFrameGenerator(FrameGenerator):
     """Bind once, then floor timestamps to avoid selecting a future frame."""
@@ -151,18 +154,20 @@ class EngineFrameGenerator(FrameGenerator):
         if engine is not None:
             # Without this every project leaves its models on the GPU, and a
             # second project OOMs a 15 GB card (CUBLAS alloc failure on bind).
-            def _free() -> None:
+            def _free(eng) -> None:
                 import gc
                 try:
-                    engine._release()
-                    engine.context.models_processor.clear_gpu_memory()
+                    eng._release()
+                    eng.context.models_processor.clear_gpu_memory()
                 except Exception:
-                    pass
-                del engine
-                gc.collect()
-                try:
-                    import torch
-                    torch.cuda.empty_cache()
-                except Exception:
-                    pass
-            await asyncio.to_thread(_free)
+                    log.exception("[ENGINE] releasing models failed")
+                finally:
+                    eng = None
+                    gc.collect()
+                    try:
+                        import torch
+                        torch.cuda.empty_cache()
+                    except Exception:
+                        pass
+            await asyncio.to_thread(_free, engine)
+            engine = None
