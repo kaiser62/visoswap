@@ -27,7 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import vs_cf  # noqa: E402
 import vs_preflight as P  # noqa: E402
 from vs_common import (REPO_ROOT, LaunchError, Reporter, Runner, common_args, confirm, fetch_health,  # noqa: E402
-                       can_prompt, load_config, make_reporter, normalize_host, save_url, target_lock, visoswap_home, wait_until)
+                       can_prompt, load_config, make_reporter, normalize_host, read_relay_line, save_url, target_lock, visoswap_home,
+                       wait_until, write_private)
 
 NOTEBOOK = REPO_ROOT / "visoswap_kaggle.ipynb"
 QUEUE_RETRY_S = 300       # a kernel queued this long has been unstuck by delete + re-push before
@@ -228,27 +229,77 @@ def url_for(cfg) -> Optional[str]:
 
 def preflight(args, cfg, rep, run, kg: Kaggle):
     fixers = {"kaggle.auth": lambda: run.interactive([kg.exe, "auth", "login", "--force"])}
-    return P.resolve(lambda: P.kaggle_checks(cfg, run), fixers, can_prompt(args), rep, args.dry_run)
+    return P.resolve(lambda: P.kaggle_checks({**cfg, "KAGGLE_BIN": kg.exe}, run), fixers, can_prompt(args), rep, args.dry_run)
 
 
 def check(args, cfg, rep, run, kg: Kaggle) -> dict:
     """Read-only: the runner is in readonly mode, nothing is written, no lock is taken."""
-    return P.summarize(P.kaggle_checks(cfg, run) + [P.cloudflare_check("kaggle", cfg)])
+    return P.summarize(P.kaggle_checks({**cfg, "KAGGLE_BIN": kg.exe}, run) + [P.cloudflare_check("kaggle", cfg)])
+
+
+def kaggle_config_dir() -> Path:
+    return Path(os.environ.get("KAGGLE_CONFIG_DIR") or (Path.home() / ".kaggle"))
+
+
+def install_kaggle_token(tok: str, cfg, rep, run, kg: Kaggle) -> dict:
+    """Validate a pasted Kaggle API token in an isolated HOME (so an existing login cannot mask a bad
+    token), then install it where the CLI reads it: <config dir>/access_token, mode 600. credentials.json
+    is never touched and the token is never echoed."""
+    tok = (tok or "").strip()
+    rep.redact.add(tok)
+    if not (16 <= len(tok) <= 512) or any(ch.isspace() for ch in tok):
+        raise LaunchError("that does not look like a Kaggle API token", "kaggle.com > Settings > API > Create New Token")
+    tmp = Path(tempfile.mkdtemp(prefix="visoswap-kcheck-"))
+    try:
+        r = run.run([kg.exe, "kernels", "list", "--mine", "--page-size", "1"], timeout=90,
+                    env={"KAGGLE_API_TOKEN": tok, "HOME": str(tmp), "KAGGLE_CONFIG_DIR": str(tmp / ".kaggle"),
+                         "KAGGLE_USERNAME": "", "KAGGLE_KEY": ""})
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    st = P.kaggle_auth_state(r.rc, r.out)
+    if st != "ok":
+        raise LaunchError("Kaggle rejected that token" if st == "invalid" else "could not verify the token (network/timeout); nothing was stored",
+                          "create a new token at kaggle.com > Settings > API and paste it again")
+    d = kaggle_config_dir()
+    if not run.dry_run:
+        d.mkdir(parents=True, exist_ok=True)
+        os.chmod(d, 0o700)
+        write_private(d / "access_token", tok + "\n")
+    rep.log(f"token validated and stored at {d / 'access_token'} (mode 600)")
+    return {"ok": True, "summary": "Kaggle token stored"}
 
 
 def login(args, cfg, rep, run, kg: Kaggle) -> dict:
     if not kg.exe:
         raise LaunchError("kaggle CLI not found", "pip install kaggle")
+    if getattr(args, "relay", False):
+        tok = read_relay_line(rep, "secret", "Paste your Kaggle API token (kaggle.com > Settings > API > Create New Token)")
+        install_kaggle_token(tok, cfg, rep, run, kg)
+        st = [c for c in P.kaggle_checks({**cfg, "KAGGLE_BIN": kg.exe}, run) if c.id == "kaggle.auth"]
+        ok = bool(st and st[0].state == "ok")
+        return {"ok": ok, "summary": "Kaggle login valid" if ok else "token stored but the CLI still rejects it",
+                "error": "" if ok else "the stored token is not accepted", "next": "" if ok else P.KAGGLE_LOGIN}
     cmd = [kg.exe, "auth", "login", "--force"]
     if can_prompt(args):
         rc = run.interactive(cmd)
     else:  # web UI / non-tty: browser flow on this host, no stdin
         r = run.run(cmd, mutating=True, timeout=300)
         rc = r.rc
-    state = [c for c in P.kaggle_checks(cfg, run) if c.id == "kaggle.auth"]
+    state = [c for c in P.kaggle_checks({**cfg, "KAGGLE_BIN": kg.exe}, run) if c.id == "kaggle.auth"]
     ok = bool(state and state[0].state == "ok")
     return {"ok": ok, "summary": "Kaggle login valid" if ok else "Kaggle login not completed", "error": "" if ok else f"login did not complete (exit {rc})",
             "next": "" if ok else P.KAGGLE_LOGIN}
+
+
+def cf_api_setup(args, cfg, rep, run, fetch=vs_cf.default_fetch, home=None) -> dict:
+    """Create the tunnel + DNS from a Cloudflare API token read from stdin. The API token lives in memory
+    only; just the resulting tunnel token and hostname are stored (mode 600)."""
+    tok = sys.stdin.readline().strip()
+    if len(tok) < 20 or any(ch.isspace() for ch in tok):
+        raise LaunchError("that does not look like a Cloudflare API token", "dash.cloudflare.com > My Profile > API Tokens (Account: Tunnel edit, Zone: DNS edit)")
+    rep.redact.add(tok)
+    out = vs_cf.ensure_tunnel("kaggle", {**cfg, "CF_API_TOKEN": tok}, rep, run, "named", fetch=fetch, home=home, interactive=False)
+    return {"ok": True, "summary": "tunnel and DNS ready for " + str(out.get("VISOSWAP_HOSTNAME", "?")), "tunnel": out.get("TUNNEL_MODE")}
 
 
 def store_cf_token(args, cfg, rep) -> dict:
@@ -264,7 +315,7 @@ def provision(args, cfg, rep, run, kg: Kaggle, fetch=vs_cf.default_fetch, home=N
     kg.slug = kernel_slug(cfg)
     rep.log(f"kernel: {kg.slug}")
     rep.step("Provision: Cloudflare tunnel")
-    cfg = vs_cf.ensure_tunnel("kaggle", cfg, rep, run, args.tunnel, fetch=fetch, home=home, interactive=can_prompt(args))
+    cfg = vs_cf.ensure_tunnel("kaggle", cfg, rep, run, args.tunnel, fetch=fetch, home=home, interactive=can_prompt(args) and args.setup)
     rep.step("Provision: model dataset")
     ds = kg.ensure_dataset(args, create=args.setup)
     return cfg, ds
@@ -406,6 +457,9 @@ def main(argv=None) -> int:
             res = check(args, cfg, rep, run, kg)
         elif args.store_cf_token:
             res = store_cf_token(args, cfg, rep)
+        elif args.cf_api_token_stdin:
+            with target_lock("kaggle", rep):
+                res = cf_api_setup(args, cfg, rep, run)
         elif args.login:
             with target_lock("kaggle", rep):
                 res = login(args, cfg, rep, run, kg)
@@ -427,7 +481,8 @@ def main(argv=None) -> int:
         rep.result(ok, **res)
         return 0 if ok else 1
     except LaunchError as e:
-        rep.result(False, error=str(e), next=e.next_action)
+        rep.result(False, error=str(e), next=e.next_action,
+                   **({"checks": [c.as_dict() for c in e.checks]} if hasattr(e, "checks") else {}))
         return 1
     except KeyboardInterrupt:
         rep.result(False, error="interrupted", next="re-run; the launcher is idempotent")

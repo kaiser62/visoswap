@@ -6,6 +6,15 @@ st = os.environ.get("FAKE_KSTATE", "MISSING")
 mode = os.environ.get("FAKE_KAUTH", "ok")
 if a[:2] == ["auth", "login"]:
     open(os.path.join(d, "kaggle_ok"), "w").write("1"); print("Logged in"); sys.exit(0)
+if a[:2] == ["kernels", "list"]:
+    _tok = os.environ.get("KAGGLE_API_TOKEN", "")
+    _f = os.path.join(os.environ.get("KAGGLE_CONFIG_DIR") or os.path.expanduser("~/.kaggle"), "access_token")
+    if not _tok and os.path.exists(_f):
+        _tok = open(_f).read().strip()
+    if _tok:   # a pasted token wins over any other stored login, like the real CLI
+        if not _tok.startswith("GOOD"):
+            print("401 Unauthorized: Authentication required"); sys.exit(1)
+        print("ref title"); sys.exit(0)
 if a[:2] == ["kernels", "list"] and mode == "expired" and not os.path.exists(os.path.join(d, "kaggle_ok")):
     print("Authentication required to call the Kaggle API."); sys.exit(1)
 if a[:2] == ["kernels", "list"] and mode == "flaky":

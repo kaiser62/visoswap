@@ -93,6 +93,10 @@ class Reporter:
         msg = self.redact(str(msg))
         self._emit({"t": "step", "msg": msg}, "==> " + msg)
 
+    def prompt(self, kind: str, msg: str, **extra) -> None:
+        """Ask the driver (web UI) for one line on stdin. Only emitted under --relay."""
+        self._emit({"t": "prompt", "kind": kind, "msg": self.redact(msg), **{k: v for k, v in extra.items() if v}}, msg)
+
     def result(self, ok: bool, **fields) -> None:
         data = {"t": "result", "ok": ok}
         data.update(fields)
@@ -165,7 +169,7 @@ class Runner:
             return 127
 
     def run(self, argv: Sequence[str], mutating: bool = False, timeout: Optional[float] = None,
-            cwd: Optional[Path] = None, input_text: Optional[str] = None) -> Result:
+            cwd: Optional[Path] = None, input_text: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> Result:
         argv = [str(a) for a in argv]
         self.history.append(argv)
         if mutating and self.readonly:
@@ -176,13 +180,34 @@ class Runner:
         try:
             # stdin is never inherited: a CLI that wants to prompt gets EOF instead of blocking
             r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=cwd, input=input_text,
-                               stdin=None if input_text is not None else subprocess.DEVNULL)
+                               stdin=None if input_text is not None else subprocess.DEVNULL,
+                               env=({**os.environ, **env} if env else None))
             return Result(r.returncode, ((r.stdout or "") + (r.stderr or "")).strip(), stdout=(r.stdout or "").strip())
         except FileNotFoundError:
             return Result(127, f"command not found: {argv[0]}")
         except subprocess.TimeoutExpired as e:
             partial = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
             return Result(124, (partial + "\n[timed out]").strip())
+
+
+def read_relay_line(rep: Reporter, kind: str, msg: str, timeout: float = 600.0, **extra) -> str:
+    """Emit a prompt event and wait for ONE line on stdin (the web UI's input endpoint writes it).
+    EOF or timeout -> LaunchError, so a driver that cannot answer fails fast instead of hanging.
+    The answer is registered with the redactor immediately."""
+    import select
+    rep.prompt(kind, msg, **extra)
+    try:
+        ready, _, _ = select.select([sys.stdin], [], [], timeout)
+    except (ValueError, OSError):
+        ready = [sys.stdin]
+    if not ready:
+        raise LaunchError("timed out waiting for input", "start the login again")
+    line = sys.stdin.readline()
+    if not line:
+        raise LaunchError("no input was provided", "start the login again")
+    line = line.strip()
+    rep.redact.add(line)
+    return line
 
 
 # --------------------------------------------------------------------------- env files
@@ -371,6 +396,8 @@ def common_args(ap, target: str) -> None:
     g.add_argument("--down", action="store_true", help="stop %s (asks for confirmation)" % ("the Kaggle kernel" if target == "kaggle" else "the Colab session"))
     g.add_argument("--check", action="store_true", help="report login/token/quota state; changes nothing")
     g.add_argument("--login", action="store_true", help="run this service's login flow (non-interactive: Kaggle only)")
+    g.add_argument("--relay", action="store_true", help="with --login: ask for secrets/codes via JSON prompt events answered on stdin (web UI)")
+    g.add_argument("--cf-api-token-stdin", action="store_true", help="read a Cloudflare API token from stdin, create the tunnel + DNS with it, store only the tunnel token")
     g.add_argument("--store-cf-token", action="store_true", help="read a Cloudflare tunnel token from stdin and store it (mode 600); refuses if one is stored")
     o = ap.add_argument_group("options")
     o.add_argument("--dry-run", action="store_true", help="print what would be done; mutating commands are not executed")

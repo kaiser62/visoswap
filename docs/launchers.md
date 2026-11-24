@@ -20,7 +20,7 @@ Two separate launchers start the VisoSwap backend on a free cloud GPU and print 
 (mutating commands are printed, never run; read-only queries still run) - `--json` (JSON lines, last line
 is the result; used by the web UI) - `--tunnel auto|named|quick` - `--concurrency N|auto` - `--profile/--no-profile` -
 `--no-clipboard`. Kaggle: `--max-minutes N`, `--accelerator t4x2|p100|<raw>`, `--models-dir`.
-Colab: `--ref <branch|tag|sha>`, `--gpu T4|L4|...` (new sessions only), `--session NAME`, `--max-wait SECONDS`,
+Colab: `--ref <branch|tag|sha>`, `--gpu L4|T4|...` (new sessions only; **default L4**), `--session NAME` (default: the GPU name, e.g. `l4`), `--max-wait SECONDS`,
 `--logs [uvicorn|tunnel|both]`, `--refresh-token`.
 Env overrides: `VISOSWAP_HOME` (default `~/.visoswap`), `KAGGLE_BIN`, `COLAB_BIN`, `CLOUDFLARED_BIN`.
 
@@ -37,7 +37,7 @@ lock, no files written) and exits non-zero if something blocking is wrong.
 | Kaggle quota | `kaggle quota` (shown as information) | "unknown": never blocks. The CLI exposes no free-GPU-slot count (limit: 2 GPU kernels) |
 | Colab CLI | installed | prints `uv tool install google-colab-cli` |
 | Colab login | stored Google login exists (macOS Keychain entry existence only, never its content), then `colab usage` | in a terminal the launcher runs `colab usage`: open the printed URL, sign in, paste the code; otherwise it prints that command |
-| Colab units | `colab usage` balance, informational | 0 units = free tier, a T4 is not guaranteed; never blocks |
+| Colab units | `colab usage` balance, informational | informational; before creating a session the launcher logs the balance and rate. 0 units: an L4 request fails fast naming `--gpu T4` (free tier, availability not guaranteed) instead of retrying for 30 minutes |
 | Cloudflare | token + hostname stored in `~/.visoswap/<target>.env`, or (Colab) token already on the VM | order: stored token (never re-prompted, never overwritten) -> `CF_API_TOKEN` -> `cloudflared tunnel login` cert -> hidden prompt for a pasted tunnel token, stored mode 600 and never echoed -> quick tunnel |
 
 A timeout or network error is reported as `unknown` and **never** starts a login. Prompts only happen on a real
@@ -46,11 +46,35 @@ also pipe a pasted tunnel token to `--store-cf-token` (stdin); it refuses when o
 `--login` runs the login flow: Kaggle works from a non-interactive host (it opens the host's browser); Colab needs a
 terminal because the CLI asks for a pasted code and keeps the result in the Keychain.
 
+**Login relay (web UI).** `--login --relay` makes the login drivable from a browser: the launcher prints a JSON
+`prompt` event and reads exactly one line from stdin. Kaggle asks for the API token (kaggle.com > Settings > API >
+Create New Token): it is validated with the CLI in an isolated HOME and env `KAGGLE_API_TOKEN` (so an existing OAuth
+login cannot make a bad token look fine), then written to `~/.kaggle/access_token` (dir 700, file 600; `credentials.json`
+is never touched). Colab runs `colab usage` with piped stdio, shows the Google sign-in link (only an `https://accounts.google.com`
+URL is ever rendered as a link) and feeds the pasted code to the CLI. If `usage` already works nothing is asked. A driver
+that cannot answer (plain `--json`, stdin at EOF) gets an immediate failure, not a hang. Pasted values are registered
+with the redactor the moment they arrive and never appear in logs, results or error bodies.
+**Colab in Docker cannot keep the login** (the CLI stores it in the OS keyring, which a container lacks, so it would ask
+again on every command); the UI says so and `run.sh native` is the supported path for Colab. The same goes for Kaggle,
+whose `~/.kaggle` is read-only in the container.
+
+`--cf-api-token-stdin` creates the tunnel and DNS from a Cloudflare API token read from stdin (Account: Cloudflare Tunnel
+Edit, Zone: DNS Edit). The API token lives in memory for that run; only the resulting tunnel token and hostname are
+stored. The UI shows this form (and the tunnel-token form) only while no Cloudflare setup exists.
+
+**Prompt only when needed.** A launch with valid logins and a stored tunnel asks nothing, even on a terminal. The
+Cloudflare question is asked only by `--setup`; a launch without any Cloudflare setup uses a quick tunnel and says so.
+When a launch stops on a missing login, its JSON result carries the failing `checks`; the web UI shows them with a Log in
+button and, after the login succeeds, re-posts the blocked action by itself.
+
+**Compute units.** An L4 session burns Colab compute units for as long as it exists (the rate is whatever `colab usage`
+reports; it is logged on creation). T4 is cheaper (`--gpu T4`). The launcher never stops a session by itself; `--down` does.
+
 `--restart` keeps your tuning. Precedence for `GENERATION_CONCURRENCY`, `VISOSWAP_PROFILE` and the other whitelisted
 settings: flags (`--concurrency N|auto`, `--profile/--no-profile`) > `colab.env` (`GENERATION_CONCURRENCY`,
 `VISOSWAP_PROFILE`) > the environment of the running uvicorn (read from `/proc` before it is killed; only whitelisted
 keys, and only they are printed) > `/content/visoswap_launch.json` from the last launch > defaults (profile off,
-`VISOSWAP_PROCESS_WORKERS=auto`, concurrency auto). A restart never adds `VISOSWAP_PROCESS_WORKERS` if the old process
+no worker env var at all so the backend's own auto policy applies, concurrency auto). A restart never adds `VISOSWAP_PROCESS_WORKERS` if the old process
 had none. The same logic runs when a launch restarts because the code changed.
 
 ## First-time setup
@@ -78,7 +102,7 @@ notebook downloads models itself, about 30 s) -> kernel status -> build a privat
 (delete + re-push every 5 min while queued) -> wait for `/api/health` to answer `"status":"ok"` (about 5 min) -> save URL.
 A kernel that is already running and healthy is reused; unknown status or expired auth aborts without touching it.
 
-Colab: CLI + login -> reuse the session (`t4`, or the only existing one; **never creates a second one**) or request
+Colab: CLI + login -> reuse the session (`l4`, or the only existing one, whatever its GPU is: a mismatch is logged; **never creates a second one**) or request
 a GPU with retries every 30 s up to `--max-wait` (re-checking `colab sessions` around every attempt) -> probe the VM
 -> Cloudflare (a token already at `/content/cf_token` on the VM is reused) -> pip install only what is missing
 (torch untouched; `onnxruntime-gpu` chosen by torch's CUDA major) -> git fetch/checkout the ref -> model bootstrap
@@ -98,7 +122,7 @@ a GPU with retries every 30 s up to `--max-wait` (re-checking `colab sessions` a
 | Kernel disappears after 90 min | `MAX_RUNTIME_MIN` guard; use `--max-minutes N` (0 = never) with `--restart` |
 | Browser shows Cloudflare 1033 / 502 | tunnel or uvicorn still starting (about 5 min); health only counts when the body has `"status":"ok"` |
 | `--concurrency/--profile` refused on a running kernel | they only apply to a new kernel: add `--restart` |
-| Colab: no T4 after N minutes (`Service Unavailable`) | free T4s are scarce; retry later, raise `--max-wait`, or `--gpu L4` |
+| Colab: no GPU after N minutes (`Service Unavailable`) | capacity is scarce; retry later, raise `--max-wait`, or switch `--gpu T4`/`L4`. `Backend rejected accelerator ... quota or entitlement` fails at once (not retried): use `--gpu T4` |
 | Colab `no session has a GPU` | it was created as CPU: `--down` then launch |
 | Colab "N sessions exist and none is named" | set `COLAB_SESSION` in `colab.env`; no second session is ever created |
 | Colab remote step failed | steps are idempotent: re-run; `--logs both` for uvicorn/tunnel logs |
@@ -110,8 +134,9 @@ a GPU with retries every 30 s up to `--max-wait` (re-checking `colab sessions` a
 `tools/launchers/webui/`: FastAPI + a single mobile-friendly page. Shows both targets (state, health, URL, copy),
 buttons Launch / Restart / Provision / Stop, a login-status panel per service (Kaggle, Colab, Cloudflare) and a live log.
 The panel shows each check; a failing login shows the exact command to run in a terminal, with a **Log in** button for
-Kaggle when the UI runs natively (not in Docker, where `~/.kaggle` is read-only), and a hidden-input form to paste a
-Cloudflare tunnel token (stored mode 600, never shown again, refused if one exists). It shells out to the same launchers (`--json`).
+Kaggle (paste the API token into a hidden field) and Colab (open the Google link, paste the code) when the UI runs natively,
+and hidden-input forms for a Cloudflare tunnel token (stored mode 600, never shown again, refused if one exists) or a
+Cloudflare API token (creates the tunnel and DNS; not stored). After a login the blocked action continues automatically. It shells out to the same launchers (`--json`).
 
 ```
 tools/launchers/webui/run.sh start      # Docker, http://127.0.0.1:8765  (stop: run.sh stop)
@@ -128,9 +153,9 @@ Phone access:
 - Away from home: put it behind a Cloudflare tunnel with **Cloudflare Access** (SSO) in front, keeping the bind
   on 127.0.0.1. Not set up by this repo.
 
-Colab in Docker: the Colab CLI keeps its Google login in the macOS Keychain, which a Linux container cannot read.
-So the containerised UI can manage Kaggle but Colab will report "not logged in". Run `run.sh native` for both
-(or use the CLI's `--auth adc` with mounted Application Default Credentials, untested here).
+Logins in Docker: the Colab CLI keeps its Google login in the OS keyring (macOS Keychain), which a Linux container
+cannot read or persist, and `~/.kaggle` is mounted read-only. The containerised UI therefore cannot log in to Colab or
+Kaggle and says so; use `run.sh native` (the supported path for both).
 
 ### Threat model
 
@@ -140,7 +165,7 @@ per minute; one running action per target; fixed target/action allowlist (no arg
 needs an explicit confirm; loopback bind by default; no endpoint returns env-file or credential contents and all
 streamed output passes a redactor (known secret values, JWT/token shapes, `--token X`); CSP, `no-store`; container
 runs as non-root, read-only root fs, all capabilities dropped, repo and `~/.kaggle` mounted read-only.
-Not covered: TLS (use Cloudflare/Access or a trusted LAN), anyone with the token (full control), a compromised
+Credentials you submit through the UI (Kaggle token, Colab code, Cloudflare tokens) cross the LAN in plain HTTP: use it only on a network you trust, or terminate TLS in front. The server never logs, echoes or stores them beyond the destination file; error bodies are generic. Not covered: TLS (use Cloudflare/Access or a trusted LAN), anyone with the token (full control), a compromised
 host. `~/.visoswap` is mounted read-write because launchers save URLs and tokens there.
 
 ## Tests

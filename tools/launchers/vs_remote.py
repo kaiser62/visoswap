@@ -8,7 +8,7 @@ import inspect
 import json
 
 HEADER = '''
-import json, os, subprocess, sys, time, glob, importlib.util, urllib.request
+import json, os, shutil, subprocess, sys, time, glob, importlib.util, urllib.request
 CFG = json.loads(r"""__CFG__""")
 REPO = CFG["repo_dir"]; MODELS = REPO + "/model_assets_owned"
 def sh(cmd, timeout=None):
@@ -26,7 +26,7 @@ def local_health():
 PROBE = HEADER + '''
 import shutil
 def has(mod): return importlib.util.find_spec(mod) is not None
-mods = ["onnxruntime", "pydantic_settings", "yt_dlp", "ftfy", "regex", "numexpr", "onnxsim", "kornia", "skimage", "psutil", "onnx", "fastapi", "uvicorn", "aiosqlite", "httpx"]
+mods = ["onnxruntime", "pydantic_settings", "yt_dlp", "ftfy", "regex", "numexpr", "onnxsim", "kornia", "skimage", "psutil", "onnx", "fastapi", "uvicorn", "aiosqlite", "httpx", "cv2", "PIL", "requests", "tqdm", "pydantic"]
 rc, gpu = sh("nvidia-smi --query-gpu=name --format=csv,noheader")
 rc2, sha = sh(["git", "-C", REPO, "rev-parse", "--short", "HEAD"])
 print("VS_PROBE " + json.dumps({
@@ -44,13 +44,16 @@ print("VS_OK probe")
 DEPS = HEADER + '''
 PIP = {"pydantic_settings": "pydantic-settings", "yt_dlp": "yt-dlp", "ftfy": "ftfy", "regex": "regex", "numexpr": "numexpr",
        "onnxsim": "onnxsim", "kornia": "kornia", "skimage": "scikit-image", "psutil": "psutil", "onnx": "onnx",
-       "fastapi": "fastapi", "uvicorn": "uvicorn[standard]", "aiosqlite": "aiosqlite", "httpx": "httpx", "multipart": "python-multipart"}
+       "fastapi": "fastapi", "uvicorn": "uvicorn[standard]", "aiosqlite": "aiosqlite", "httpx": "httpx", "multipart": "python-multipart",
+       "cv2": "opencv-python", "PIL": "Pillow", "requests": "requests", "tqdm": "tqdm", "pydantic": "pydantic"}   # the last five were missing on the first real L4 deploy
 need = [p for m, p in PIP.items() if importlib.util.find_spec(m) is None]
 def pip(*a):
     rc, out = sh([sys.executable, "-m", "pip", "install", "-q", "--no-cache-dir", *a], timeout=1500)
     if rc: print(out[-800:]); print("VS_FAIL deps pip " + " ".join(a)[:80]); sys.exit(0)
 if need:
     print("installing:", " ".join(need)); pip(*need)
+if not shutil.which("ffmpeg"):
+    sh("apt-get update -qq && apt-get install -y -qq ffmpeg >/dev/null 2>&1", timeout=600)
 # onnxruntime-gpu must match torch's CUDA major (same rule as visoswap_kaggle.ipynb cell 4); torch is never touched
 rc, prov = sh([sys.executable, "-c", "import onnxruntime as o;print('CUDAExecutionProvider' in o.get_available_providers())"])
 if "True" not in prov:
@@ -84,13 +87,27 @@ print("VS_OK repo")
 '''
 
 MODELS = HEADER + '''
+# The download can take many minutes and a blocking `colab exec` stalled on the first L4 deploy, so it runs as a
+# detached job (own session, log /content/models.log). This script starts it if needed, then polls briefly; the
+# launcher calls it again until it prints VS_OK / VS_FAIL (VS_PENDING = still running).
+LOG = "/content/models.log"; JOB = "/content/models_job.py"
 code = ("import os,sys;sys.path.insert(0,%r)\\nfrom pathlib import Path\\nfrom visoswap.models.bootstrap import repair, FAST\\n"
-        "r=repair(models_dir=Path(%r),mode=FAST,subset=%r)\\nprint('BOOT_OK' if r.ok else 'BOOT_INCOMPLETE', len(r.present))") % (REPO, MODELS, CFG["subset"])
+        "r=repair(models_dir=Path(%r),mode=FAST,subset=%r)\\nprint('BOOT_OK' if r.ok else 'BOOT_INCOMPLETE', len(r.present), flush=True)") % (REPO, MODELS, CFG["subset"])
 os.makedirs(MODELS, exist_ok=True)
-env = dict(os.environ, MODELS_DIR=MODELS, MODELS_SUBSET=CFG["subset"], PYTHONPATH=REPO)
-r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=REPO, env=env, timeout=3000)
-print((r.stdout + r.stderr)[-600:])
-print("VS_OK models" if "BOOT_OK" in r.stdout else "VS_FAIL models bootstrap incomplete")
+running = pgrep(JOB)
+if not running:
+    open(JOB, "w").write(code)
+    env = dict(os.environ, MODELS_DIR=MODELS, MODELS_SUBSET=CFG["subset"], PYTHONPATH=REPO)
+    subprocess.Popen([sys.executable, "-u", JOB], cwd=REPO, env=env, stdout=open(LOG, "w"), stderr=subprocess.STDOUT, start_new_session=True)
+    print("models job started")
+t0 = time.time()
+while time.time() - t0 < CFG.get("poll", 200):
+    if not pgrep(JOB): break
+    time.sleep(5)
+log = open(LOG, errors="replace").read() if os.path.exists(LOG) else ""
+if pgrep(JOB): print("VS_PENDING models " + " ".join(log.strip().splitlines()[-1:])[:120])
+elif "BOOT_OK" in log: print("VS_OK models")
+else: print(log[-500:]); print("VS_FAIL models bootstrap incomplete")
 '''
 
 START = HEADER + '''
@@ -122,9 +139,10 @@ print("VS_SETTINGS " + json.dumps({"from": src, **settings}))
 try: json.dump(settings, open(STATE, "w"))
 except Exception: pass
 if src == "defaults" and (restart or not pgrep("uvicorn backend.main")):
-    print("VS_NOTE no earlier settings found (uvicorn is not running and there is no state file): using the defaults, i.e. auto workers and profiling off")
+    print("VS_NOTE no earlier settings found (uvicorn is not running and there is no state file): using the defaults, i.e. the backend's own worker policy and profiling off")
 if restart:
-    old = pgrep("uvicorn backend.main") + pgrep("cloudflared tunnel")
+    # the engine's worker processes outlive uvicorn and keep the GPU busy: stop them too
+    old = pgrep("uvicorn backend.main") + pgrep("cloudflared tunnel") + pgrep("engine-worker") + pgrep("multiprocessing.spawn")
     for p in old: sh(["kill", p])
     t_kill = time.time()
     while time.time() - t_kill < 20 and any(os.path.exists("/proc/" + p) for p in old): time.sleep(1)
@@ -145,7 +163,7 @@ if not pgrep("uvicorn backend.main"):
 if not pgrep("cloudflared tunnel"):
     if os.path.isfile(tok):
         os.chmod(tok, 0o600)
-        cmd = ["cloudflared", "tunnel", "--no-autoupdate", "run", "--token", open(tok).read().strip(), "--url", "http://127.0.0.1:8000"]
+        cmd = ["cloudflared", "tunnel", "--no-autoupdate", "run", "--token-file", tok, "--url", "http://127.0.0.1:8000"]   # token stays out of argv
     else:
         cmd = ["cloudflared", "tunnel", "--no-autoupdate", "--url", "http://127.0.0.1:8000"]
     subprocess.Popen(cmd, stdout=open("/content/tunnel.log", "w"), stderr=subprocess.STDOUT, start_new_session=True)
@@ -185,9 +203,8 @@ def merge_settings(prev, src, CFG):
         settings["VISOSWAP_PROFILE"] = "1" if CFG["profile"] else "0"
     settings.setdefault("MODELS_SUBSET", CFG["subset"])
     settings.setdefault("MODELS_VERIFY_MODE", "fast")
-    if src == "defaults":    # nothing known about an earlier run: the notebook's defaults
+    if src == "defaults":    # nothing known about an earlier run: profiling off, and no worker env at all (the backend picks its own policy)
         settings.setdefault("VISOSWAP_PROFILE", "0")
-        settings.setdefault("VISOSWAP_PROCESS_WORKERS", "auto")
     return settings
 
 

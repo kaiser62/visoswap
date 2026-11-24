@@ -9,7 +9,7 @@
     colab_launch.py --down       the ONLY way a session is stopped (asks first)
     colab_launch.py --dry-run    show what would happen; nothing mutating runs
 
-Config: ~/.visoswap/colab.env (CF_TUNNEL_TOKEN, VISOSWAP_HOSTNAME, COLAB_SESSION=t4, COLAB_GPU=T4,
+Config: ~/.visoswap/colab.env (CF_TUNNEL_TOKEN, VISOSWAP_HOSTNAME, COLAB_SESSION=l4, COLAB_GPU=L4,
 VISOSWAP_REF=master, COLAB_BIN). See docs/launchers.md.
 """
 from __future__ import annotations
@@ -30,12 +30,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import vs_cf  # noqa: E402
 import vs_preflight as P  # noqa: E402
 import vs_remote  # noqa: E402
-from vs_common import (REPO_URL, LaunchError, Reporter, Runner, common_args, confirm, fetch_health,  # noqa: E402
+from vs_common import (REPO_URL, read_relay_line, LaunchError, Reporter, Runner, common_args, confirm, fetch_health,  # noqa: E402
                        can_prompt, load_config, make_reporter, normalize_host, save_url, target_lock, visoswap_home, wait_until)
 
 REMOTE_REPO = "/content/visoswap"
 REMOTE_TOKEN = "/content/cf_token"
 RETRY_INTERVAL_S = 30
+DEFAULT_GPU = "L4"       # L4 burns compute units while it exists (see `colab usage`); T4 is the cheaper option (--gpu T4)
 
 
 # ----------------------------------------------------------------- pure logic
@@ -108,8 +109,8 @@ class Colab:
     def __init__(self, cfg, rep: Reporter, run: Runner, sleep=time.sleep, clock=time.time, health=fetch_health):
         self.cfg, self.rep, self.run, self.sleep, self.clock, self.health = cfg, rep, run, sleep, clock, health
         self.exe = cfg.get("COLAB_BIN") or shutil.which("colab") or str(Path.home() / ".local/bin/colab")
-        self.session = cfg.get("COLAB_SESSION") or "t4"
-        self.gpu = cfg.get("COLAB_GPU") or "T4"
+        self.gpu = (cfg.get("COLAB_GPU") or DEFAULT_GPU).upper()
+        self.session = cfg.get("COLAB_SESSION") or self.gpu.lower()
         self.ref = cfg.get("VISOSWAP_REF") or "master"
 
     def c(self, *args, mutating=False, timeout=120):
@@ -131,11 +132,21 @@ class Colab:
         if d["action"] == "reuse":
             self.session = d["session"]
             self.rep.log(d.get("why") or f"reusing session '{self.session}'")
+            hw = next((s["hardware"] for s in sess if s["name"] == self.session), "")
+            if hw and self.gpu.lower() not in hw.lower():
+                self.rep.log(f"note: the existing session has {hw}, not {self.gpu}; reusing it as is (it is never replaced; --down first to change GPU)")
             return self.session
-        self.rep.step(f"no session: requesting a {self.gpu} (retrying every {RETRY_INTERVAL_S}s for up to {max_wait // 60} min; free T4s are often 'Service Unavailable')")
+        self.rep.step(f"no session: requesting a {self.gpu} (retrying every {RETRY_INTERVAL_S}s for up to {max_wait // 60} min; GPU capacity is often 'Service Unavailable')")
         if self.run.dry_run:
             self.rep.log("[dry-run] would run: " + " ".join(new_cmd(self.exe, self.session, self.gpu)))
             return None
+        u = P.parse_usage(self.c("usage").out) or {}
+        if u:
+            rate = f", current usage rate {u['rate']:.2f}/hr" if u.get("rate") is not None else ""
+            self.rep.log(f"Colab compute units: {u['balance']:.2f}{rate}. A {self.gpu} session burns units for as long as it exists (see `colab usage`); --down ends it.")
+            if u["balance"] <= 0 and self.gpu != "T4":
+                raise LaunchError(f"no compute units left: Colab will not assign a {self.gpu} without them",
+                                  "use the free-tier GPU instead: --gpu T4 (availability is not guaranteed), or buy compute units")
         t0, n = self.clock(), 0
         while True:
             n += 1
@@ -144,14 +155,18 @@ class Colab:
                 self.rep.log(f"session available after {n - 1} attempt(s)")
                 return self.session
             r = self.c("new", "-s", self.session, "--gpu", self.gpu, mutating=True, timeout=300)
-            why = re.search(r"Service Unavailable|Backend rejected[^.\n]*|quota[^.\n]*|[A-Za-z]*Error[^|\n]*", r.out)
+            why = re.search(r"Service Unavailable|Backend rejected[^\n]*|quota[^.\n]*|[A-Za-z]*Error[^|\n]*", r.out)
+            if re.search(r"rejected accelerator|quota or entitlement", r.out, re.I) and choose_session(self.sessions(), self.session)["action"] == "create":
+                # a permanent refusal for this account/GPU, not a capacity blip: retrying for 30 minutes cannot help
+                raise LaunchError(f"Colab refused a {self.gpu} for this account: " + (why.group(0)[:160] if why else "quota or entitlement"),
+                                  "try --gpu T4 (free tier) or check your compute units / Colab plan")
             if choose_session(self.sessions(), self.session)["action"] != "create":
                 self.rep.log(f"attempt {n}: {self.gpu} assigned")
                 return self.session
             self.rep.log(f"attempt {n}: {why.group(0) if why else (r.out.splitlines() or ['no output'])[-1][:80]}")
             if self.clock() - t0 + RETRY_INTERVAL_S > max_wait:
                 raise LaunchError(f"no {self.gpu} became available within {max_wait // 60} min",
-                                  "retry later, raise --max-wait, or try --gpu L4; Colab's free tier often has no T4 at peak hours")
+                                  "retry later, raise --max-wait, or try the other GPU (--gpu T4 / --gpu L4); capacity is often short at peak hours")
             self.sleep(RETRY_INTERVAL_S)
 
     def remote(self, name: str, script: str, timeout: int, **cfg) -> str:
@@ -189,6 +204,20 @@ class Colab:
         if not ok:
             raise LaunchError(f"remote step '{name}' failed: {why}", f"see `colab_launch.py --logs`, then re-run (every step is idempotent)")
         return out
+
+    def models(self, limit: int = 3300):
+        """Model download runs as a detached remote job; poll it with short execs until it reports OK/FAIL."""
+        t0 = self.clock()
+        while True:
+            out = self.remote("models", vs_remote.MODELS, 400, poll=200)
+            if self.run.dry_run or "VS_OK models" in out:
+                return
+            if "VS_PENDING models" not in out:
+                ok, why = markers(out, "models")
+                raise LaunchError(f"remote step 'models' failed: {why}", "see /content/models.log via --logs; re-run (the download resumes)")
+            if self.clock() - t0 > limit:
+                raise LaunchError("model download is still running after %d min" % (limit // 60), "re-run the launcher; the download continues on the VM")
+            self.rep.log("models: still downloading")
 
     def stop_session(self):
         """The ONLY place that builds a `stop` command. Reached only via --down."""
@@ -240,12 +269,12 @@ def settings_overrides(args, cfg) -> dict:
 
 def preflight(args, cfg, rep, run, co: Colab):
     fixers = {"colab.login": lambda: run.interactive([co.exe, "usage"])}
-    return P.resolve(lambda: P.colab_checks(cfg, run), fixers, can_prompt(args), rep, args.dry_run)
+    return P.resolve(lambda: P.colab_checks({**cfg, "COLAB_BIN": co.exe}, run), fixers, can_prompt(args), rep, args.dry_run)
 
 
 def check(args, cfg, rep, run, co: Colab) -> dict:
     """Read-only (runner is in readonly mode): login state, units, session, token-on-VM."""
-    checks = P.colab_checks(cfg, run)
+    checks = P.colab_checks({**cfg, "COLAB_BIN": co.exe}, run)
     vm = None
     if all(c.good for c in checks if c.id in ("colab.cli", "colab.login")) and any(c.id == "colab.login" for c in checks):
         d = choose_session(co.sessions(), co.session)
@@ -260,14 +289,87 @@ def check(args, cfg, rep, run, co: Colab) -> dict:
     return P.summarize(checks)
 
 
+GOOGLE_LOGIN_HOSTS = ("accounts.google.com",)
+
+
+def safe_login_url(text: str) -> str:
+    """First https URL in the CLI output, only if it points at Google's sign-in host (it is rendered as a link in the UI)."""
+    from urllib.parse import urlparse
+    for m in re.finditer(r"https://[^\s\"'<>]+", text):
+        u = urlparse(m.group(0))
+        if u.scheme == "https" and u.hostname in GOOGLE_LOGIN_HOSTS:
+            return m.group(0)
+    return ""
+
+
+def relay_login(args, cfg, rep, run, co: Colab, url_wait: float = 60.0) -> dict:
+    """Headless Colab login for the web UI: run `colab usage` with piped stdio, hand the Google URL to the driver,
+    feed the pasted code to the CLI's stdin. If `usage` succeeds without asking, no prompt is issued."""
+    import subprocess, threading
+    if run.dry_run:
+        rep.log("[dry-run] would run the Colab OAuth copy-paste login via the web UI")
+        return {"ok": True, "summary": "dry run"}
+    buf: List[str] = []
+    p = subprocess.Popen([co.exe, "usage"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+
+    def pump():
+        for ln in p.stdout:
+            buf.append(ln)
+    th = threading.Thread(target=pump, daemon=True)
+    th.start()
+    try:
+        url, t0 = "", time.time()
+        while time.time() - t0 < url_wait and p.poll() is None and not url:
+            url = safe_login_url("".join(buf))
+            if not url:
+                time.sleep(0.2)
+        if p.poll() is None:
+            if not url:
+                raise LaunchError("the Colab CLI did not show a Google sign-in URL", "run in a terminal: " + P.COLAB_LOGIN)
+            code = read_relay_line(rep, "code", "Open the link, sign in with Google, copy the code it shows and paste it here", url=url)
+            try:
+                p.stdin.write(code + "\n")
+                p.stdin.flush()
+            except OSError:
+                pass
+        with contextlib.suppress(OSError):
+            p.stdin.close()
+        try:
+            p.wait(120)
+        except subprocess.TimeoutExpired:
+            p.kill()
+        th.join(5)
+    finally:
+        if p.poll() is None:
+            p.kill()
+    st = [c for c in P.colab_checks({**cfg, "COLAB_BIN": co.exe}, run) if c.id == "colab.login"]
+    ok = bool(st and st[0].state == "ok")
+    return {"ok": ok, "summary": "Colab login valid" if ok else "Colab login not completed",
+            "error": "" if ok else "the code was not accepted, or the login could not be saved (no OS keyring: use the native web UI, run.sh native)",
+            "next": "" if ok else P.COLAB_LOGIN}
+
+
 def login(args, cfg, rep, run, co: Colab) -> dict:
+    if getattr(args, "relay", False):
+        return relay_login(args, cfg, rep, run, co)
     if not can_prompt(args):
         raise LaunchError("the Colab login needs a terminal (browser sign-in plus a pasted code; the token goes to the OS keychain)",
                           "run in a terminal: " + P.COLAB_LOGIN)
     run.interactive([co.exe, "usage"])
-    st = [c for c in P.colab_checks(cfg, run) if c.id == "colab.login"]
+    st = [c for c in P.colab_checks({**cfg, "COLAB_BIN": co.exe}, run) if c.id == "colab.login"]
     ok = bool(st and st[0].state == "ok")
     return {"ok": ok, "summary": "Colab login valid" if ok else "Colab login not completed", "next": "" if ok else P.COLAB_LOGIN}
+
+
+def cf_api_setup(args, cfg, rep, run, fetch=vs_cf.default_fetch, home=None) -> dict:
+    """Create the tunnel + DNS from a Cloudflare API token read from stdin. The API token lives in memory
+    only; just the resulting tunnel token and hostname are stored (mode 600)."""
+    tok = sys.stdin.readline().strip()
+    if len(tok) < 20 or any(ch.isspace() for ch in tok):
+        raise LaunchError("that does not look like a Cloudflare API token", "dash.cloudflare.com > My Profile > API Tokens (Account: Tunnel edit, Zone: DNS edit)")
+    rep.redact.add(tok)
+    out = vs_cf.ensure_tunnel("colab", {**cfg, "CF_API_TOKEN": tok}, rep, run, "named", fetch=fetch, home=home, interactive=False)
+    return {"ok": True, "summary": "tunnel and DNS ready for " + str(out.get("VISOSWAP_HOSTNAME", "?")), "tunnel": out.get("TUNNEL_MODE")}
 
 
 def store_cf_token(args, cfg, rep) -> dict:
@@ -295,7 +397,7 @@ def launch(args, cfg, rep, run, co: Colab, fetch=vs_cf.default_fetch, home=None)
         rep.log("tunnel token already on the VM; keeping it")
         cfg = {**cfg, "VISOSWAP_HOSTNAME": cfg.get("VISOSWAP_HOSTNAME") or vs_cf.DEFAULT_HOSTNAMES["colab"], "TUNNEL_MODE": "named"}
     else:
-        cfg = vs_cf.ensure_tunnel("colab", cfg, rep, run, args.tunnel, fetch=fetch, home=home, interactive=can_prompt(args))
+        cfg = vs_cf.ensure_tunnel("colab", cfg, rep, run, args.tunnel, fetch=fetch, home=home, interactive=can_prompt(args) and args.setup)
     quick = cfg.get("TUNNEL_MODE") == "quick"
     url = None if quick else resolve_url(cfg, probe)
     healthy = bool(url and co.health(url))
@@ -311,7 +413,7 @@ def launch(args, cfg, rep, run, co: Colab, fetch=vs_cf.default_fetch, home=None)
     if "deps" in steps:
         co.step("deps", vs_remote.DEPS, 1800)
     repo_out = co.step("repo", vs_remote.REPO_STEP, 900)
-    co.step("models", vs_remote.MODELS, 3300)
+    co.models()
     if args.setup:
         return {"ok": True, "state": "provisioned", "summary": "Colab provisioning complete (session, deps, repo, models).", "tunnel": cfg.get("TUNNEL_MODE")}
     if not quick and cfg.get("CF_TUNNEL_TOKEN") and (not probe.get("token_file") or args.refresh_token):
@@ -402,8 +504,8 @@ def build_parser():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     common_args(ap, "colab")
     ap.add_argument("--ref", help="git ref (branch/tag/sha) to deploy; default master (VISOSWAP_REF)")
-    ap.add_argument("--gpu", help="GPU for a NEW session: T4 (default), L4, G4, A100, H100")
-    ap.add_argument("--session", help="session name (default t4, COLAB_SESSION)")
+    ap.add_argument("--gpu", help="GPU for a NEW session: L4 (default, uses compute units), T4 (cheaper), G4, A100, H100")
+    ap.add_argument("--session", help="session name (default: the GPU name in lower case, e.g. l4; COLAB_SESSION)")
     ap.add_argument("--max-wait", type=int, default=1800, help="seconds to keep retrying for a GPU (default 1800)")
     ap.add_argument("--refresh-token", action="store_true", help="re-upload the tunnel token to the VM")
     ap.add_argument("--logs", nargs="?", const="both", choices=("uvicorn", "tunnel", "both"), help="show remote logs")
@@ -428,6 +530,9 @@ def main(argv=None) -> int:
             res = check(args, cfg, rep, run, co)
         elif args.store_cf_token:
             res = store_cf_token(args, cfg, rep)
+        elif args.cf_api_token_stdin:
+            with (contextlib.nullcontext() if args.dry_run else target_lock("colab", rep)):
+                res = cf_api_setup(args, cfg, rep, run)
         elif args.login:
             res = login(args, cfg, rep, run, co)
         elif args.status:
@@ -446,7 +551,8 @@ def main(argv=None) -> int:
         rep.result(ok, **res)
         return 0 if ok else 1
     except LaunchError as e:
-        rep.result(False, error=str(e), next=e.next_action)
+        rep.result(False, error=str(e), next=e.next_action,
+                   **({"checks": [c.as_dict() for c in e.checks]} if hasattr(e, "checks") else {}))
         return 1
     except KeyboardInterrupt:
         rep.result(False, error="interrupted", next="re-run; every step is idempotent")

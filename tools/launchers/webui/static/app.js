@@ -1,7 +1,7 @@
 "use strict";
-const TARGETS = {kaggle: "Kaggle (T4 x2)", colab: "Colab (T4)"};
+const TARGETS = {kaggle: "Kaggle (T4 x2)", colab: "Colab (L4 default, T4 optional)"};
 let token = null; try { token = localStorage.getItem("vs_token"); } catch (e) {}
-let activeJob = null, since = 0, timer = null;
+let activeJob = null, since = 0, timer = null, pending = null, activeAct = null, activeTarget = null;
 const $ = (id) => document.getElementById(id);
 async function api(path, opts = {}) {
   const r = await fetch(path, {...opts, headers: {"Authorization": "Bearer " + token, "Content-Type": "application/json"}});
@@ -37,27 +37,38 @@ function card(t, s) {
   el.append(bar); el.append(checksPanel(t)); return el;
 }
 let CHECKS = null;
+function secretForm(placeholder, button, onSubmit) {
+  const f = document.createElement("form"); f.className = "row";
+  const i = document.createElement("input"); i.type = "password"; i.autocomplete = "off"; i.placeholder = placeholder; f.append(i);
+  const b = document.createElement("button"); b.textContent = button; f.append(b);
+  f.onsubmit = async (e) => { e.preventDefault(); const v = i.value; i.value = ""; if (v) await onSubmit(v); };
+  return f;
+}
 function checksPanel(t) {
   const box = document.createElement("div"); box.className = "checks";
   const info = CHECKS && CHECKS.targets[t];
   if (!info) { box.textContent = "Checking logins..."; return box; }
+  const canLogin = CHECKS.login_ui && CHECKS.login_ui[t];
+  const note = CHECKS.login_note && CHECKS.login_note[t];
   for (const c of info.checks || []) {
     const row = document.createElement("div"); row.className = "row";
-    const dot = document.createElement("span"); dot.className = "pill " + (c.state === "ok" ? "ok" : (c.good === false || c.blocking ? "bad" : "warn")); dot.textContent = c.state; row.append(dot);
+    const dot = document.createElement("span"); dot.className = "pill " + (c.state === "ok" ? "ok" : (c.state === "unknown" || !c.blocking ? "warn" : "bad")); dot.textContent = c.state; row.append(dot);
     const l = document.createElement("span"); l.textContent = c.service + (c.detail ? ": " + c.detail : ""); row.append(l);
-    if (c.state !== "ok" && c.state !== "unknown" && c.fix) {
+    if (c.state !== "ok" && c.state !== "unknown") {
       if (c.id === "cloudflare") {
-        const f = document.createElement("form"); f.className = "row";
-        const i = document.createElement("input"); i.type = "password"; i.autocomplete = "off"; i.placeholder = "paste tunnel token (stored mode 600, never shown)"; f.append(i);
-        const b = document.createElement("button"); b.textContent = "Save token"; f.append(b);
-        f.onsubmit = async (e) => { e.preventDefault(); const v = i.value; i.value = "";
+        row.append(secretForm("tunnel token (stored mode 600, never shown)", "Save token", async (v) => {
           try { const r = await api(`/api/targets/${t}/cloudflare-token`, {method: "POST", body: JSON.stringify({token: v})}); $("log").textContent = r.ok ? "Token stored." : "Not stored: " + r.error; loadChecks(true); }
-          catch (er) { $("log").textContent = "Refused: " + er.message; } };
-        row.append(f);
-      } else if (c.id.endsWith(".auth") && t === "kaggle" && CHECKS && !CHECKS.in_docker) {
-        const b = document.createElement("button"); b.textContent = "Log in"; b.onclick = () => run(t, "login"); row.append(b);
-        const cmd = document.createElement("code"); cmd.textContent = c.fix; row.append(cmd);
-      } else { const cmd = document.createElement("code"); cmd.textContent = "In a terminal: " + c.fix; row.append(cmd); }
+          catch (er) { $("log").textContent = "Refused: " + er.message; } }));
+        row.append(secretForm("or a Cloudflare API token: creates tunnel + DNS (used once, not stored)", "Create tunnel", async (v) => {
+          $("log").textContent = "Creating the tunnel and DNS record...";
+          try { const r = await api(`/api/targets/${t}/cloudflare-api-token`, {method: "POST", body: JSON.stringify({token: v})}); $("log").textContent = r.ok ? (r.summary || "Tunnel ready.") : "Failed: " + r.error; loadChecks(true); continueAfterLogin(t); }
+          catch (er) { $("log").textContent = "Refused: " + er.message; } }));
+      } else if (c.id.endsWith(".auth") || c.id.endsWith(".login")) {
+        if (canLogin) {
+          const b = document.createElement("button"); b.textContent = t === "kaggle" ? "Log in (paste token)" : "Log in with Google"; b.onclick = () => run(t, "login"); row.append(b);
+        } else if (note) { const n = document.createElement("small"); n.textContent = note; row.append(n); }
+        else if (c.fix) { const cmd = document.createElement("code"); cmd.textContent = "In a terminal: " + c.fix; row.append(cmd); }
+      } else if (c.fix) { const cmd = document.createElement("code"); cmd.textContent = "In a terminal: " + c.fix; row.append(cmd); }
     }
     box.append(row);
   }
@@ -66,22 +77,46 @@ function checksPanel(t) {
 async function loadChecks(force) {
   try { CHECKS = await api("/api/checks" + (force ? "?refresh=1" : "")); refresh(false, true); } catch (e) {}
 }
-async function run(t, act) {
+// after a successful login / tunnel setup, re-run the action that was blocked
+function continueAfterLogin(t) { if (pending && pending.t === t && !activeJob) { const p = pending; pending = null; $("log").textContent += "\nContinuing: " + p.act + "\n"; run(p.t, p.act, true); } }
+async function run(t, act, auto) {
   let body = {};
-  if (act === "stop") { if (!confirm("Stop " + t + "? The backend goes offline" + (t === "colab" ? " and a new T4 may be hard to get." : "."))) return; body = {confirm: true}; }
-  try { const r = await api(`/api/targets/${t}/${act}`, {method: "POST", body: JSON.stringify(body)}); follow(r.job, t + " " + act); }
+  if (act === "stop" && !auto) { if (!confirm("Stop " + t + "? The backend goes offline" + (t === "colab" ? " and a new T4 may be hard to get." : "."))) return; body = {confirm: true}; }
+  try { const r = await api(`/api/targets/${t}/${act}`, {method: "POST", body: JSON.stringify(body)}); follow(r.job, t + " " + act, t, act); }
   catch (e) { $("log").textContent = "Refused: " + e.message; }
 }
-function follow(job, label) { activeJob = job; since = 0; $("log").textContent = ""; $("logfor").textContent = label; poll(); }
+function follow(job, label, t, act) { activeJob = job; activeTarget = t || null; activeAct = act || null; since = 0; hidePrompt(); $("log").textContent = ""; $("logfor").textContent = label; poll(); }
 async function poll() {
   if (!activeJob) return;
   try {
     const j = await api(`/api/jobs/${activeJob}?since=${since}`);
     if (j.lines.length) { $("log").textContent += j.lines.join("\n") + "\n"; $("log").scrollTop = 1e9; }
     since = j.next;
+    if (j.state === "waiting" && j.prompt) { showPrompt(j.prompt); setTimeout(poll, 2000); return; }
+    hidePrompt();
     if (j.state === "running") { setTimeout(poll, 1500); return; }
-    const r = j.result || {}; $("log").textContent += (r.ok ? "DONE" : "FAILED: " + (r.error || "")) + (r.next ? "\nNext: " + r.next : "") + "\n"; activeJob = null; refresh(true); loadChecks(true);
+    const r = j.result || {}; $("log").textContent += (r.ok ? "DONE" : "FAILED: " + (r.error || "")) + (r.next ? "\nNext: " + r.next : "") + "\n";
+    const t = activeTarget, act = activeAct; activeJob = null;
+    if (!r.ok && Array.isArray(r.checks) && r.checks.length && t) {   // the launch stopped on a missing login: show it and remember the action
+      CHECKS = CHECKS || {targets: {}, login_ui: {}, login_note: {}}; CHECKS.targets[t] = {checks: r.checks};
+      if (act !== "login") pending = {t, act};
+    }
+    if (r.ok && act === "login") { await refresh(true); await loadChecks(true); continueAfterLogin(t); return; }
+    if (r.ok && act !== "login") pending = null;
+    refresh(true); if (!(r.checks && r.checks.length)) loadChecks(true);
   } catch (e) { setTimeout(poll, 4000); }
+}
+function hidePrompt() { const b = $("prompt"); if (b) { b.hidden = true; b.replaceChildren(); } }
+function showPrompt(p) {
+  const b = $("prompt"); if (!b.hidden && b.dataset.msg === p.msg) return;
+  b.hidden = false; b.dataset.msg = p.msg; b.replaceChildren();
+  const m = document.createElement("div"); m.textContent = p.msg; b.append(m);
+  if (p.url) { const a = document.createElement("a"); a.href = p.url; a.textContent = "Open Google sign-in"; a.target = "_blank"; a.rel = "noopener noreferrer"; b.append(a); }
+  b.append(secretForm(p.kind === "code" ? "paste the code here" : "paste the token here (hidden, never stored in the browser)", "Submit", async (v) => {
+    try { await api(`/api/jobs/${activeJob}/input`, {method: "POST", body: JSON.stringify({value: v})}); hidePrompt(); }
+    catch (e) { $("log").textContent += "Not accepted: " + e.message + "\n"; } }));
+  const c = document.createElement("button"); c.className = "ghost"; c.textContent = "Cancel";
+  c.onclick = async () => { try { await api(`/api/jobs/${activeJob}/cancel`, {method: "POST", body: "{}"}); } catch (e) {} hidePrompt(); }; b.append(c);
 }
 async function refresh(force, keep) {
   try {

@@ -8,10 +8,21 @@ import vs_common as C, vs_cf, vs_remote, kaggle_launch as K, colab_launch as CL 
 
 FAKES = Path(__file__).parent / "fakes"
 @pytest.fixture(autouse=True)
-def _hermetic(monkeypatch):
-    """Never query the real macOS Keychain from tests: a fake `security` comes first on PATH."""
+def _hermetic(monkeypatch, tmp_path_factory):
+    """Nothing in a test may reach the real machine: a fake `security` first on PATH, and HOME, the Kaggle config dir,
+    the launcher home and every *_BIN pinned to temp dirs / fakes (a test that forgets to set one hits a fake, never a live CLI)."""
+    h = tmp_path_factory.mktemp("hermetic")
     monkeypatch.setenv("PATH", str(FAKES) + os.pathsep + os.environ["PATH"])
     monkeypatch.setenv("FAKE_SECURITY_RC", "0")
+    monkeypatch.setenv("HOME", str(h))
+    monkeypatch.setenv("KAGGLE_CONFIG_DIR", str(h / ".kaggle"))
+    monkeypatch.setenv("VISOSWAP_HOME", str(h / ".visoswap"))
+    monkeypatch.setenv("FAKE_DIR", str(h))
+    monkeypatch.setenv("KAGGLE_BIN", str(FAKES / "fake_kaggle.py"))
+    monkeypatch.setenv("COLAB_BIN", str(FAKES / "fake_colab.py"))
+    monkeypatch.setenv("CLOUDFLARED_BIN", str(FAKES / "fake_cloudflared.py"))
+    for k in ("KAGGLE_API_TOKEN", "KAGGLE_USERNAME", "KAGGLE_KEY", "CF_API_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
 
 
 TOKEN = "eyJhIjoiZmFrZWFjY291bnQiLCJ0IjoiZmFrZXR1bm5lbCIsInMiOiJzZWNyZXQifQ"
@@ -209,7 +220,7 @@ def calls(d): return (d / "calls.log").read_text().splitlines() if (d / "calls.l
 
 def test_retry_loop_times_out_with_clear_message(tmp_path, monkeypatch):
     co, clk, d = _colab(tmp_path, monkeypatch, FAKE_NEW_FAIL="1")
-    with pytest.raises(C.LaunchError, match="no T4 became available"):
+    with pytest.raises(C.LaunchError, match="no L4 became available"):
         co.ensure_session(100)
     assert sum(1 for c in calls(d) if c.startswith("new")) >= 2 and clk.t > 0
 
@@ -552,7 +563,7 @@ def test_merge_settings_precedence():
     assert M(live, "running process", {**cfg, "concurrency": 5})["GENERATION_CONCURRENCY"] == "5"
     assert M(live, "running process", {**cfg, "profile": False})["VISOSWAP_PROFILE"] == "0"
     d = M({}, "defaults", cfg)
-    assert d["VISOSWAP_PROFILE"] == "0" and d["VISOSWAP_PROCESS_WORKERS"] == "auto" and "GENERATION_CONCURRENCY" not in d
+    assert d["VISOSWAP_PROFILE"] == "0" and "VISOSWAP_PROCESS_WORKERS" not in d and "GENERATION_CONCURRENCY" not in d
 
 
 def test_settings_overrides_flags_beat_env_file():
@@ -588,8 +599,7 @@ def test_webui_checks_login_and_token_endpoints(tmp_path, monkeypatch):
     r = c.get("/api/checks", headers=H).json()
     assert r["targets"]["kaggle"]["checks"][0]["state"] == "ok" and set(r["targets"]["kaggle"]["checks"][0]) <= set(A.CHECK_FIELDS)
     assert c.get("/api/checks").status_code == 401
-    assert c.post("/api/targets/colab/login", headers=H).status_code == 400            # needs a terminal: shows constant command
-    assert "colab-launch.sh --login" in c.post("/api/targets/colab/login", headers=H).json()["detail"]
+    assert c.post("/api/targets/colab/nologin", headers=H).status_code == 404
     assert c.post("/api/targets/kaggle/cloudflare-token", headers=H, json={"token": "short"}).status_code == 400
     r = c.post("/api/targets/kaggle/cloudflare-token", headers=H, json={"token": FAKE_TOKEN2})
     assert r.json() == {"ok": True, "error": ""} and FAKE_TOKEN2 not in r.text
@@ -644,3 +654,301 @@ def test_webui_checks_skip_probe_while_busy(tmp_path, monkeypatch):
     r = c.get("/api/checks", headers=H).json()["targets"]["colab"]
     assert r["checks"] == []
     A.state().busy.pop("colab")
+
+
+# =========================================================================== turn 4: UI-driven logins, L4 default, l4 reconciliation
+import io, time  # noqa: E402
+
+
+def _reporter_json():
+    buf = io.StringIO()
+    return C.Reporter(json_mode=True, stream=buf), buf
+
+
+GOODTOK = "GOODTOKEN-abcdef0123456789"
+
+
+def test_kaggle_token_install_validates_in_isolation_and_stores_600(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_KAUTH", "expired")
+    (tmp_path / "kaggle_ok").write_text("1")                       # an OAuth login exists and would mask a bad token
+    kdir = Path(os.environ["KAGGLE_CONFIG_DIR"]); kdir.mkdir(parents=True)
+    (kdir / "credentials.json").write_text("{}")
+    rep, buf = _reporter_json()
+    run = C.Runner(rep)
+    kg = K.Kaggle({"KAGGLE_BIN": str(FAKES / "fake_kaggle.py"), "KAGGLE_KERNEL": "f/x"}, rep, run)
+    with pytest.raises(C.LaunchError):
+        K.install_kaggle_token("BADTOKEN-abcdef0123456789", {}, rep, run, kg)
+    assert not (kdir / "access_token").exists()                    # rejected: nothing stored
+    K.install_kaggle_token(GOODTOK, {}, rep, run, kg)
+    f = kdir / "access_token"
+    assert f.read_text().strip() == GOODTOK and oct(f.stat().st_mode & 0o777) == "0o600" and oct(kdir.stat().st_mode & 0o777) == "0o700"
+    assert (kdir / "credentials.json").read_text() == "{}"         # never modified
+    assert GOODTOK not in buf.getvalue() and "BADTOKEN-abcdef0123456789" not in buf.getvalue()
+    cs = P.kaggle_checks({"KAGGLE_BIN": str(FAKES / "fake_kaggle.py")}, C.Runner(C.Reporter()))
+    assert next(c for c in cs if c.id == "kaggle.auth").state == "ok"
+    assert not any("BADTOKEN" in c or GOODTOK in c for c in calls(tmp_path))     # token travels by env, never argv
+
+
+def test_kaggle_token_rejects_garbage_without_calling_cli(tmp_path):
+    rep = C.Reporter(); run = C.Runner(rep)
+    kg = K.Kaggle({"KAGGLE_BIN": str(FAKES / "fake_kaggle.py")}, rep, run)
+    for bad in ("", "short", "has space inside the token value"):
+        with pytest.raises(C.LaunchError):
+            K.install_kaggle_token(bad, {}, rep, run, kg)
+    assert calls(tmp_path) == []
+
+
+def _relay(script, args, tmp_path, env, lines):
+    """Run a launcher in relay mode; feed `lines` one at a time after each prompt. -> (events, rc)"""
+    e = dict(os.environ, VISOSWAP_HOME=str(tmp_path / "home"), FAKE_DIR=str(tmp_path), HOME=str(tmp_path), PYTHONUNBUFFERED="1", **env)
+    p = subprocess.Popen([sys.executable, str(L / script), *args, "--json"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, text=True, env=e)
+    events, feed = [], list(lines)
+    t0 = time.time()
+    for raw in p.stdout:
+        ev = json.loads(raw)
+        events.append(ev)
+        if ev.get("t") == "prompt" and feed:
+            p.stdin.write(feed.pop(0) + "\n"); p.stdin.flush()
+        assert time.time() - t0 < 60
+    p.wait(timeout=30)
+    return events, p.returncode
+
+
+def test_cli_kaggle_relay_login_pasted_token(tmp_path):
+    ev, rc = _relay("kaggle_launch.py", ["--login", "--relay"], tmp_path,
+                    {"KAGGLE_BIN": str(FAKES / "fake_kaggle.py"), "FAKE_KAUTH": "expired", "KAGGLE_CONFIG_DIR": str(tmp_path / ".kaggle")}, [GOODTOK])
+    assert rc == 0 and ev[-1]["ok"] is True, ev
+    assert any(e["t"] == "prompt" and e["kind"] == "secret" for e in ev)
+    assert GOODTOK not in json.dumps(ev)
+    assert oct((tmp_path / ".kaggle" / "access_token").stat().st_mode & 0o777) == "0o600"
+
+
+def test_cli_colab_relay_login_url_then_code(tmp_path):
+    ev, rc = _relay("colab_launch.py", ["--login", "--relay"], tmp_path,
+                    {"COLAB_BIN": str(FAKES / "fake_colab.py"), "FAKE_COLAB_EXPIRED": "1"}, ["GOODCODE-123456789"])
+    pr = [e for e in ev if e["t"] == "prompt"]
+    assert rc == 0 and ev[-1]["ok"] is True, ev
+    assert len(pr) == 1 and pr[0]["kind"] == "code" and pr[0]["url"].startswith("https://accounts.google.com/")
+    assert "client_id=abc" in pr[0]["url"]                      # a realistic auth URL is not mangled by redaction
+    assert "GOODCODE-123456789" not in json.dumps(ev)
+
+
+def test_cli_colab_relay_wrong_code_fails_and_valid_login_asks_nothing(tmp_path):
+    ev, rc = _relay("colab_launch.py", ["--login", "--relay"], tmp_path,
+                    {"COLAB_BIN": str(FAKES / "fake_colab.py"), "FAKE_COLAB_EXPIRED": "1"}, ["WRONG-CODE-123456789"])
+    assert rc == 1 and ev[-1]["ok"] is False
+    ev, rc = _relay("colab_launch.py", ["--login", "--relay"], tmp_path, {"COLAB_BIN": str(FAKES / "fake_colab.py")}, [])
+    assert rc == 0 and not any(e["t"] == "prompt" for e in ev)  # already logged in: no prompt at all
+
+
+def test_relay_without_a_driver_fails_fast_not_hangs(tmp_path):
+    e = dict(os.environ, VISOSWAP_HOME=str(tmp_path / "home"), FAKE_DIR=str(tmp_path), HOME=str(tmp_path), COLAB_BIN=str(FAKES / "fake_colab.py"), FAKE_COLAB_EXPIRED="1")
+    t0 = time.time()
+    r = subprocess.run([sys.executable, str(L / "colab_launch.py"), "--login", "--relay", "--json"], stdin=subprocess.DEVNULL,
+                       capture_output=True, text=True, env=e, timeout=60)
+    assert r.returncode == 1 and time.time() - t0 < 30
+    assert json.loads(r.stdout.strip().splitlines()[-1])["ok"] is False
+
+
+def test_safe_login_url_only_google_https():
+    f = CL.safe_login_url
+    assert f("visit https://accounts.google.com/o/oauth2/auth?x=1 now").startswith("https://accounts.google.com/")
+    assert f("https://evil.example/?u=accounts.google.com") == "" and f("http://accounts.google.com/x") == ""
+    assert f("https://accounts.google.com.evil.example/x") == ""
+
+
+def test_cf_api_token_from_stdin_creates_tunnel_stores_only_tunnel_token(tmp_path, monkeypatch):
+    for mod, tgt, host in ((K, "kaggle", "swap.example.org"), (CL, "colab", "clswap.example.org")):
+        f = FakeCF()
+        rep, buf = _reporter_json()
+        APITOK = "cfapitoken-abcdefghijklmnop" + tgt
+        monkeypatch.setattr(sys, "stdin", io.StringIO(APITOK + "\n"))
+        home = tmp_path / tgt; home.mkdir()
+        res = mod.cf_api_setup(None, {"VISOSWAP_HOSTNAME": host}, rep, C.Runner(rep), fetch=f, home=home)
+        assert res["ok"] and ("POST", "/accounts/a1/cfd_tunnel") in f.calls
+        env = (home / f"{tgt}.env").read_text()
+        assert TOKEN in env and APITOK not in env and "CF_API_TOKEN" not in env
+        assert oct((home / f"{tgt}.env").stat().st_mode & 0o777) == "0o600"
+        assert APITOK not in buf.getvalue() and TOKEN not in buf.getvalue()
+
+
+def test_cf_api_token_rejects_garbage(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "stdin", io.StringIO("short\n"))
+    with pytest.raises(C.LaunchError):
+        K.cf_api_setup(None, {}, C.Reporter(), C.Runner(C.Reporter()), fetch=FakeCF(), home=tmp_path)
+
+
+def test_preflight_failure_result_carries_checks(tmp_path):
+    (tmp_path / "home").mkdir()
+    r = _cli("kaggle_launch.py", ["--json", "--tunnel", "quick"], tmp_path,
+             {"KAGGLE_BIN": str(FAKES / "fake_kaggle.py"), "FAKE_KAUTH": "expired", "KAGGLE_CONFIG_DIR": str(tmp_path / ".kaggle")})
+    last = json.loads(r.stdout.strip().splitlines()[-1])
+    assert r.returncode == 1 and last["ok"] is False
+    assert any(c["id"] == "kaggle.auth" and c["state"] == "invalid" for c in last["checks"])
+
+
+def test_valid_logins_launch_asks_nothing_even_on_a_tty(tmp_path, monkeypatch):
+    """With every login valid and a tunnel token stored, a launch on a (forced) terminal never prompts or runs a login."""
+    (tmp_path / "home").mkdir()
+    monkeypatch.setenv("FAKE_DIR", str(tmp_path)); monkeypatch.setenv("VISOSWAP_HOME", str(tmp_path / "home"))
+    (tmp_path / "home" / "kaggle.env").write_text(f"CF_TUNNEL_TOKEN={TOKEN}\nVISOSWAP_HOSTNAME=h.example.org\nKAGGLE_KERNEL=faker/visoswap-studio\n")
+    boom = lambda *a, **k: (_ for _ in ()).throw(AssertionError("prompted/login with valid credentials"))
+    monkeypatch.setattr(K, "can_prompt", lambda a: True)
+    monkeypatch.setattr(vs_cf, "prompt_secret", boom)
+    monkeypatch.setattr(C.Runner, "interactive", boom)
+    monkeypatch.setattr(K.vs_cf, "default_fetch", boom)
+    rc = K.main(["--setup", "--yes", "--json", "--models-dir", str(tmp_path / "nomodels")])
+    assert rc == 0
+    assert not any(c.startswith("auth login") for c in calls(tmp_path))
+
+
+# ---------- Colab: L4 default, burn/units, real rejection strings
+def test_colab_default_is_l4_session_named_after_gpu(tmp_path, monkeypatch):
+    co, clk, d = _colab(tmp_path, monkeypatch)
+    assert co.gpu == "L4" and co.session == "l4"
+    co.ensure_session(600)
+    assert any(c.startswith("new -s l4 --gpu L4") for c in calls(d))
+    assert CL.build_parser().parse_args([]).gpu is None            # default applied in Colab(), T4 stays selectable
+
+
+def test_colab_t4_optional_and_reuse_notes_mismatch(tmp_path, monkeypatch):
+    co, clk, d = _colab(tmp_path, monkeypatch, sessions="[l4] gpu-l4-x | Hardware: L4 | Shape: Standard | Variant: GPU\n")
+    co.gpu = "T4"
+    assert co.ensure_session(60) == "l4"                           # reused, never replaced
+    assert not any(c.startswith("new") for c in calls(d))
+
+
+def test_colab_zero_units_fail_fast_for_l4_but_t4_proceeds(tmp_path, monkeypatch):
+    co, clk, d = _colab(tmp_path, monkeypatch, FAKE_UNITS="0")
+    with pytest.raises(C.LaunchError) as e:
+        co.ensure_session(1800)
+    assert "--gpu T4" in e.value.next_action and not any(c.startswith("new") for c in calls(d)) and clk.t == 0
+    co.gpu = "T4"
+    co.ensure_session(60)
+    assert any(c.startswith("new") and "--gpu T4" in c for c in calls(d))
+
+
+def test_colab_entitlement_rejection_is_not_retried(tmp_path, monkeypatch):
+    co, clk, d = _colab(tmp_path, monkeypatch, FAKE_NEW_REJECT="1")
+    with pytest.raises(C.LaunchError) as e:
+        co.ensure_session(1800)
+    assert sum(c.startswith("new") for c in calls(d)) == 1 and "--gpu T4" in e.value.next_action
+
+
+# ---------- remote scripts reconciled with the first real L4 deploy
+def test_remote_scripts_match_what_worked_on_l4():
+    d, st, m = vs_remote.DEPS, vs_remote.START, vs_remote.MODELS
+    for pkg in ("opencv-python", "Pillow", "requests", "tqdm", "pydantic"):
+        assert pkg in d
+    assert "onnxruntime-gpu>=1.27" in d and "ffmpeg" in d
+    assert "--token-file" in st and '"--token", open' not in st            # token stays out of argv
+    assert 'pgrep("engine-worker")' in st and 'pgrep("multiprocessing.spawn")' in st
+    assert "start_new_session=True" in m and "/content/models.log" in m and "VS_PENDING models" in m
+    assert "VISOSWAP_PROCESS_WORKERS" in st                                # only preserved/whitelisted, never invented
+    for src in (d, st, m):
+        compile(vs_remote.render(src, repo_dir="/r", token_file="/t", ref="m", repo_url="u", subset="default", restart=False,
+                                 profile=None, concurrency=None, wait=1, which=[], lines=1, poll=1), "x", "exec")
+
+
+def test_models_step_polls_until_done(tmp_path, monkeypatch):
+    co, clk, d = _colab(tmp_path, monkeypatch)
+    outs = iter(["VS_PENDING models 10%", "VS_PENDING models 60%", "VS_OK models"])
+    monkeypatch.setattr(co, "remote", lambda *a, **k: next(outs))
+    co.models()
+    monkeypatch.setattr(co, "remote", lambda *a, **k: "VS_FAIL models bootstrap incomplete")
+    with pytest.raises(C.LaunchError):
+        co.models()
+
+
+# ---------- web UI: login relay, redaction, auto-continue
+def _wait(c, H, jid, states, tries=100):
+    for _ in range(tries):
+        j = c.get(f"/api/jobs/{jid}", headers=H).json()
+        if j["state"] in states:
+            return j
+        time.sleep(0.1)
+    raise AssertionError(("timeout", j))
+
+
+def test_webui_colab_login_relay_url_link_code_and_redaction(tmp_path, monkeypatch):
+    A, c, H = _webui(tmp_path, monkeypatch)
+    jid = c.post("/api/targets/colab/login", headers=H).json()["job"]
+    j = _wait(c, H, jid, ("waiting", "done", "failed"))
+    assert j["state"] == "waiting" and j["prompt"]["kind"] == "code" and j["prompt"]["url"].startswith("https://accounts.google.com/")
+    assert c.post(f"/api/jobs/{jid}/input", headers=H, json={"value": ""}).status_code == 400
+    assert c.post(f"/api/jobs/{jid}/input", json={"value": "x"}).status_code == 401
+    r = c.post(f"/api/jobs/{jid}/input", headers=H, json={"value": "GOODCODE-12345678"})
+    assert r.status_code == 200 and "GOODCODE" not in r.text
+    j = _wait(c, H, jid, ("done", "failed"))
+    assert j["state"] == "done" and "GOODCODE" not in json.dumps(j)         # the fake tool echoed it; redacted
+    assert c.post(f"/api/jobs/{jid}/input", headers=H, json={"value": "again"}).status_code == 409
+
+
+def test_webui_login_url_must_be_google_https(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_LOGIN_URL", "https://evil.example/phish")
+    A, c, H = _webui(tmp_path, monkeypatch)
+    jid = c.post("/api/targets/colab/login", headers=H).json()["job"]
+    j = _wait(c, H, jid, ("waiting",))
+    assert j["prompt"]["url"] == ""                                          # the UI renders no link
+    c.post(f"/api/jobs/{jid}/cancel", headers=H)
+    assert _wait(c, H, jid, ("failed",))["result"]["error"] == "cancelled"
+
+
+def test_webui_kaggle_token_paste_job(tmp_path, monkeypatch):
+    A, c, H = _webui(tmp_path, monkeypatch)
+    jid = c.post("/api/targets/kaggle/login", headers=H).json()["job"]
+    j = _wait(c, H, jid, ("waiting",))
+    assert j["prompt"]["kind"] == "secret" and j["prompt"]["url"] == ""
+    c.post(f"/api/jobs/{jid}/input", headers=H, json={"value": GOODTOK})
+    j = _wait(c, H, jid, ("done", "failed"))
+    assert j["state"] == "done" and GOODTOK not in json.dumps(j)
+
+
+def test_webui_docker_refuses_logins_with_plain_reason(tmp_path, monkeypatch):
+    A, c, H = _webui(tmp_path, monkeypatch)
+    monkeypatch.setattr(A, "IN_DOCKER", True)
+    r = c.post("/api/targets/colab/login", headers=H)
+    assert r.status_code == 400 and "run.sh native" in r.json()["detail"] and "keyring" in r.json()["detail"]
+    r = c.post("/api/targets/kaggle/login", headers=H)
+    assert r.status_code == 400 and "run.sh native" in r.json()["detail"]
+    ch = c.get("/api/checks?refresh=1", headers=H).json()
+    assert ch["login_ui"] == {"kaggle": False, "colab": False} and "native" in ch["login_note"]["colab"]
+
+
+def test_webui_cloudflare_api_token_endpoint(tmp_path, monkeypatch):
+    A, c, H = _webui(tmp_path, monkeypatch)
+    assert c.post("/api/targets/kaggle/cloudflare-api-token", headers=H, json={"token": "short"}).status_code == 400
+    tok = "cfapi-token-abcdefghijklmnop"
+    r = c.post("/api/targets/kaggle/cloudflare-api-token", headers=H, json={"token": tok})
+    assert r.json()["ok"] is True and tok not in r.text
+    assert c.post("/api/targets/kaggle/cloudflare-api-token", json={"token": tok}).status_code == 401
+
+
+def test_webui_422_does_not_echo_submitted_secret(tmp_path, monkeypatch):
+    A, c, H = _webui(tmp_path, monkeypatch)
+    r = c.post("/api/targets/kaggle/cloudflare-token", headers=H, content=b'["SECRETVALUE-123456789"]')
+    assert r.status_code == 422 and "SECRETVALUE" not in r.text
+    r = c.post("/api/jobs/abc/input", headers=H, content=b'"SECRETVALUE-123456789"')
+    assert "SECRETVALUE" not in r.text
+
+
+def test_webui_launch_blocked_by_login_returns_whitelisted_checks_then_continues(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_NEEDS_LOGIN", "1")
+    A, c, H = _webui(tmp_path, monkeypatch)
+    jid = c.post("/api/targets/kaggle/launch", headers=H).json()["job"]
+    j = _wait(c, H, jid, ("failed", "done"))
+    assert j["state"] == "failed" and j["result"]["checks"][0]["id"] == "kaggle.auth" and "extra" not in j["result"]["checks"][0]
+    lj = c.post("/api/targets/kaggle/login", headers=H).json()["job"]
+    _wait(c, H, lj, ("waiting",)); c.post(f"/api/jobs/{lj}/input", headers=H, json={"value": GOODTOK}); _wait(c, H, lj, ("done",))
+    jid = c.post("/api/targets/kaggle/launch", headers=H).json()["job"]       # what the UI re-posts automatically
+    assert _wait(c, H, jid, ("done", "failed"))["state"] == "done"
+
+
+def test_run_launcher_redacts_per_field_and_keeps_urls(tmp_path, monkeypatch):
+    A, c, H = _webui(tmp_path, monkeypatch)
+    red = A.state().redactor()
+    red.add("SECRET\"VALUE-abcdef")
+    out = A.redact_obj(red, {"error": 'x SECRET"VALUE-abcdef y', "url": "https://accounts.google.com/o/oauth2/auth?client_id=abc&state=s1", "n": 3})
+    assert "SECRET" not in out["error"] and out["url"].endswith("state=s1") and out["n"] == 3
+    assert A.safe_google_url("https://accounts.google.com/o/oauth2/auth?client_id=abc&state=s1")
