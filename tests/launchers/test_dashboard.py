@@ -393,6 +393,45 @@ def test_docker_does_not_print_the_token(tmp_path, monkeypatch, capsys):
     assert tok not in capsys.readouterr().out and (tmp_path / "webui_token").read_text().strip() == tok
 
 
+def test_docker_token_hint_is_a_working_command(tmp_path, monkeypatch, capsys):
+    """The named volume does not live at ~/.visoswap, so the hint must be a `docker exec` on the container."""
+    A, c, H = _webui(tmp_path, monkeypatch)
+    (tmp_path / "webui_token").unlink()
+    capsys.readouterr()
+    monkeypatch.setattr(A, "IN_DOCKER", True)
+    monkeypatch.setenv("HOSTNAME", "abc123def456")
+    A.S = None
+    tok = A.state().token
+    out = capsys.readouterr().out
+    assert tok not in out
+    assert "docker exec abc123def456 cat" in out
+    assert "cat ~/.visoswap/webui_token" not in out
+
+
+def test_docker_token_hint_without_hostname(tmp_path, monkeypatch, capsys):
+    """No HOSTNAME (native run of the docker branch) still yields a placeholder instead of a broken path."""
+    A, c, H = _webui(tmp_path, monkeypatch)
+    (tmp_path / "webui_token").unlink()
+    capsys.readouterr()
+    monkeypatch.setattr(A, "IN_DOCKER", True)
+    monkeypatch.delenv("HOSTNAME", raising=False)
+    A.S = None
+    tok = A.state().token
+    out = capsys.readouterr().out
+    assert tok not in out and "docker exec <container> cat" in out
+
+
+def test_dockerfile_pins_six_for_the_kaggle_cli():
+    """kaggle 2.2.5 imports six without declaring it; the image must install it or every kaggle call dies."""
+    df = (L / "webui" / "Dockerfile").read_text()
+    pip_line = next(l for l in df.splitlines() if "pip install" in l)
+    assert " kaggle " in pip_line + " " or pip_line.rstrip().endswith("kaggle \\")
+    assert "six==1.17.0" in pip_line
+    # the build must prove the CLIs import, not just that pip succeeded
+    assert "kaggle --version" in df
+    assert "colab version" in df
+
+
 # ---------- backup logins
 def test_kaggle_json_backup_login_endpoint(tmp_path, monkeypatch):
     A, c, H = _webui(tmp_path, monkeypatch)

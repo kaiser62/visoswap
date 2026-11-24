@@ -73,7 +73,14 @@ def load_or_create_token() -> str:
     with os.fdopen(fd, "w") as f:
         f.write(tok + "\n")
     if IN_DOCKER:     # container stdout lands in `docker logs`: never print the token there
-        print(f"\n  VisoSwap dashboard: access token created in {p} (read it on the host: cat ~/.visoswap/webui_token)\n", flush=True)
+        # Give a command that works in BOTH layouts: with the named volume (docker-compose.yml alone) the
+        # host path is under /var/lib/docker, not ~/.visoswap, so the old hint pointed at a missing file.
+        # The container hostname is the short container id, so `docker exec <hostname>` is copy-pasteable.
+        who = os.environ.get("HOSTNAME", "").strip() or "<container>"
+        print(f"\n  VisoSwap dashboard: access token created in {p}"
+              f"\n  read it on the host with: docker exec {who} cat {p}"
+              f"\n  (with the named volume it also lives under /var/lib/docker/volumes/<project>_state/_data/ ;"
+              f" the hostdir overlay shares ~/.visoswap instead)\n", flush=True)
     else:             # shown ONCE, here only; it is never returned by any endpoint
         print(f"\n  VisoSwap launcher web UI access token (also in {p}):\n  {tok}\n", flush=True)
     return tok
