@@ -1082,3 +1082,63 @@ def test_probe_retries_dropped_exec(tmp_path, monkeypatch):
     monkeypatch.setattr(co, "remote", lambda name, *a, **k: next(outs))
     with pytest.raises(C.LaunchError, match="could not query"):
         co.probe()
+
+
+# ---------- access key: the gate must exist on BOTH targets
+def test_kaggle_injects_the_access_key_into_the_kernel():
+    nb = json.loads(K.NOTEBOOK.read_text())
+    before = json.dumps(nb)
+    out = K.inject_notebook(nb, "", "", None, False, None, "test-key-0000")
+    assert json.dumps(nb) == before                              # the repo notebook is never mutated
+    src = "".join(l for c in out["cells"] for l in c["source"])
+    assert "_api_key = _api_key or 'test-key-0000'" in src        # becomes os.environ['VISOSWAP_API_KEY']
+    # and it is not injected when no key is asked for
+    plain = "".join(l for c in K.inject_notebook(nb, "", "", None, False, None, None)["cells"] for l in c["source"])
+    assert "test-key-0000" not in plain
+
+
+def test_kaggle_key_is_never_written_to_the_repo_notebook():
+    assert "test-key-0000" not in K.NOTEBOOK.read_text()          # only the pushed private copy carries it
+
+
+def test_kaggle_rejects_a_key_the_backend_would_refuse(tmp_path):
+    rep = C.Reporter(json_mode=True, redact=C.Redactor([]))
+    for bad in ("has space", "semi;colon", "quote\"x", "back\\slash", ""):
+        f = tmp_path / "k"
+        f.write_text(bad); f.chmod(0o600)
+        args = type("A", (), {"api_key_file": str(f)})()
+        with pytest.raises(C.LaunchError):
+            K.load_api_key(args, {}, rep)
+    f = tmp_path / "good"
+    f.write_text("test-key-0000"); f.chmod(0o600)
+    args = type("A", (), {"api_key_file": str(f)})()
+    assert K.load_api_key(args, {}, rep) == "test-key-0000"
+
+
+def test_kaggle_key_file_must_not_be_world_readable(tmp_path):
+    f = tmp_path / "k"
+    f.write_text("test-key-0000"); f.chmod(0o644)
+    args = type("A", (), {"api_key_file": str(f)})()
+    with pytest.raises(C.LaunchError):
+        K.load_api_key(args, {}, C.Reporter(json_mode=True, redact=C.Redactor([])))
+
+
+def test_both_launchers_accept_a_key_and_the_ui_can_ask_for_it():
+    """The gate is useless if only one target can be told to enforce it."""
+    import colab_launch as CO, tempfile
+    sys.path.insert(0, str(L / "webui"))   # argspec lives beside app.py, not beside the launchers
+    import argspec as A
+    for mod in (K, CO):
+        p = mod.build_parser()
+        assert p.parse_args(["--api-key-file", "/tmp/k", "--dry-run"]).api_key_file == "/tmp/k"
+    # a key flag for either target, and "off" is symmetric on both
+    assert A.validate("kaggle", "start", {"api_key": "on"}) is None
+    assert A.validate("colab", "start", {"api_key": "on"}) is None
+    assert A.validate("kaggle", "start", {"api_key": "off"}) is None
+    with pytest.raises(ValueError):
+        A.validate("kaggle", "start", {"api_key": "maybe"})
+    home = Path(tempfile.mkdtemp())
+    (home / A.API_KEY_FILE).write_text("test-key-0000"); (home / A.API_KEY_FILE).chmod(0o600)
+    flags = A.build_flags("kaggle", "launch", {"api_key": "on"}, home)
+    assert flags == ["--api-key-file", str(home / A.API_KEY_FILE)]
+    assert A.build_flags("kaggle", "launch", {"api_key": "off"}, home) == ["--no-api-key"]

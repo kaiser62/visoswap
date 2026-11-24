@@ -10,6 +10,15 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 home="${VISOSWAP_HOME:-$HOME/.visoswap}"
 py="${VISOSWAP_PYTHON:-$here/../../../.venv/bin/python}"; [ -x "$py" ] || py=python3
+seed_key() {   # $1 = launcher home inside the container volume
+  local dst="$1/api_key" src="${2:-${HOME}/.visoswap/api_key}"
+  [ -s "$dst" ] && { chmod 600 "$dst"; return 0; }
+  [ -s "$src" ] || return 0                # no key yet: auth stays off until the owner creates one
+  mkdir -p "$1"
+  ( umask 077; cp "$src" "$dst" )
+  chmod 600 "$dst"
+  echo "Access key seeded from $src into $dst (mode 600)."
+}
 ensure_token() {
   mkdir -p "$home"
   if [ ! -s "$home/webui_token" ]; then
@@ -36,6 +45,9 @@ case "${1:-}" in
           # kagglesdk reads ~/.kaggle/credentials.json and ~/.kaggle/access_token no matter what KAGGLE_CONFIG_DIR says,
           # so the config dir has to be $HOME/.kaggle (the image sets exactly that).
           mkdir -p "$home/home/.kaggle"
+          # The backend gate (VISOSWAP_API_KEY) is read from $home/api_key by both launchers; seed it from the
+          # existing ~/.visoswap/api_key the CLI uses, so "keep" and "on" mean the same key everywhere.
+          seed_key "$home"
           if [ "$(uname)" = Darwin ] && [ "${WEBUI_BRIDGE:-1}" != 0 ]; then bridge start; export LAUNCHER_BRIDGE_URL="http://host.docker.internal:${BRIDGE_PORT:-8766}"; fi
           docker compose -f "$here/docker-compose.yml" -f "$here/docker-compose.hostdir.yml" up -d --build
           echo "UI: http://${WEBUI_BIND:-127.0.0.1}:${WEBUI_PORT:-8765}/" ;;

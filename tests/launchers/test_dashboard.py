@@ -1,5 +1,5 @@
 """Dashboard additions: launcher flags (--quota, --logs, --kaggle-json-stdin, --colab-token-stdin) and the web UI endpoints."""
-import json, os, subprocess, sys
+import json, os, pathlib, subprocess, sys
 from pathlib import Path
 import pytest
 
@@ -157,7 +157,7 @@ def test_argspec_maps_options_and_rejects_everything_else(tmp_path):
     assert argspec.build_flags("kaggle", "logs", {"source": "kernel"}, tmp_path) == ["--logs", "--lines", "200"]
     bad = [("kaggle", "launch", {"gpu": "L4"}), ("colab", "launch", {"max_minutes": 5}), ("colab", "launch", {"gpu": "L4; rm -rf /"}),
            ("colab", "launch", {"concurrency": 99}), ("colab", "launch", {"concurrency": True}), ("colab", "launch", {"profile": "yes"}),
-           ("colab", "launch", {"bogus": 1}), ("kaggle", "launch", {"api_key": "on"}), ("colab", "launch", {"api_key": "/etc/passwd"}),
+           ("colab", "launch", {"bogus": 1}), ("kaggle", "launch", {"api_key": "maybe"}), ("colab", "launch", {"api_key": "/etc/passwd"}),
            ("kaggle", "launch", {"max_minutes": 9999}), ("colab", "stop", {"gpu": "L4"}), ("kaggle", "colab-token", {}), ("nope", "launch", {}),
            ("colab", "logs", {"source": "../etc"}), ("colab", "logs", {"source": "uvicorn", "lines": 5}), ("kaggle", "status", {"x": 1})]
     for t, a, o in bad:
@@ -168,6 +168,12 @@ def test_argspec_maps_options_and_rejects_everything_else(tmp_path):
     assert argspec.build_flags("colab", "stop", {}, tmp_path, confirm=True) == ["--down", "--yes"]
     with pytest.raises(ValueError, match="API key file"):
         argspec.build_flags("colab", "launch", {"api_key": "on"}, tmp_path / "empty")
+    # the gate is per-target configurable now: Kaggle used to reject this outright
+    kg = pathlib.Path(tmp_path) / "kg"
+    kg.mkdir()
+    (kg / "api_key").write_text("k" * 20)
+    assert argspec.build_flags("kaggle", "launch", {"api_key": "on"}, kg) == ["--api-key-file", str(kg / "api_key")]
+    assert argspec.build_flags("kaggle", "launch", {"api_key": "off"}, kg) == ["--no-api-key"]
 
 
 # ---------- pure view logic
@@ -697,3 +703,21 @@ def test_bridge_unreachable_is_a_clear_job_error(tmp_path, monkeypatch):
     d = dash(c, H)
     assert d["bridge"]["ok"] is False and "unreachable" in d["bridge"]["detail"]
     assert dash(c, H)["targets"]["kaggle"]["state"] == "down"          # kaggle is not bridged: unaffected
+
+
+def test_run_sh_seeds_the_access_key_into_the_launcher_home():
+    """A fresh `run.sh start` must be able to turn the gate on; without the file 'on' fails."""
+    sh = (L / "webui" / "run.sh").read_text()
+    assert "seed_key()" in sh and "seed_key \"$home\"" in sh
+    body = sh.split("seed_key()", 1)[1].split("\n}\n", 1)[0]
+    assert "umask 077" in body and "chmod 600" in body     # never world readable
+    assert '[ -s "$dst" ] &&' in body                       # an existing key is never overwritten
+
+
+def test_access_key_is_needed_by_both_launchers():
+    """Regression guard for the gap: Kaggle had no key path at all, so the gate could only ever be half on."""
+    k = (L / "kaggle_launch.py").read_text()
+    c = (L / "colab_launch.py").read_text()
+    for src, name in ((k, "kaggle"), (c, "colab")):
+        assert "--api-key-file" in src and "--no-api-key" in src, name
+        assert "VISOSWAP_API_KEY" in src, name

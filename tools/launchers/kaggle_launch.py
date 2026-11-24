@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -27,8 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import vs_cf  # noqa: E402
 import vs_preflight as P  # noqa: E402
 from vs_common import (REPO_ROOT, LaunchError, Reporter, Runner, common_args, confirm, fetch_health,  # noqa: E402
-                       can_prompt, load_config, make_reporter, normalize_host, read_relay_line, save_url, target_lock, visoswap_home,
-                       wait_until, write_private)
+                       can_prompt, http_get, load_config, make_reporter, normalize_host, read_relay_line, save_url,
+                       target_lock, visoswap_home, wait_until, write_private)
 
 NOTEBOOK = REPO_ROOT / "visoswap_kaggle.ipynb"
 QUEUE_RETRY_S = 300       # a kernel queued this long has been unstuck by delete + re-push before
@@ -37,6 +38,50 @@ MAX_BOOT_WAIT_S = 1200
 #: friendly name -> `kaggle kernels push --accelerator` value ('NvidiaTeslaT4' = GPU T4 x2 per the CLI help;
 #: P100 is retired). Anything else (e.g. a TPU name) is passed through verbatim.
 ACCELERATORS = {"t4": "NvidiaTeslaT4", "t4x2": "NvidiaTeslaT4"}
+#: the backend refuses a key with these characters (backend/config.py), so reject it before pushing a kernel
+API_KEY_BAD = re.compile(r'[\s;,"\\]')
+
+
+def load_api_key(args, cfg, rep) -> Optional[str]:
+    """--api-key-file PATH (or VISOSWAP_API_KEY_FILE in kaggle.env): the value for VISOSWAP_API_KEY.
+    Registered with the redactor at once; it only ever reaches Kaggle as a literal inside a private
+    kernel, sent over stdin to `kaggle kernels push`. None = no key requested."""
+    p = getattr(args, "api_key_file", None) or cfg.get("VISOSWAP_API_KEY_FILE")
+    if not p:
+        return None
+    f = Path(p).expanduser()
+    try:
+        if f.stat().st_mode & 0o077:
+            raise LaunchError(f"{f} is readable by other users", f"chmod 600 {f}")
+        key = f.read_text().strip()
+    except OSError as e:
+        raise LaunchError(f"cannot read the API key file {f}: {e.strerror}", "create it (mode 600) or drop --api-key-file")
+    if key:
+        rep.redact.add(key)
+    if not key or not key.isascii() or not key.isprintable() or API_KEY_BAD.search(key):
+        raise LaunchError(f"the API key in {f} is empty or has spaces, ; , \" or \\ (the backend refuses those)",
+                          "use printable ASCII without those characters")
+    return key
+
+
+def auth_state(url: str) -> str:
+    """The backend's own report of whether it enforces a key: 'required', 'off' or 'unknown'."""
+    try:
+        with http_get(url.rstrip("/") + "/api/health", timeout=10) as r:
+            return str(json.loads(r.read(4096)).get("auth", "unknown"))
+    except Exception:
+        return "unknown"
+
+
+def check_auth(url: str, want: str, rep) -> None:
+    """Refuse to report success when the key did not actually take effect."""
+    if not url or not want:
+        return
+    got = auth_state(url)
+    if got != want:
+        raise LaunchError(f"backend reports auth '{got}', expected '{want}'",
+                          "the kernel may have cached an old bundle: relaunch with --restart")
+    rep.log(f"auth: {got} (confirmed via {url}/api/health)")
 
 
 # ----------------------------------------------------------------- pure logic
@@ -74,7 +119,7 @@ def decide(state: str, healthy: bool, restart: bool, knobs: bool) -> str:
 
 
 def inject_notebook(nb: dict, token: str, host: str, concurrency: Optional[int] = None, profile: bool = False,
-                    max_minutes: Optional[int] = None) -> dict:
+                    max_minutes: Optional[int] = None, api_key: Optional[str] = None) -> dict:
     """Fill the notebook knobs in a copy (never in the repo file)."""
     if token and not host:
         raise LaunchError("CF_TUNNEL_TOKEN is set but VISOSWAP_HOSTNAME is not", "set VISOSWAP_HOSTNAME in kaggle.env")
@@ -84,6 +129,11 @@ def inject_notebook(nb: dict, token: str, host: str, concurrency: Optional[int] 
         new = src
         if "CF_TUNNEL_TOKEN = ''" in new:
             new = new.replace("CF_TUNNEL_TOKEN = ''", f"CF_TUNNEL_TOKEN = {token!r}").replace("CF_HOSTNAME = ''", f"CF_HOSTNAME = {host!r}")
+        if api_key and "_api_key = _api_key or os.environ.get('VISOSWAP_API_KEY', '').strip()" in new:
+            # the notebook prefers a Kaggle Secret, then an env var. Inject the key as a literal so a
+            # private kernel carries it (a secret would be better, but there is no CLI to set one).
+            new = new.replace("_api_key = _api_key or os.environ.get('VISOSWAP_API_KEY', '').strip()",
+                              f"_api_key = _api_key or {api_key!r}")
         if max_minutes is not None:
             new = new.replace("MAX_RUNTIME_MIN = 90", f"MAX_RUNTIME_MIN = {int(max_minutes)}")
         if "GENERATION_CONCURRENCY = 'auto'" in new:
@@ -327,7 +377,12 @@ def launch(args, cfg, rep, run, kg: Kaggle, fetch=vs_cf.default_fetch, home=None
     cfg, ds = provision(args, cfg, rep, run, kg, fetch, home)
     if args.setup:
         return {"ok": True, "summary": "Kaggle provisioning complete.", "state": "provisioned", "tunnel": cfg.get("TUNNEL_MODE")}
-    knobs = bool(args.concurrency or args.profile is not None or args.max_minutes is not None)
+    api_key = load_api_key(args, cfg, rep)
+    # turning the gate off needs a new kernel too, otherwise --no-api-key silently does nothing
+    if getattr(args, "no_api_key", False):
+        api_key = None
+    knobs = bool(args.concurrency or args.profile is not None or args.max_minutes is not None or api_key
+                 or getattr(args, "no_api_key", False))
     url = url_for(cfg) if cfg.get("TUNNEL_MODE") != "quick" else None
     log_url = f"https://www.kaggle.com/code/{kg.slug}/log"
     st = kg.state()
@@ -349,7 +404,7 @@ def launch(args, cfg, rep, run, kg: Kaggle, fetch=vs_cf.default_fetch, home=None
             kg.delete()
             if not run.dry_run:
                 kg.sleep(3)
-        bundle = build_bundle(cfg, kg.slug, ds, args)
+        bundle = build_bundle(cfg, kg.slug, ds, args, api_key)
         try:
             kg.push(bundle, resolve_accelerator(args.accelerator))
             if run.dry_run:
@@ -369,13 +424,15 @@ def launch(args, cfg, rep, run, kg: Kaggle, fetch=vs_cf.default_fetch, home=None
                       lambda w: rep.log(f"[{w:4d}s] not healthy yet")):
         raise LaunchError(f"backend did not become healthy within {MAX_BOOT_WAIT_S // 60} min (Cloudflare 1033/502 = tunnel or uvicorn not up yet)",
                           f"read the kernel log: {log_url}")
+    check_auth(url, "required" if api_key else None, rep)
     return finish(args, cfg, url, kg, rep)
 
 
-def build_bundle(cfg, slug, dataset, args) -> Path:
+def build_bundle(cfg, slug, dataset, args, api_key: Optional[str] = None) -> Path:
     nb = inject_notebook(json.loads(NOTEBOOK.read_text()), cfg.get("CF_TUNNEL_TOKEN", "") if cfg.get("TUNNEL_MODE") != "quick" else "",
                          normalize_host(cfg.get("VISOSWAP_HOSTNAME", "")) if cfg.get("TUNNEL_MODE") != "quick" else "",
-                         args.concurrency if isinstance(args.concurrency, int) else None, bool(args.profile), args.max_minutes)
+                         args.concurrency if isinstance(args.concurrency, int) else None, bool(args.profile), args.max_minutes,
+                         api_key)
     d = Path(tempfile.mkdtemp(prefix="visoswap-kaggle-"))
     os.chmod(d, 0o700)
     (d / NOTEBOOK.name).write_text(json.dumps(nb, indent=1, ensure_ascii=False))
@@ -525,6 +582,12 @@ def build_parser():
     ap.add_argument("--max-minutes", type=int, help="kernel self-terminates after N minutes (default 90, 0 = never)")
     ap.add_argument("--accelerator", default="t4x2", help="t4x2 (default, = NvidiaTeslaT4), or a raw `kaggle kernels push --accelerator` value")
     ap.add_argument("--models-dir", help="local model dir used to create the model dataset (default <repo>/model_assets_owned)")
+    k = ap.add_mutually_exclusive_group()
+    k.add_argument("--api-key-file", metavar="PATH",
+                   help="require this access key (VISOSWAP_API_KEY): the value is injected into the private kernel notebook "
+                        "(VISOSWAP_API_KEY_FILE in kaggle.env does the same on every launch)")
+    k.add_argument("--no-api-key", action="store_true",
+                   help="relaunch the kernel without a key (turns the gate off)")
     return ap
 
 

@@ -111,11 +111,13 @@ function optionsForm(t, r) {
     fields.push(field("GPU (new session only)", f.gpu), field("Concurrency", f.concurrency), field("Profiling", f.profile), field("Access key", f.api_key));
   } else {
     f.max = h("input", {type: "number", min: "0", max: "720", step: "5", placeholder: "default 90, 0 = never"});
-    fields.push(field("Concurrency (new kernel)", f.concurrency), field("Profiling (new kernel)", f.profile), field("Max minutes", f.max));
+    f.api_key = select([["", "keep as is"], ["on", "require key (key file)"], ["off", "no key"]]);
+    fields.push(field("Concurrency (new kernel)", f.concurrency), field("Profiling (new kernel)", f.profile),
+                field("Access key", f.api_key), field("Max minutes", f.max));
   }
   const note = h("p", {class: "muted small", text: t === "colab"
     ? "GPU applies when a new session is created. Concurrency, profiling and the key apply to Start or Restart. The key comes from ~/.visoswap/api_key on the host (mode 600) and is never shown."
-    : "On a kernel that is already running these apply only with Restart."});
+    : "On a kernel that is already running these apply only with Restart. The access key is baked into the private kernel notebook and is never shown."});
   const details = h("details", {}, h("summary", {text: "Options"}), h("div", {class: "body"}, h("div", {class: "fields"}, fields), note));
   return {
     details, f,

@@ -85,8 +85,8 @@ def _start_options(target: str, o: dict) -> List[Tuple[str, Optional[str]]]:
         out.append(("--profile" if p else "--no-profile", None))
     k = o.get("api_key")
     if k not in (None, "", "keep"):
-        if target != "colab" or k not in ("on", "off"):
-            raise ValueError("api_key must be on or off and applies to Colab only")
+        if k not in ("on", "off"):
+            raise ValueError("api_key must be on or off")
         out.append(("--api-key-file" if k == "on" else "--no-api-key", API_KEY_FILE if k == "on" else None))
     m = o.get("max_minutes")
     if m not in (None, ""):
