@@ -45,6 +45,13 @@ log = logging.getLogger(__name__)
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
+#: Route capabilities a client may probe for on `/api/health`. A client that
+#: asks an older backend for a pack or a preview size gets a 404 or a full-size
+#: frame; advertising them lets it choose up front instead of discovering the
+#: difference a round trip at a time, which is the cost this feature exists to
+#: avoid. Names are the plan's, so a client written against the spec matches.
+FEATURES: tuple[str, ...] = ("frame-variants", "frame-pack")
+
 
 def configure_logging(level: str) -> None:
     logging.basicConfig(
@@ -180,6 +187,12 @@ def create_app() -> FastAPI:
             "concurrency": settings.generation_concurrency,
             "auth": "required" if auth.auth_required() else "off",
             "version": app.version,
+            # Cheapest possible capability signal: a client decides whether to
+            # batch frames or ask for preview sizes from this list, so an older
+            # backend it cannot use stays a 404 rather than a wasted round trip.
+            # Open on purpose (no key required) -- it discloses nothing about
+            # any project, only which routes this build has.
+            "features": list(FEATURES),
         }
 
     @app.get("/url={target:path}")

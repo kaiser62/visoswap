@@ -368,3 +368,41 @@ def test_a_pack_of_nothing_but_404s_is_still_a_valid_response(client):
     assert r.status_code == 200
     header, frames = framepack.parse(r.content)
     assert frames == {} and header["frames"][0]["status"] == 404
+
+
+# --------------------------------------------------------------------------- task 3: features
+def test_health_advertises_both_features(client):
+    body = client.get("/api/health").json()
+    assert body["features"] == ["frame-variants", "frame-pack"]
+
+
+def test_health_stays_open_and_cheap_with_a_key_set(monkeypatch, tmp_path):
+    """A client must be able to ask which features exist *before* it has a key,
+    and the answer must not depend on any project."""
+    monkeypatch.setenv("MODELS_VERIFY_MODE", "fast")
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'app.db'}")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path / "out"))
+    monkeypatch.setenv("VISOSWAP_API_KEY", "some-key-0000")
+    get_settings.cache_clear()
+    db._conn = None
+    with TestClient(create_app()) as c:
+        r = c.get("/api/health")
+        assert r.status_code == 200, "health must not require the key"
+        assert "frame-pack" in r.json()["features"]
+        # and the features really do exist on this build
+        assert c.post("/api/projects", json={"name": "p", "source": "x.mp4"}).status_code == 401
+    get_settings.cache_clear()
+
+
+def test_the_advertised_features_are_real_routes(client):
+    """The list is a promise: anything in it must actually answer."""
+    pid = _pid(client)
+    [key] = _seed(pid, [0.0])
+    body = client.get("/api/health").json()
+    if "frame-variants" in body["features"]:
+        assert client.get(f"/api/projects/{pid}/frame/{key}?w=320&q=70").status_code == 200
+    if "frame-pack" in body["features"]:
+        assert client.post(
+            f"/api/projects/{pid}/frames/pack", json={"keys": [key]}
+        ).status_code == 200
