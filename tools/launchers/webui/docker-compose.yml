@@ -18,7 +18,7 @@ services:
       - "host.docker.internal:host-gateway"   # Linux; Docker Desktop provides it already
     volumes:
       # Persistent state: env files, *_url, webui_token, api_key, kaggle/ config, home/ (Colab token.json), job logs.
-      - ${VISOSWAP_HOME:-~/.visoswap}:/data/visoswap
+      - ${VISOSWAP_HOME:-${HOME}/.visoswap}:/data/visoswap
       - ../../..:/repo:ro                      # launchers + visoswap_kaggle.ipynb, read-only
     read_only: true
     tmpfs:
