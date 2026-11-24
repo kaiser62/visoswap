@@ -126,12 +126,23 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     cors_origins: str = _default_cors_origins()
     max_upload_bytes: int = 8 * 1024**3
+    # Shared secret for the HTTP API and WebSockets (backend/auth.py). Empty =
+    # auth off. repr=False keeps it out of any logged/printed Settings.
+    api_key: str = Field(
+        default="", validation_alias=AliasChoices("VISOSWAP_API_KEY"), repr=False
+    )
 
     enable_ytdlp: bool = True
 
     # Binaries
     ffmpeg_bin: str = "ffmpeg"
     ffprobe_bin: str = "ffprobe"
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def _strip_api_key(cls, v: object) -> str:
+        # Pasted secrets routinely carry a trailing newline.
+        return "" if v is None else str(v).strip()
 
     @field_validator("default_backend")
     @classmethod

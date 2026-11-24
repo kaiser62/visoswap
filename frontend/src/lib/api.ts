@@ -40,8 +40,65 @@ export class ApiError extends Error {
   }
 }
 
+// --- Access key (backend VISOSWAP_API_KEY) ----------------------------------
+//
+// The key lives only in the HttpOnly `visoswap_key` cookie set by
+// POST /api/auth/session; it is never kept in JS or localStorage. A 401 from any
+// call opens one shared prompt (KeyPrompt) and then retries the call.
+
+type KeyRequestListener = (pending: boolean) => void
+
+let keyPrompt: Promise<void> | null = null
+let resolveKeyPrompt: (() => void) | null = null
+const keyListeners = new Set<KeyRequestListener>()
+
+/** KeyPrompt subscribes here; called with true while a key is being asked for. */
+export function subscribeKeyRequest(fn: KeyRequestListener): () => void {
+  keyListeners.add(fn)
+  fn(keyPrompt !== null)
+  return () => {
+    keyListeners.delete(fn)
+  }
+}
+
+/** One in-flight prompt shared by every concurrent 401. */
+function requestKey(): Promise<void> {
+  if (keyPrompt === null) {
+    keyPrompt = new Promise<void>((resolve) => {
+      resolveKeyPrompt = resolve
+    })
+    keyListeners.forEach((fn) => fn(true))
+  }
+  return keyPrompt
+}
+
+/** Trade the key for the cookie. Throws ApiError(401) on a wrong key; this call
+ *  never opens the prompt itself. */
+export async function loginWithKey(key: string): Promise<void> {
+  const resp = await fetch('/api/auth/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key }),
+  })
+  if (!resp.ok) {
+    throw new ApiError(
+      resp.status,
+      resp.status === 401 ? 'Wrong access key' : resp.statusText || 'Login failed',
+    )
+  }
+  const done = resolveKeyPrompt
+  keyPrompt = null
+  resolveKeyPrompt = null
+  keyListeners.forEach((fn) => fn(false))
+  done?.()
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(path, init)
+  let resp = await fetch(path, init)
+  if (resp.status === 401) {
+    await requestKey()
+    resp = await fetch(path, init)
+  }
   if (resp.status === 204) return undefined as T
   if (!resp.ok) {
     let detail = resp.statusText
