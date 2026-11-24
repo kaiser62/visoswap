@@ -123,7 +123,7 @@ _patch_cuda_libraries()
 
 # EXHAUSTIVE algo search (ORT default) makes cuDNN Frontend reject some Convs
 # on Turing GPUs (e.g. Kaggle T4, cuDNN 9.27: "No valid engine configs").
-CUDA_EP_OPTIONS = {'cudnn_conv_algo_search': 'DEFAULT'}
+CUDA_EP_OPTIONS = {'cudnn_conv_algo_search': 'HEURISTIC'}
 
 import onnxruntime
 from torchvision.transforms import v2
