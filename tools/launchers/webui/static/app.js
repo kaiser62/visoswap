@@ -63,7 +63,7 @@ setTheme(THEMES.includes(theme) ? theme : "auto");
 // ------------------------------------------------------------------ sign in / out
 function signOut(msg) {
   token = null; try { localStorage.removeItem("vs_token"); } catch (e) { /* ignore */ }
-  clearTimeout(tickTimer); $("login").hidden = false; $("main").hidden = true; $("lerr").textContent = msg || "";
+  clearTimeout(tickTimer); $("login").hidden = false; $("app").hidden = true; $("lerr").textContent = msg || "";
 }
 $("lock").onclick = () => signOut("");
 $("lf").onsubmit = (e) => { e.preventDefault(); token = $("tok").value.trim(); $("tok").value = ""; try { localStorage.setItem("vs_token", token); } catch (er) { /* ignore */ } start(); };
@@ -74,7 +74,7 @@ let DASH = null, CHECKS = null, tickTimer = null, lastFetch = 0;
 
 function buildCard(t) {
   const r = {};
-  r.badge = h("span", {class: "badge", role: "status"});
+  r.badge = h("span", {class: "chip", role: "status"});
   r.help = h("p", {class: "state-help"});
   r.link = h("a", {target: "_blank", rel: "noopener"}); r.copy = h("button", {class: "ghost", type: "button", text: "Copy URL"});
   r.urlrow = h("div", {class: "urlrow"}, r.link, r.copy);
@@ -144,7 +144,7 @@ function metaRow(dl, label, value, extra) {
 }
 function updateCard(t, d) {
   const c = cards[t] || (cards[t] = {}); const r = c.r;
-  r.badge.className = "badge s-" + d.state; r.badge.replaceChildren(h("span", {class: "dot", "aria-hidden": "true"}), STATE_LABEL[d.state] || d.state);
+  r.badge.className = "chip s-" + d.state; r.badge.replaceChildren(h("span", {class: "dot", "aria-hidden": "true"}), STATE_LABEL[d.state] || d.state);
   r.help.textContent = d.pending ? "Querying the backend (can take a few seconds)..." : d.state_help + (d.age_s != null ? " - checked " + fmtAge(d.age_s) : "");
   r.url = d.url; r.urlrow.hidden = !d.url;
   if (d.url) { r.link.href = (d.mobile_url || d.url); r.link.textContent = d.url; }
@@ -211,15 +211,15 @@ async function runAction(t, act, options, confirmed) {
 }
 function follow(job, t, act) {
   activeJob = job; activeTarget = t; activeAct = act; since = 0; hidePrompt();
-  $("job").hidden = false; $("job-log").textContent = ""; $("h-job").textContent = NAMES[t] + ": " + act;
+  $("jobbox").hidden = false; $("log").textContent = ""; $("logfor").textContent = NAMES[t] + ": " + act;
   setJobState("running"); renderDash(); pollJob(); schedule(1500);
 }
-function setJobState(s) { const b = $("job-state"); b.className = "badge s-" + (s === "failed" ? "error" : s === "done" ? "healthy" : "starting"); b.textContent = s === "waiting" ? "Waiting for you" : s === "running" ? "Running" : s === "done" ? "Done" : "Failed"; }
+function setJobState(s) { const b = $("jobstate"); b.className = "chip s-" + (s === "failed" ? "error" : s === "done" ? "healthy" : "starting"); b.textContent = s === "waiting" ? "Waiting for you" : s === "running" ? "Running" : s === "done" ? "Done" : "Failed"; }
 async function pollJob() {
   if (!activeJob) return;
   try {
     const j = await api(`/api/jobs/${activeJob}?since=${since}`);
-    const log = $("job-log");
+    const log = $("log");
     if (j.lines.length) { const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 30; log.textContent += j.lines.join("\n") + "\n"; if (stick) log.scrollTop = log.scrollHeight; }
     since = j.next; setJobState(j.state);
     if (j.state === "waiting" && j.prompt) { showPrompt(j.prompt); setTimeout(pollJob, 1500); return; }
@@ -230,7 +230,7 @@ async function pollJob() {
 }
 function finishJob(j) {
   const r = j.result || {}, t = activeTarget, act = activeAct; activeJob = null;
-  $("job-log").textContent += (r.ok ? "DONE" : "FAILED: " + (r.error || "")) + (r.next ? "\nNext: " + r.next : "") + "\n";
+  $("log").textContent += (r.ok ? "DONE" : "FAILED: " + (r.error || "")) + (r.next ? "\nNext: " + r.next : "") + "\n";
   say(r.ok ? NAMES[t] + " " + act + ": done. " + (r.summary || "") : NAMES[t] + " " + act + " failed: " + (r.error || "unknown error"), r.ok ? "ok" : "bad");
   if (!r.ok && Array.isArray(r.checks) && r.checks.length) {      // blocked on a missing login: show it and re-run the action once it is fixed
     CHECKS = CHECKS || {targets: {}, login_methods: null}; CHECKS.targets[t] = {checks: r.checks}; renderLogins();
@@ -243,7 +243,7 @@ function finishJob(j) {
   schedule(2000);
 }
 function continueAfterLogin(t) { if (pending && pending.t === t && !activeJob) { const p = pending; pending = null; say("Continuing: " + p.act + " " + NAMES[t] + "..."); runAction(p.t, p.act, {}, p.act === "stop"); } }
-$("job-cancel").onclick = async () => { if (activeJob) { try { await post(`/api/jobs/${activeJob}/cancel`); } catch (e) { /* already ended */ } } };
+$("cancel").onclick = async () => { if (activeJob) { try { await post(`/api/jobs/${activeJob}/cancel`); } catch (e) { /* already ended */ } } };
 function hidePrompt() { const b = $("prompt"); b.hidden = true; b.replaceChildren(); delete b.dataset.msg; }
 function secretForm(label, button, onSubmit, multiline) {
   const input = multiline ? h("textarea", {autocomplete: "off", spellcheck: "false", "aria-label": label, placeholder: label}) : h("input", {type: "password", autocomplete: "off", "aria-label": label, placeholder: label});
@@ -265,7 +265,7 @@ let QUOTAS = null;
 function bar(pct, cls) { const b = h("div", {class: "bar " + (cls || ""), role: "img", "aria-label": Math.round(pct) + " percent left"}, h("i")); b.firstChild.style.setProperty("--w", Math.max(0, Math.min(100, pct)) + "%"); return b; }
 function quotaCard(t, q) {
   const body = [h("div", {class: "card-head"}, h("h3", {text: t === "kaggle" ? "Kaggle GPU hours" : "Colab compute units"}),
-    q.warn ? h("span", {class: "badge " + (q.warn === "empty" ? "bad" : "warn"), text: q.warn === "empty" ? "Empty" : "Low"}) : null)];
+    q.warn ? h("span", {class: "chip " + (q.warn === "empty" ? "bad" : "warn"), text: q.warn === "empty" ? "Empty" : "Low"}) : null)];
   if (q.pending && !q.available) body.push(h("p", {class: "muted", text: "Checking..."}));
   else if (!q.available) {
     body.push(h("p", {class: "muted", text: q.summary || "Not available"}));
@@ -292,28 +292,28 @@ async function loadQuotas(force) {
     }
   } catch (e) { /* the cards say "Not available" */ }
 }
-$("quota-refresh").onclick = () => loadQuotas(true);
+$("qrefresh").onclick = () => loadQuotas(true);
 
 // ------------------------------------------------------------------ logs
 const LOG_SOURCES = [["kaggle", "job", "Kaggle - launcher job log"], ["colab", "job", "Colab - launcher job log"], ["kaggle", "kernel", "Kaggle - kernel log (remote)"],
   ["colab", "uvicorn", "Colab - uvicorn log (remote)"], ["colab", "tunnel", "Colab - tunnel log (remote)"]];
-for (const [t, s, l] of LOG_SOURCES) $("log-src").append(h("option", {value: t + "/" + s, text: l}));
+for (const [t, s, l] of LOG_SOURCES) $("lgsrc").append(h("option", {value: t + "/" + s, text: l}));
 async function loadLog() {
-  const [t, s] = $("log-src").value.split("/"), n = $("log-lines").value, v = $("log-view");
-  $("log-meta").textContent = "Loading..."; if (s !== "job") $("log-load").disabled = true;
+  const [t, s] = $("lgsrc").value.split("/"), n = $("lgn").value, v = $("lgview");
+  $("lgmeta").textContent = "Loading..."; if (s !== "job") $("lgload").disabled = true;
   try {
     const r = await api(`/api/logs/${t}/${s}?lines=${n}&refresh=1`);
     v.textContent = r.ok ? (r.lines.join("\n") || "(empty)") : (r.error || "unavailable");
-    $("log-meta").textContent = (r.ok ? r.lines.length + " lines" : "Not available") + " - secrets are redacted" + (s === "job" ? "" : " - fetched through the launcher, " + fmtAge(r.age_s));
+    $("lgmeta").textContent = (r.ok ? r.lines.length + " lines" : "Not available") + " - secrets are redacted" + (s === "job" ? "" : " - fetched through the launcher, " + fmtAge(r.age_s));
     v.scrollTop = v.scrollHeight;
-  } catch (e) { v.textContent = "Cannot load: " + e.message; $("log-meta").textContent = ""; }
-  $("log-load").disabled = false;
+  } catch (e) { v.textContent = "Cannot load: " + e.message; $("lgmeta").textContent = ""; }
+  $("lgload").disabled = false;
 }
-$("log-load").onclick = loadLog; $("log-src").onchange = loadLog; $("log-lines").onchange = loadLog;
-$("log-copy").onclick = () => copy($("log-view").textContent, $("log-copy"));
+$("lgload").onclick = loadLog; $("lgsrc").onchange = loadLog; $("lgn").onchange = loadLog;
+$("lgcopy").onclick = () => copy($("lgview").textContent, $("lgcopy"));
 
 // ------------------------------------------------------------------ logins
-function stateBadge(s) { return h("span", {class: "badge " + (s === "ok" ? "ok" : s === "unknown" ? "warn" : "bad"), text: s === "ok" ? "Logged in" : s === "unknown" ? "Unknown" : s === "invalid" ? "Not logged in" : "Missing"}); }
+function stateBadge(s) { return h("span", {class: "chip " + (s === "ok" ? "ok" : s === "unknown" ? "warn" : "bad"), text: s === "ok" ? "Logged in" : s === "unknown" ? "Unknown" : s === "invalid" ? "Not logged in" : "Missing"}); }
 function readFile(input) { return new Promise((res) => { const f = input.files && input.files[0]; if (!f) return res(""); if (f.size > 8192) return res(null); const fr = new FileReader(); fr.onload = () => res(String(fr.result)); fr.readAsText(f); }); }
 function jsonImport(label, hint, path, okMsg, t) {
   const file = h("input", {type: "file", accept: ".json,application/json", "aria-label": label});
@@ -352,7 +352,7 @@ function cfForms(t, methods) {
     h("details", {}, h("summary", {text: "Native command"}), h("div", {class: "body"}, cmdBlock(cli.command)))];
 }
 function svcCard(title, check, bodyNodes) {
-  return h("article", {class: "card svc"}, h("div", {class: "card-head"}, h("h3", {text: title}), check ? stateBadge(check.state) : h("span", {class: "badge s-unknown", text: "Checking"})),
+  return h("article", {class: "card svc"}, h("div", {class: "card-head"}, h("h3", {text: title}), check ? stateBadge(check.state) : h("span", {class: "chip s-unknown", text: "Checking"})),
     check && check.detail ? h("p", {class: "state-help", text: check.detail}) : null, bodyNodes);
 }
 function renderLogins() {
@@ -367,7 +367,7 @@ function renderLogins() {
   const cfs = ["kaggle", "colab"].map((t) => [t, find(t, /^cloudflare$/)]);
   const cfBody = [];
   for (const [t, c] of cfs) {
-    cfBody.push(h("div", {class: "checkrow"}, h("strong", {text: NAMES[t] + " tunnel"}), c ? stateBadge(c.state) : h("span", {class: "badge s-unknown", text: "Checking"}), c && c.detail ? h("span", {class: "muted small", text: c.detail}) : null));
+    cfBody.push(h("div", {class: "checkrow"}, h("strong", {text: NAMES[t] + " tunnel"}), c ? stateBadge(c.state) : h("span", {class: "chip s-unknown", text: "Checking"}), c && c.detail ? h("span", {class: "muted small", text: c.detail}) : null));
     if (c && c.state !== "ok" && c.state !== "unknown") cfBody.push(...cfForms(t, M.cloudflare));
   }
   const allOk = cfs.every(([, c]) => c && c.state === "ok");
@@ -377,12 +377,12 @@ function renderLogins() {
 async function loadChecks(force) {
   try { CHECKS = await api("/api/checks" + (force ? "?refresh=1" : "")); renderLogins(); } catch (e) { /* shown as checking */ }
 }
-$("login-refresh").onclick = () => loadChecks(true);
+// logins refresh with the global Refresh button
 
 // ------------------------------------------------------------------ start
 async function start() {
   if (!token) { signOut(""); return; }
-  $("login").hidden = true; $("main").hidden = false;
+  $("login").hidden = true; $("app").hidden = false;
   renderLogins(); loadLog.called = false;
   const p = await loadDash(false);
   loadQuotas(false); loadChecks(false);
