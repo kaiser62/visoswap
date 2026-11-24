@@ -38,6 +38,12 @@ THUMB_SUFFIX = ".thumb.jpg"
 NAME_SUFFIX = ".name.txt"
 #: Companion group sidecar to group related faces together.
 GROUP_SUFFIX = ".group.txt"
+#: Face-embedding sidecars (see backend/services/faceembed.py). Named here so
+#: `list_faces` and `delete` cannot forget them: a stray `.emb.npy` would either
+#: be listed as a face or outlive the face it belongs to.
+EMB_SUFFIX = ".emb.npy"
+EMB_NONE_SUFFIX = ".emb.none"
+SIDECAR_SUFFIXES = (THUMB_SUFFIX, NAME_SUFFIX, GROUP_SUFFIX, EMB_SUFFIX, EMB_NONE_SUFFIX)
 #: A display name longer than this is stored truncated; the UI shows one line.
 NAME_MAX = 120
 GROUP_MAX = 80
@@ -316,9 +322,7 @@ def list_faces() -> list[dict[str, Any]]:
     """Every stored face, newest-first. Thumbnails are never faces."""
     records: list[dict[str, Any]] = []
     for path in sorted(faces_dir().glob("*")):
-        if not path.is_file() or path.name.endswith(
-            (THUMB_SUFFIX, NAME_SUFFIX, GROUP_SUFFIX)
-        ):
+        if not path.is_file() or path.name.endswith(SIDECAR_SUFFIXES):
             continue
         match = FACE_ID_RE.fullmatch(path.stem)
         if not match:
@@ -344,12 +348,31 @@ def list_faces() -> list[dict[str, Any]]:
     return records
 
 
+def emb_path(face_id: str) -> Path:
+    """The companion face-embedding path (a .npy of DIM float32)."""
+    _validate(face_id)
+    return faces_dir() / f"{face_id}{EMB_SUFFIX}"
+
+
+def emb_none_path(face_id: str) -> Path:
+    """The marker for "this image has no usable face" (skip it, do not retry)."""
+    _validate(face_id)
+    return faces_dir() / f"{face_id}{EMB_NONE_SUFFIX}"
+
+
 def delete(face_id: str) -> None:
-    """Remove the file, its thumbnail, name sidecar and group sidecar."""
+    """Remove the file, its thumbnail, name/group sidecars and embeddings.
+
+    The embedding is biometric data: it must not outlive the image it was
+    computed from, or deleting a face would leave a usable fingerprint of it
+    behind in the store.
+    """
     face_path(face_id).unlink(missing_ok=True)
     thumb_path(face_id).unlink(missing_ok=True)
     name_path(face_id).unlink(missing_ok=True)
     group_path(face_id).unlink(missing_ok=True)
+    emb_path(face_id).unlink(missing_ok=True)
+    emb_none_path(face_id).unlink(missing_ok=True)
 
 
 def face_id_for_path(path: str | Path) -> str | None:
