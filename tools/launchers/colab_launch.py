@@ -45,7 +45,9 @@ def parse_sessions(out: str) -> List[Dict[str, str]]:
     res = []
     for line in out.splitlines():
         m = re.match(r"\s*\[([^\]]+)\]\s*(\S+)\s*(.*)", line)
-        if not m:
+        # a real session row has "| Hardware: ..." fields; the CLI also prints status lines with a
+        # "[colab]" prefix ("[colab] No active sessions found on server.") that are not sessions
+        if not m or "|" not in m.group(3):
             continue
         hw = re.search(r"Hardware:\s*([^|]+)", m.group(3))
         res.append({"name": m.group(1), "id": m.group(2), "hardware": hw.group(1).strip() if hw else ""})

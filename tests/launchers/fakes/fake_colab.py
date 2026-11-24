@@ -7,7 +7,8 @@ open(os.path.join(d, "calls.log"), "a").write(" ".join(args) + "\n")
 sf = os.path.join(d, "sessions.txt")
 cmd = args[0] if args else ""
 if cmd == "sessions":
-    if os.path.exists(sf): print(open(sf).read(), end="")
+    if os.path.exists(sf) and open(sf).read().strip(): print(open(sf).read(), end="")
+    else: print("[colab] No active sessions found on server.")   # what the real CLI prints
 elif cmd == "new":
     if os.environ.get("FAKE_NEW_FAIL"): print("Error: Service Unavailable"); sys.exit(1)
     if os.environ.get("FAKE_NEW_REJECT"):

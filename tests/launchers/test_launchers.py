@@ -182,6 +182,8 @@ def test_parse_and_choose():
     assert CL.choose_session(s, "t4")["action"] == "reuse"
     assert CL.choose_session(s, "other")["action"] == "reuse"          # adopt the only one
     assert CL.choose_session([], "t4")["action"] == "create"
+    # the real CLI prints this when nothing runs; it must not be adopted as a session named "colab"
+    assert CL.parse_sessions("[colab] No active sessions found on server.\n") == []
     two = s + [{"name": "b", "id": "i", "hardware": "T4"}]
     assert CL.choose_session(two, "zzz")["action"] == "abort"
 
