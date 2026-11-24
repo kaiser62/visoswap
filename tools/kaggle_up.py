@@ -57,13 +57,13 @@ def load_config() -> dict[str, str]:
     return cfg
 
 
-def kaggle(cfg: dict[str, str], *args: str, cwd: Path | None = None) -> str:
+def kaggle(cfg: dict[str, str], *args: str, cwd: Path | None = None, check_auth: bool = True) -> str:
     exe = cfg.get("KAGGLE_BIN") or shutil.which("kaggle")
     if not exe:
         sys.exit("kaggle CLI not found. pip install kaggle, then `kaggle auth login`.")
     r = subprocess.run([exe, *args], capture_output=True, text=True, cwd=cwd)
     out = (r.stdout + r.stderr).strip()
-    if "Authentication required" in out or "was denied" in out and "kernels" in out:
+    if check_auth and "Authentication required" in out:
         sys.exit("Kaggle CLI is not authenticated. Run: kaggle auth login --force")
     return out
 
@@ -102,11 +102,11 @@ def models_dataset(cfg: dict[str, str], slug: str) -> str | None:
 
 
 def status(cfg: dict[str, str], slug: str) -> str:
-    out = kaggle(cfg, "kernels", "status", slug)
+    out = kaggle(cfg, "kernels", "status", slug, check_auth=False)
     for s in ("QUEUED", "RUNNING", "COMPLETE", "ERROR", "CANCEL"):
         if f"KernelWorkerStatus.{s}" in out:
             return s
-    return "UNKNOWN" if "not found" not in out.lower() and "404" not in out else "MISSING"
+    return "MISSING" if ("Cannot access kernel" in out or "not found" in out.lower() or "404" in out) else "UNKNOWN"
 
 
 def build_bundle(cfg: dict[str, str], slug: str, concurrency: int | None = None, profile: bool = False, max_minutes: int | None = None, dataset: str | None = None) -> Path:
@@ -208,7 +208,9 @@ def main() -> None:
                 if time.time() - t0 > MAX_WAIT_S:
                     sys.exit("gave up waiting for a GPU")
                 if time.time() - pushed_at > QUEUE_RETRY_S:
-                    print("  queued too long; re-pushing")
+                    print("  queued too long; deleting and re-pushing")
+                    kaggle(cfg, "kernels", "delete", slug, "-y")
+                    time.sleep(3)
                     push(cfg, bundle)
                     pushed_at = time.time()
                 time.sleep(20)
