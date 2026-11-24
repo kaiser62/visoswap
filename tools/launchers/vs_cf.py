@@ -115,7 +115,7 @@ def provision_cert(cfg: Dict[str, str], name: str, hostname: str, rep: Reporter,
     if r.rc != 0:
         raise LaunchError("cloudflared could not list tunnels: " + r.out[:200], "run `cloudflared tunnel login` and retry")
     try:
-        existing = [t for t in json.loads(r.out or "[]") if t.get("name") == name and not t.get("deleted_at")]
+        existing = [t for t in json.loads(r.stdout or "[]") if t.get("name") == name and not t.get("deleted_at")]
     except (ValueError, AttributeError):
         # never assume "no such tunnel" from output we could not parse
         raise LaunchError("could not parse `cloudflared tunnel list` output", "run `cloudflared tunnel list` yourself; store the token via --setup")
@@ -130,7 +130,7 @@ def provision_cert(cfg: Dict[str, str], name: str, hostname: str, rep: Reporter,
     if d.rc != 0 and "already configured to route to your tunnel" not in d.out.lower():
         raise LaunchError("DNS route failed: " + d.out[:200], "fix the DNS record by hand or choose another hostname")
     t = run.run([exe, "tunnel", "token", name])
-    return t.out.strip() if t.rc == 0 and not run.dry_run else ""
+    return t.stdout.strip() if t.rc == 0 and not run.dry_run else ""
 
 
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_\-+/=.]{40,}$")
@@ -201,6 +201,8 @@ def ensure_tunnel(target: str, cfg: Dict[str, str], rep: Reporter, run: Runner, 
         return {**cfg, "TUNNEL_MODE": "quick"}
     if run.dry_run:
         return {**cfg, "VISOSWAP_HOSTNAME": hostname, "TUNNEL_MODE": "named"}
+    if token and not valid_token(token):
+        raise LaunchError("the obtained tunnel token does not look valid; not storing it", "check the tunnel in the Cloudflare dashboard and paste its token via --setup")
     if not token:
         raise LaunchError("could not obtain the tunnel token", "run `cloudflared tunnel token %s` manually and store it as CF_TUNNEL_TOKEN" % name)
     written = merge_env_file(env_path(target, home), {"CF_TUNNEL_TOKEN": token, "VISOSWAP_HOSTNAME": hostname,

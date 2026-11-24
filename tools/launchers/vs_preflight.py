@@ -20,8 +20,10 @@ from typing import Callable, Dict, List, Optional
 from vs_common import LaunchError, Reporter, Runner
 import vs_cf
 
-KAGGLE_LOGIN = "kaggle auth login --force"
-COLAB_LOGIN = "colab usage    (open the printed URL, sign in, paste the code it shows)"
+_HERE = Path(__file__).resolve().parent
+#: the launcher's own login entry points work even when `kaggle`/`colab` are not on PATH (only *_BIN is set)
+KAGGLE_LOGIN = f"{_HERE}/kaggle-launch.sh --login"
+COLAB_LOGIN = f"{_HERE}/colab-launch.sh --login    (a terminal is needed: open the printed URL, sign in, paste the code)"
 KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT = "google-colab-cli", "oauth_token"   # from colab_cli/auth.py
 
 

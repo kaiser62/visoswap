@@ -137,6 +137,7 @@ class Result:
     rc: int
     out: str
     skipped: bool = False
+    stdout: str = ""        # stdout alone: machine-readable output must not be parsed from merged stderr
 
 
 class Runner:
@@ -176,7 +177,7 @@ class Runner:
             # stdin is never inherited: a CLI that wants to prompt gets EOF instead of blocking
             r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=cwd, input=input_text,
                                stdin=None if input_text is not None else subprocess.DEVNULL)
-            return Result(r.returncode, ((r.stdout or "") + (r.stderr or "")).strip())
+            return Result(r.returncode, ((r.stdout or "") + (r.stderr or "")).strip(), stdout=(r.stdout or "").strip())
         except FileNotFoundError:
             return Result(127, f"command not found: {argv[0]}")
         except subprocess.TimeoutExpired as e:

@@ -121,10 +121,16 @@ settings = merge_settings(prev, src, CFG)
 print("VS_SETTINGS " + json.dumps({"from": src, **settings}))
 try: json.dump(settings, open(STATE, "w"))
 except Exception: pass
+if src == "defaults" and (restart or not pgrep("uvicorn backend.main")):
+    print("VS_NOTE no earlier settings found (uvicorn is not running and there is no state file): using the defaults, i.e. auto workers and profiling off")
 if restart:
-    for p in pgrep("uvicorn backend.main"): sh(["kill", p])
-    for p in pgrep("cloudflared tunnel"): sh(["kill", p])
-    time.sleep(2)
+    old = pgrep("uvicorn backend.main") + pgrep("cloudflared tunnel")
+    for p in old: sh(["kill", p])
+    t_kill = time.time()
+    while time.time() - t_kill < 20 and any(os.path.exists("/proc/" + p) for p in old): time.sleep(1)
+    for p in old:
+        if os.path.exists("/proc/" + p): sh(["kill", "-9", p])
+    time.sleep(1)
 env = dict(os.environ, MODELS_DIR=MODELS, PYTHONPATH=REPO)
 for _k in KEYS: env.pop(_k, None)
 env.update(settings)

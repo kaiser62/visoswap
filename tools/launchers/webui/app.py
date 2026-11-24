@@ -34,7 +34,7 @@ TARGETS = {"kaggle": "kaggle_launch.py", "colab": "colab_launch.py"}
 ACTIONS = {"launch": [], "restart": ["--restart"], "stop": ["--down", "--yes"], "provision": ["--setup", "--yes"], "login": ["--login"]}
 IN_DOCKER = os.environ.get("WEBUI_IN_DOCKER") == "1"
 #: server-side constants shown when a login cannot run from the UI (browser/Keychain/terminal needed)
-LOGIN_CMD = {"kaggle": "kaggle auth login --force", "colab": "colab usage"}
+LOGIN_CMD = {"kaggle": "tools/launchers/kaggle-launch.sh --login", "colab": "tools/launchers/colab-launch.sh --login"}   # run from the repo root
 CHECK_FIELDS = ("id", "service", "state", "detail", "fix", "runnable", "blocking")
 RESULT_FIELDS = ("ok", "state", "healthy", "url", "mobile_url", "summary", "error", "next", "session", "gpu", "kernel",
                  "configured", "log_url", "tunnel")
@@ -97,7 +97,8 @@ def launcher_argv(target: str, extra: List[str]) -> List[str]:
 def clean_result(d: dict) -> dict:
     out = {k: d[k] for k in RESULT_FIELDS if k in d}
     if isinstance(d.get("checks"), list):   # nested whitelist
-        out["checks"] = [{k: c[k] for k in CHECK_FIELDS if k in c} for c in d["checks"] if isinstance(c, dict)]
+        out["checks"] = [{k: (str(c[k]).replace(str(LAUNCHER_DIR), "tools/launchers") if k == "fix" else c[k]) for k in CHECK_FIELDS if k in c}
+                         for c in d["checks"] if isinstance(c, dict)]
     return out
 
 
@@ -223,6 +224,9 @@ def checks(refresh: int = 0):
         cached = st.status_cache.get("check:" + t)
         if cached and time.time() - cached[0] < (5 if refresh else STATUS_TTL):
             out[t] = cached[1]
+            continue
+        if st.busy.get(t):      # a running job holds the Colab kernel; do not queue a probe behind it
+            out[t] = cached[1] if cached else {"ok": True, "summary": "an action is running; checks resume afterwards", "checks": []}
             continue
         res = run_launcher(t, ["--check"], timeout=180)
         st.status_cache["check:" + t] = (time.time(), res)

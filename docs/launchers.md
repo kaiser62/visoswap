@@ -65,8 +65,8 @@ had none. The same logic runs when a launch restarts because the code changed.
    Set `VISOSWAP_HOSTNAME` (and optionally `CF_ZONE`, `CF_TUNNEL_NAME`) to use your own domain. If token and
    hostname are already in the env file this step does nothing. Existing tunnels are never modified or deleted
    and DNS is never overwritten.
-2. Kaggle: `pip install kaggle`, `kaggle auth login --force`. Colab: install the CLI and run `colab sessions`
-   once to finish the Google login (stored in the OS keychain).
+2. Kaggle: `pip install kaggle`, then `kaggle-launch.sh --login`. Colab: install the CLI, then `colab-launch.sh --login`
+   (Google login, stored in the OS keychain). Both are also offered automatically on the first launch from a terminal.
 3. `kaggle-launch.sh --setup` / `colab-launch.sh --setup` (or just launch; setup runs automatically).
 
 ## What each step does
@@ -89,9 +89,9 @@ a GPU with retries every 30 s up to `--max-wait` (re-checking `colab sessions` a
 
 | Symptom | Cause / fix |
 |---|---|
-| `Kaggle CLI is not authenticated` | credentials expired: `kaggle auth login --force` |
+| `Kaggle CLI is not authenticated` | credentials expired: `tools/launchers/kaggle-launch.sh --login` |
 | `kernel status ... was denied` | Kaggle's message for a kernel that does not exist; the launcher cross-checks `kernels list` and refuses to guess if they disagree |
-| Colab: `no Google login stored` / login expired | run `colab usage` in a terminal and paste the code (the launcher does this itself when run from a terminal); cannot be done from the web UI or Docker |
+| Colab: `no Google login stored` / login expired | run `tools/launchers/colab-launch.sh --login` in a terminal (it runs `colab usage`; paste the code; the launcher does this itself when run from a terminal); cannot be done from the web UI or Docker |
 | `--check` says `unknown` | CLI timed out or no network; nothing was changed and no login was started: retry |
 | Kernel QUEUED forever | launcher deletes and re-pushes every 5 min; otherwise Kaggle has no free GPU |
 | Push fails / GPU session limit | max 2 GPU kernels per account; run `--down` on old ones, check phone verification |

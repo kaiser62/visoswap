@@ -80,7 +80,7 @@ async function poll() {
     if (j.lines.length) { $("log").textContent += j.lines.join("\n") + "\n"; $("log").scrollTop = 1e9; }
     since = j.next;
     if (j.state === "running") { setTimeout(poll, 1500); return; }
-    const r = j.result || {}; $("log").textContent += (r.ok ? "DONE" : "FAILED: " + (r.error || "")) + (r.next ? "\nNext: " + r.next : "") + "\n"; activeJob = null; refresh(true);
+    const r = j.result || {}; $("log").textContent += (r.ok ? "DONE" : "FAILED: " + (r.error || "")) + (r.next ? "\nNext: " + r.next : "") + "\n"; activeJob = null; refresh(true); loadChecks(true);
   } catch (e) { setTimeout(poll, 4000); }
 }
 async function refresh(force, keep) {

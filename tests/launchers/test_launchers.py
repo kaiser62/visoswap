@@ -390,7 +390,7 @@ def test_kaggle_expired_noninteractive_gives_exact_fix_and_never_logs_in(tmp_pat
     cfg, rep, run = _kg(tmp_path, monkeypatch, FAKE_KAUTH="expired")
     with pytest.raises(P.PreflightFailed) as e:
         P.resolve(lambda: P.kaggle_checks(cfg, run), {"kaggle.auth": lambda: run.interactive([cfg["KAGGLE_BIN"], "auth", "login"])}, False, rep)
-    assert "kaggle auth login --force" in e.value.next_action
+    assert "kaggle-launch.sh --login" in e.value.next_action
     assert not any(c.startswith("auth login") for c in calls(tmp_path))
 
 
@@ -424,7 +424,7 @@ def test_colab_not_logged_in_does_not_start_cli_flow(tmp_path, monkeypatch):
     monkeypatch.setattr(P.platform, "system", lambda: "Darwin")
     cs = P.colab_checks(_colab_cfg(), C.Runner(C.Reporter()))
     login = next(c for c in cs if c.id == "colab.login")
-    assert login.state == "invalid" and "colab usage" in login.fix and login.runnable
+    assert login.state == "invalid" and "colab-launch.sh --login" in login.fix and login.runnable
     assert not any(c.startswith("usage") for c in calls(tmp_path))     # the CLI (which would prompt) was never invoked
 
 
@@ -589,7 +589,7 @@ def test_webui_checks_login_and_token_endpoints(tmp_path, monkeypatch):
     assert r["targets"]["kaggle"]["checks"][0]["state"] == "ok" and set(r["targets"]["kaggle"]["checks"][0]) <= set(A.CHECK_FIELDS)
     assert c.get("/api/checks").status_code == 401
     assert c.post("/api/targets/colab/login", headers=H).status_code == 400            # needs a terminal: shows constant command
-    assert "colab usage" in c.post("/api/targets/colab/login", headers=H).json()["detail"]
+    assert "colab-launch.sh --login" in c.post("/api/targets/colab/login", headers=H).json()["detail"]
     assert c.post("/api/targets/kaggle/cloudflare-token", headers=H, json={"token": "short"}).status_code == 400
     r = c.post("/api/targets/kaggle/cloudflare-token", headers=H, json={"token": FAKE_TOKEN2})
     assert r.json() == {"ok": True, "error": ""} and FAKE_TOKEN2 not in r.text
@@ -597,3 +597,50 @@ def test_webui_checks_login_and_token_endpoints(tmp_path, monkeypatch):
     monkeypatch.setattr(A, "IN_DOCKER", True)
     assert c.post("/api/targets/kaggle/login", headers=H).status_code == 400
     assert A.clean_result({"ok": True, "checks": [{"id": "x", "secret": "s", "state": "ok"}], "token": "t"}) == {"ok": True, "checks": [{"id": "x", "state": "ok"}]}
+
+
+# ---------- review round 2
+FAKE_CF = FAKES / "fake_cloudflared.py"
+
+
+def test_cert_path_reads_stdout_only_despite_stderr_warnings(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_DIR", str(tmp_path))
+    (tmp_path / "home").mkdir(); (tmp_path / "home" / ".cloudflared").mkdir(); (tmp_path / "home" / ".cloudflared" / "cert.pem").write_text("x")
+    rep = C.Reporter(); run = C.Runner(rep)
+    cfg = {"CLOUDFLARED_BIN": str(FAKE_CF), "VISOSWAP_HOSTNAME": "swap.example.org"}
+    out = vs_cf.ensure_tunnel("kaggle", cfg, rep, run, home=tmp_path / "home")
+    assert out["TUNNEL_MODE"] == "named" and out["CF_TUNNEL_TOKEN"] == FAKE_TOKEN2
+    assert not any(c.startswith("tunnel create") for c in calls(tmp_path))          # found by name: not created
+    assert not any("--overwrite-dns" in c or " delete" in c for c in calls(tmp_path))
+
+
+def test_cert_path_rejects_garbage_token_and_unparsable_list(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_DIR", str(tmp_path)); monkeypatch.setenv("FAKE_CF_BAD_TOKEN", "1")
+    (tmp_path / "home" / ".cloudflared").mkdir(parents=True); (tmp_path / "home" / ".cloudflared" / "cert.pem").write_text("x")
+    rep = C.Reporter()
+    with pytest.raises(C.LaunchError, match="does not look valid"):
+        vs_cf.ensure_tunnel("kaggle", {"CLOUDFLARED_BIN": str(FAKE_CF), "VISOSWAP_HOSTNAME": "s.example.org"}, rep, C.Runner(rep), home=tmp_path / "home")
+    assert not (tmp_path / "home" / "kaggle.env").exists()
+    monkeypatch.setenv("FAKE_CF_BAD_LIST", "1")
+    with pytest.raises(C.LaunchError, match="could not parse"):
+        vs_cf.ensure_tunnel("kaggle", {"CLOUDFLARED_BIN": str(FAKE_CF), "VISOSWAP_HOSTNAME": "s.example.org"}, rep, C.Runner(rep), home=tmp_path / "home")
+
+
+def test_start_script_waits_for_old_pids_and_notes_defaults():
+    src = vs_remote.render(vs_remote.START, repo_dir="/r", token_file="/t", ref="m", repo_url="u", subset="default", restart=True,
+                           profile=None, concurrency=None, wait=1)
+    compile(src, "start", "exec")
+    assert "kill\", \"-9\"" in src.replace("'", '"') or '"-9"' in src
+    assert "VS_NOTE no earlier settings found" in src and "def merge_settings" in src
+
+
+def test_login_fix_strings_do_not_assume_cli_on_path():
+    assert P.KAGGLE_LOGIN.endswith("kaggle-launch.sh --login") and Path(P.KAGGLE_LOGIN.split()[0]).is_absolute()
+
+
+def test_webui_checks_skip_probe_while_busy(tmp_path, monkeypatch):
+    A, c, H = _webui(tmp_path, monkeypatch)
+    A.state().busy["colab"] = "job"
+    r = c.get("/api/checks", headers=H).json()["targets"]["colab"]
+    assert r["checks"] == []
+    A.state().busy.pop("colab")

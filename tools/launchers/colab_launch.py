@@ -117,7 +117,7 @@ class Colab:
         if r.rc == 127:
             raise LaunchError("colab CLI not found", "uv tool install google-colab-cli  (or set COLAB_BIN), then run `colab usage` once to log in")
         if r.rc != 0 and auth_problem(r.out):
-            raise LaunchError("Colab CLI is not logged in", "run `colab usage` in a terminal, open the printed URL, sign in and paste the code it shows")
+            raise LaunchError("Colab CLI is not logged in", "run in a terminal: " + P.COLAB_LOGIN)
         return r
 
     def sessions(self) -> List[Dict[str, str]]:
@@ -263,15 +263,15 @@ def check(args, cfg, rep, run, co: Colab) -> dict:
 def login(args, cfg, rep, run, co: Colab) -> dict:
     if not can_prompt(args):
         raise LaunchError("the Colab login needs a terminal (browser sign-in plus a pasted code; the token goes to the OS keychain)",
-                          "run in a terminal: colab usage")
+                          "run in a terminal: " + P.COLAB_LOGIN)
     run.interactive([co.exe, "usage"])
     st = [c for c in P.colab_checks(cfg, run) if c.id == "colab.login"]
     ok = bool(st and st[0].state == "ok")
-    return {"ok": ok, "summary": "Colab login valid" if ok else "Colab login not completed", "next": "" if ok else "run: colab usage"}
+    return {"ok": ok, "summary": "Colab login valid" if ok else "Colab login not completed", "next": "" if ok else P.COLAB_LOGIN}
 
 
 def store_cf_token(args, cfg, rep) -> dict:
-    tok = sys.stdin.readline().strip()
+    tok = (vs_cf.prompt_secret("Cloudflare tunnel token (hidden): ") if sys.stdin.isatty() else sys.stdin.readline()).strip()
     host = normalize_host(cfg.get("VISOSWAP_HOSTNAME") or vs_cf.DEFAULT_HOSTNAMES["colab"])
     vs_cf.store_token("colab", tok, host, rep, cfg=cfg)
     return {"ok": True, "summary": f"token stored for {host}"}

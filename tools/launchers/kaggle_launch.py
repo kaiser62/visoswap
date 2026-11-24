@@ -150,9 +150,9 @@ class Kaggle:
     def check_auth(self):
         r = self.k("kernels", "list", "--mine", "--page-size", "1")
         if classify_status(r.out) == "AUTH" or r.rc == 127:
-            raise LaunchError("Kaggle CLI is not authenticated", "run: kaggle auth login --force")
+            raise LaunchError("Kaggle CLI is not authenticated", "run: " + P.KAGGLE_LOGIN)
         if r.rc != 0 and ("401" in r.out or "403" in r.out):
-            raise LaunchError("Kaggle rejected the credentials", "run: kaggle auth login --force")
+            raise LaunchError("Kaggle rejected the credentials", "run: " + P.KAGGLE_LOGIN)
         return r
 
     def state(self) -> str:
@@ -252,7 +252,7 @@ def login(args, cfg, rep, run, kg: Kaggle) -> dict:
 
 
 def store_cf_token(args, cfg, rep) -> dict:
-    tok = sys.stdin.readline().strip()
+    tok = (vs_cf.prompt_secret("Cloudflare tunnel token (hidden): ") if sys.stdin.isatty() else sys.stdin.readline()).strip()
     host = normalize_host(cfg.get("VISOSWAP_HOSTNAME") or vs_cf.DEFAULT_HOSTNAMES["kaggle"])
     vs_cf.store_token("kaggle", tok, host, rep, cfg=cfg)
     return {"ok": True, "summary": f"token stored for {host}"}
@@ -282,7 +282,7 @@ def launch(args, cfg, rep, run, kg: Kaggle, fetch=vs_cf.default_fetch, home=None
     rep.step(f"kernel {kg.slug}: {st}" + (", backend healthy" if healthy else ""))
     action = decide(st, healthy, args.restart, knobs)
     if action == "abort_auth":
-        raise LaunchError("Kaggle CLI is not authenticated", "run: kaggle auth login --force")
+        raise LaunchError("Kaggle CLI is not authenticated", "run: " + P.KAGGLE_LOGIN)
     if action == "abort_unknown":
         raise LaunchError("could not read the kernel status; not touching the kernel", "check `kaggle kernels status %s` by hand, then retry" % kg.slug)
     if action == "knobs_need_restart":
@@ -338,7 +338,7 @@ def wait_for_gpu(kg: Kaggle, bundle, accel, rep, log_url):
         if st in ("COMPLETE", "ERROR", "CANCEL"):
             raise LaunchError(f"kernel ended with {st}", f"read the log: {log_url}")
         if st in ("AUTH", "UNKNOWN"):
-            raise LaunchError("lost the kernel status (auth expired?)", "run: kaggle auth login --force")
+            raise LaunchError("lost the kernel status (auth expired?)", "run: " + P.KAGGLE_LOGIN)
         if st == "RUNNING":
             return
         if kg.clock() - t0 > MAX_GPU_WAIT_S:
