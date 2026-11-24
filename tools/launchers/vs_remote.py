@@ -154,6 +154,17 @@ if restart:
 env = dict(os.environ, MODELS_DIR=MODELS, PYTHONPATH=REPO)
 for _k in KEYS: env.pop(_k, None)
 env.update(settings)
+# API key: only ever read from the 600 file the launcher uploaded (never from CFG, argv, logs or the state file).
+# No file = auth off. The value goes into the uvicorn env only and is never printed.
+env.pop("VISOSWAP_API_KEY", None)
+_kf = CFG.get("api_key_file") or ""
+if CFG.get("api_key_remove") and os.path.isfile(_kf):
+    os.remove(_kf)
+if _kf and os.path.isfile(_kf):
+    os.chmod(_kf, 0o600)
+    _key = open(_kf).read().strip()
+    if _key: env["VISOSWAP_API_KEY"] = _key
+print("VS_AUTH " + ("required" if env.get("VISOSWAP_API_KEY") else "off"))
 _cu = subprocess.run([sys.executable, "-c", "import torch;print((torch.version.cuda or '0').split('.')[0])"], capture_output=True, text=True).stdout.strip()
 # CUDA 12 only (pip-installed cuDNN); on CUDA 13 images torch's own libs are used and extra paths break cuDNN
 libs = [] if _cu != "12" else [p for pat in ("/usr/local/lib/python3*/dist-packages/nvidia/*/lib", "/usr/local/lib/python3*/site-packages/nvidia/*/lib") for p in glob.glob(pat)]

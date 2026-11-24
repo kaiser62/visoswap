@@ -21,7 +21,11 @@ Two separate launchers start the VisoSwap backend on a free cloud GPU and print 
 is the result; used by the web UI) - `--tunnel auto|named|quick` - `--concurrency N|auto` - `--profile/--no-profile` -
 `--no-clipboard`. Kaggle: `--max-minutes N`, `--accelerator t4x2|p100|<raw>`, `--models-dir`.
 Colab: `--ref <branch|tag|sha>`, `--gpu L4|T4|...` (new sessions only; **default L4**), `--session NAME` (default: the GPU name, e.g. `l4`), `--max-wait SECONDS`,
-`--logs [uvicorn|tunnel|both]`, `--refresh-token`.
+`--logs [uvicorn|tunnel|both]`, `--refresh-token`. `--api-key-file PATH` / `--no-api-key`: require (or drop) the shared access key
+(`VISOSWAP_API_KEY`). The file must be mode 600; it is uploaded to `/content/api_key` (600) and read by the start
+script straight into the uvicorn environment, never into argv, logs or the state file. Setting or removing it restarts
+uvicorn, and the launcher then confirms `/api/health` reports `auth` as expected. `VISOSWAP_API_KEY_FILE` in
+`colab.env` keeps it on every launch.
 Env overrides: `VISOSWAP_HOME` (default `~/.visoswap`), `KAGGLE_BIN`, `COLAB_BIN`, `CLOUDFLARED_BIN`.
 
 ## Preflight, login and token: one click means the launcher owns it

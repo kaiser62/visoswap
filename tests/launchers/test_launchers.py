@@ -1025,3 +1025,50 @@ def test_health_sends_own_user_agent(monkeypatch):
     monkeypatch.setattr(C.urllib.request, "urlopen", fake_urlopen)
     assert C.fetch_health("https://h.example.org") is True
     assert seen["ua"] == C.USER_AGENT and "urllib" not in seen["ua"].lower()
+
+
+APIKEY = "k3y-Value_With!Symbols#0123456789abcdef"
+
+
+def test_api_key_uploaded_as_file_never_in_argv_scripts_or_logs(tmp_path, monkeypatch, capsys):
+    co, clk, d = _colab(tmp_path, monkeypatch, sessions=SESS)
+    monkeypatch.setenv("VISOSWAP_HOME", str(tmp_path / "home"))
+    kf = tmp_path / "api_key"; kf.write_text(APIKEY + "\n"); kf.chmod(0o600)
+    scripts = []
+    orig = vs_remote.render
+    monkeypatch.setattr(vs_remote, "render", lambda s, **c: scripts.append(orig(s, **c)) or scripts[-1])
+    monkeypatch.setattr(CL, "auth_state", lambda url: "required")
+    args = CL.build_parser().parse_args(["--yes", "--no-clipboard", "--api-key-file", str(kf)])
+    CL.launch(args, {"VISOSWAP_HOSTNAME": "h.example.org", "CF_TUNNEL_TOKEN": TOKEN}, co.rep, co.run, co, home=tmp_path / "home")
+    assert any(c.startswith("upload") and c.split()[2] == CL.REMOTE_API_KEY for c in calls(d))
+    start = [s for s in scripts if "VS_AUTH" in s]
+    assert start and all(APIKEY not in s for s in scripts) and '"api_key_set": true' in start[-1]
+    out = capsys.readouterr()
+    assert APIKEY not in "".join(calls(d)) + out.out + out.err
+    CL.restart(args, {"VISOSWAP_HOSTNAME": "h.example.org"}, co.rep, co.run, co)     # restart uploads it too
+    assert sum(c.split()[2] == CL.REMOTE_API_KEY for c in calls(d) if c.startswith("upload")) == 2
+
+
+def test_api_key_file_rejected_when_loose_or_invalid(tmp_path):
+    rep = C.Reporter()
+    kf = tmp_path / "k"; kf.write_text(APIKEY); kf.chmod(0o644)
+    args = CL.build_parser().parse_args(["--api-key-file", str(kf)])
+    with pytest.raises(C.LaunchError, match="readable by other users"):
+        CL.load_api_key(args, {}, rep)
+    kf.chmod(0o600); kf.write_text("has space")
+    with pytest.raises(C.LaunchError, match="spaces"):
+        CL.load_api_key(args, {}, rep)
+
+
+def test_check_auth_refuses_silently_unkeyed_backend():
+    with pytest.raises(C.LaunchError, match="auth 'off'"):
+        CL.check_auth("https://h", {"api_key_set": True}, C.Reporter(), probe=lambda u: "off")
+    CL.check_auth("https://h", {}, C.Reporter(), probe=lambda u: 1 / 0)      # no key requested: not probed
+
+
+def test_start_script_reads_key_from_file_only():
+    src = vs_remote.render(vs_remote.START, repo_dir="/r", token_file="/t", api_key_file="/content/api_key", ref="m", repo_url="u",
+                           subset="default", restart=False, profile=None, concurrency=None, wait=1, which=[], lines=1)
+    compile(src, "START", "exec")
+    assert 'env["VISOSWAP_API_KEY"] = _key' in src and 'env.pop("VISOSWAP_API_KEY", None)' in src
+    assert "print(_key" not in src and "VISOSWAP_API_KEY" not in src.split("KEYS = ")[1].split("\n")[0]

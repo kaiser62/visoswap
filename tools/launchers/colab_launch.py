@@ -35,6 +35,8 @@ from vs_common import (REPO_URL, read_relay_line, LaunchError, Reporter, Runner,
 
 REMOTE_REPO = "/content/visoswap"
 REMOTE_TOKEN = "/content/cf_token"
+REMOTE_API_KEY = "/content/api_key"      # VISOSWAP_API_KEY for uvicorn; no file = auth off
+API_KEY_BAD = re.compile(r'[\s;,"\\]')
 RETRY_INTERVAL_S = 30
 DEFAULT_GPU = "L4"       # L4 burns compute units while it exists (see `colab usage`); T4 is the cheaper option (--gpu T4)
 
@@ -172,7 +174,7 @@ class Colab:
             self.sleep(RETRY_INTERVAL_S)
 
     def remote(self, name: str, script: str, timeout: int, **cfg) -> str:
-        base = dict(repo_dir=REMOTE_REPO, token_file=REMOTE_TOKEN, ref=self.ref, repo_url=REPO_URL, subset="default",
+        base = dict(repo_dir=REMOTE_REPO, token_file=REMOTE_TOKEN, api_key_file=REMOTE_API_KEY, ref=self.ref, repo_url=REPO_URL, subset="default",
                     restart=False, profile=None, concurrency=None, wait=240, which=["uvicorn", "tunnel"], lines=60)
         base.update(cfg)
         d = Path(tempfile.mkdtemp(prefix="visoswap-colab-"))
@@ -225,18 +227,24 @@ class Colab:
         """The ONLY place that builds a `stop` command. Reached only via --down."""
         return self.c("stop", "-s", self.session, mutating=True)
 
-    def upload_token(self, token: str):
+    def _upload_secret(self, value: str, remote: str, what: str):
         d = Path(tempfile.mkdtemp(prefix="visoswap-tok-"))
-        f = d / "cf_token"
+        f = d / Path(remote).name
         try:
             fd = os.open(f, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(fd, "w") as fh:
-                fh.write(token)
-            r = self.c("upload", str(f), REMOTE_TOKEN, "-s", self.session, mutating=True, timeout=120)
+                fh.write(value)
+            r = self.c("upload", str(f), remote, "-s", self.session, mutating=True, timeout=120)
             if r.rc != 0 and not r.skipped:
-                raise LaunchError("could not upload the tunnel token: " + r.out[:150], "retry")
+                raise LaunchError(f"could not upload the {what}: " + r.out[:150], "retry")
         finally:
             shutil.rmtree(d, ignore_errors=True)
+
+    def upload_token(self, token: str):
+        self._upload_secret(token, REMOTE_TOKEN, "tunnel token")
+
+    def upload_api_key(self, key: str):
+        self._upload_secret(key, REMOTE_API_KEY, "API key")
 
 
 def saved_url() -> Optional[str]:
@@ -258,6 +266,59 @@ def resolve_url(cfg, probe: dict) -> Optional[str]:
 def public_url(cfg) -> Optional[str]:
     h = normalize_host(cfg.get("VISOSWAP_HOSTNAME", ""))
     return f"https://{h}" if h else None
+
+
+def load_api_key(args, cfg, rep) -> Optional[str]:
+    """--api-key-file PATH (or VISOSWAP_API_KEY_FILE in colab.env): the key for VISOSWAP_API_KEY. The value is
+    registered with the redactor at once and only ever travels as a 600 file. None = no key requested."""
+    p = getattr(args, "api_key_file", None) or cfg.get("VISOSWAP_API_KEY_FILE")
+    if not p:
+        return None
+    f = Path(p).expanduser()
+    try:
+        if f.stat().st_mode & 0o077:
+            raise LaunchError(f"{f} is readable by other users", f"chmod 600 {f}")
+        key = f.read_text().strip()
+    except OSError as e:
+        raise LaunchError(f"cannot read the API key file {f}: {e.strerror}", "create it (mode 600) or drop --api-key-file")
+    if key:
+        rep.redact.add(key)
+    if not key or not key.isascii() or not key.isprintable() or API_KEY_BAD.search(key):
+        raise LaunchError(f"the API key in {f} is empty or has spaces, ; , \" or \\ (the backend refuses those)",
+                          "use printable ASCII without those characters")
+    return key
+
+
+def apply_api_key(args, cfg, rep, co: "Colab") -> dict:
+    """Upload or remove the key before (re)starting uvicorn. Returns START cfg extras; changes force a restart."""
+    if getattr(args, "no_api_key", False):
+        rep.log("API key: removing it from the VM; the backend restarts without auth")
+        return {"api_key_remove": True}
+    key = load_api_key(args, cfg, rep)
+    if key is None:
+        return {}
+    co.upload_api_key(key)
+    rep.log(f"API key uploaded to {REMOTE_API_KEY} (mode 600); the backend restarts with VISOSWAP_API_KEY set")
+    return {"api_key_set": True}
+
+
+def auth_state(url: str) -> str:
+    from vs_common import http_get
+    try:
+        with http_get(url.rstrip("/") + "/api/health", timeout=10) as r:
+            return str(json.loads(r.read(4096)).get("auth", "unknown"))
+    except Exception:
+        return "unknown"
+
+
+def check_auth(url: str, extra: dict, rep, probe=None):
+    want = "required" if extra.get("api_key_set") else "off" if extra.get("api_key_remove") else None
+    if not want or not url:
+        return
+    got = (probe or auth_state)(url)
+    if got != want:
+        raise LaunchError(f"backend reports auth '{got}', expected '{want}'", "run --restart, then check --logs uvicorn")
+    rep.log(f"auth: {got} (confirmed via {url}/api/health)")
 
 
 def settings_overrides(args, cfg) -> dict:
@@ -407,6 +468,10 @@ def launch(args, cfg, rep, run, co: Colab, fetch=vs_cf.default_fetch, home=None)
     url = None if quick else resolve_url(cfg, probe)
     healthy = bool(url and co.health(url))
     knobs = args.concurrency is not None or args.profile is not None
+    # an explicit key change, or a configured key the running backend does not enforce, needs a uvicorn restart
+    key_change = bool(getattr(args, "api_key_file", None) or getattr(args, "no_api_key", False)
+                      or (cfg.get("VISOSWAP_API_KEY_FILE") and healthy and auth_state(url) != "required"))
+    knobs = knobs or key_change
     steps = plan_steps(probe, healthy, args.restart, bool(args.ref) or knobs, args.setup)
     rep.step("plan: " + (", ".join(steps) if steps else "nothing to do (already healthy)"))
     if not steps:
@@ -424,7 +489,8 @@ def launch(args, cfg, rep, run, co: Colab, fetch=vs_cf.default_fetch, home=None)
     if not quick and cfg.get("CF_TUNNEL_TOKEN") and (not probe.get("token_file") or args.refresh_token):
         co.upload_token(cfg["CF_TUNNEL_TOKEN"])
     code_changed = "VS_CHANGED 1" in (repo_out or "")
-    out = co.step("start", vs_remote.START, 600, restart=bool(args.restart or code_changed or knobs), **settings_overrides(args, cfg))
+    extra = apply_api_key(args, cfg, rep, co)
+    out = co.step("start", vs_remote.START, 600, restart=bool(args.restart or code_changed or knobs), **settings_overrides(args, cfg), **extra)
     if run.dry_run:
         return {"ok": True, "state": "dry-run", "summary": "dry run complete", "url": url}
     if quick:
@@ -435,6 +501,7 @@ def launch(args, cfg, rep, run, co: Colab, fetch=vs_cf.default_fetch, home=None)
     if not wait_until(lambda: co.health(url), 300, 10, co.sleep, co.clock, lambda w: rep.log(f"[{w:4d}s] waiting for {url}")):
         raise LaunchError("backend is up inside Colab but not reachable through the tunnel (Cloudflare 1033/502)",
                           "check the tunnel with --logs tunnel; the token or ingress (http://localhost:8000) may be wrong")
+    check_auth(url, extra, rep)
     return finish(args, url, rep)
 
 
@@ -467,7 +534,8 @@ def restart(args, cfg, rep, run, co: Colab) -> dict:
     co.session = d["session"]
     probe = co.probe()
     url = None if cfg.get("TUNNEL_MODE") == "quick" or args.tunnel == "quick" else resolve_url(cfg, probe)
-    out = co.step("start", vs_remote.START, 600, restart=True, **settings_overrides(args, cfg))
+    extra = apply_api_key(args, cfg, rep, co)
+    out = co.step("start", vs_remote.START, 600, restart=True, **settings_overrides(args, cfg), **extra)
     if run.dry_run:
         return {"ok": True, "state": "dry-run", "summary": "dry run: would restart uvicorn and the tunnel inside the same session", "url": url}
     m = re.search(r"VS_QUICK_URL (\S+)", out)
@@ -477,6 +545,7 @@ def restart(args, cfg, rep, run, co: Colab) -> dict:
         raise LaunchError("restarted, but no public URL is known", "set VISOSWAP_HOSTNAME in colab.env or use --logs tunnel")
     if not wait_until(lambda: co.health(url), 300, 10, co.sleep, co.clock, lambda w: rep.log(f"[{w:4d}s] waiting for {url}")):
         raise LaunchError("restarted, but the public URL is not healthy (Cloudflare 1033/502)", "run --logs both")
+    check_auth(url, extra, rep)
     return finish(args, url, rep)
 
 
@@ -513,6 +582,11 @@ def build_parser():
     ap.add_argument("--session", help="session name (default: the GPU name in lower case, e.g. l4; COLAB_SESSION)")
     ap.add_argument("--max-wait", type=int, default=1800, help="seconds to keep retrying for a GPU (default 1800)")
     ap.add_argument("--refresh-token", action="store_true", help="re-upload the tunnel token to the VM")
+    k = ap.add_mutually_exclusive_group()
+    k.add_argument("--api-key-file", metavar="PATH",
+                   help="require this access key (VISOSWAP_API_KEY): file mode 600, uploaded as a 600 file, restarts uvicorn "
+                        "(VISOSWAP_API_KEY_FILE in colab.env does the same on every launch)")
+    k.add_argument("--no-api-key", action="store_true", help="remove the access key from the VM and restart without auth")
     ap.add_argument("--logs", nargs="?", const="both", choices=("uvicorn", "tunnel", "both"), help="show remote logs")
     ap.add_argument("--lines", type=int, default=60)
     return ap
