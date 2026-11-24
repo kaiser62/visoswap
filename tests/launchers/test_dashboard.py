@@ -829,3 +829,70 @@ def test_a_dead_colab_runtime_renders_down_with_a_billing_warning():
     assert card["state"] == "down"
     assert any("compute units" in w for w in card["warnings"])
 
+
+# ---------- Kaggle log URL: the pane is empty because `kaggle kernels logs` needs -f
+def test_kernel_url_is_the_public_kernel_page():
+    assert K.kernel_url("someuser/visoswap-studio") == "https://www.kaggle.com/code/someuser/visoswap-studio"
+    assert K.kernel_url("someuser/VISOSWAP-Studio") == "https://www.kaggle.com/code/someuser/VISOSWAP-Studio"
+    assert K.kernel_url("") == "" and K.kernel_url("noslug") == ""
+
+
+def test_kernel_logs_returns_the_url_even_when_the_cli_prints_nothing():
+    """The reported bug: `kaggle kernels logs` without -f gives no lines while a kernel starts,
+    so the pane was blank with no way to reach the live log."""
+    class Kg:
+        slug = "someuser/visoswap-studio"
+        cfg = {"KAGGLE_KERNEL": "someuser/visoswap-studio"}
+        exe = "kaggle"
+
+        def k(self, *a, **kw):
+            return SimpleNamespace(rc=0, out="")
+    args = SimpleNamespace(lines=60, json=True)
+    res = K.kernel_logs(args, Kg.cfg, SimpleNamespace(log=lambda *a: None), SimpleNamespace(dry_run=False), Kg())
+    assert res["ok"] is True and res["lines"] == []
+    assert res["log_url"] == "https://www.kaggle.com/code/someuser/visoswap-studio"
+
+
+def test_kernel_logs_keeps_the_url_when_the_log_is_unavailable():
+    class Kg:
+        slug = "someuser/visoswap-studio"
+        cfg = {"KAGGLE_KERNEL": "someuser/visoswap-studio"}
+        exe = "kaggle"
+
+        def k(self, *a, **kw):
+            return SimpleNamespace(rc=1, out="404 not found")
+    res = K.kernel_logs(SimpleNamespace(lines=60, json=True), Kg.cfg, SimpleNamespace(log=lambda *a: None),
+                        SimpleNamespace(dry_run=False), Kg())
+    assert res["ok"] is False
+    assert res["log_url"] == "https://www.kaggle.com/code/someuser/visoswap-studio"
+
+
+def test_log_url_is_only_passed_through_for_known_https_hosts(tmp_path, monkeypatch):
+    """The URL lands in an href: a launcher value is not trusted to be safe by construction."""
+    A = _webui_module(tmp_path, monkeypatch)
+    assert A.safe_log_url("https://www.kaggle.com/code/u/v") == "https://www.kaggle.com/code/u/v"
+    for bad in ("javascript:alert(1)", "http://www.kaggle.com/code/u/v", "https://evil.example/code/u/v",
+                "https://www.kaggle.com.evil.example/x", "", None, "data:text/html,x"):
+        assert A.safe_log_url(bad) == "", bad
+
+
+def test_both_shells_render_the_log_link_without_innerhtml():
+    for name in ("app.js", "mobile.js"):
+        js = (L / "webui" / "static" / name).read_text()
+        assert "renderLogLink" in js, name
+        assert "r.log_url" in js, name
+        assert 'rel: "noopener noreferrer"' in js, name       # an external page must not get window.opener
+        assert "innerHTML =" not in js and ".innerHTML" not in js, name
+    for name in ("index.html", "mobile.html"):
+        assert 'id="lglink"' in (L / "webui" / "static" / name).read_text(), name
+
+
+def test_logs_endpoint_includes_the_log_url(tmp_path, monkeypatch):
+    A = _webui_module(tmp_path, monkeypatch)
+    from fastapi.testclient import TestClient
+    c = TestClient(A.app)
+    c.headers.update({"Authorization": "Bearer " + A.state().token})
+    r = c.get("/api/logs/kaggle/kernel?lines=20").json()
+    assert r["log_url"] == "https://www.kaggle.com/code/fakeuser/visoswap-studio", r
+    # the job log has no platform page, so no link is offered
+    assert c.get("/api/logs/kaggle/job?lines=20").json()["log_url"] == ""

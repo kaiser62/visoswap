@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import uuid
 from collections import deque
 from pathlib import Path
@@ -527,6 +528,23 @@ def quotas(refresh: int = 0):
     return {**out, "pending": pending_any}
 
 
+LOG_URL_HOSTS = {"www.kaggle.com", "kaggle.com", "colab.research.google.com"}
+
+
+def safe_log_url(url) -> str:
+    """Only an https URL on a known console host is passed to the browser. The launcher builds this
+    from a slug, but the value still ends up in an href, so it is validated here rather than trusted."""
+    if not isinstance(url, str) or not url:
+        return ""
+    try:
+        p = urllib.parse.urlsplit(url)
+    except ValueError:
+        return ""
+    if p.scheme != "https" or p.hostname not in LOG_URL_HOSTS:
+        return ""
+    return url
+
+
 @app.get("/api/logs/{target}/{source}", dependencies=[Depends(require_auth)])
 def logs(target: str, source: str, lines: int = 200, refresh: int = 0):
     """Persistent launcher job log (source=job) or the remote backend's log (Kaggle: kernel; Colab: uvicorn, tunnel). Tail only, redacted."""
@@ -537,7 +555,10 @@ def logs(target: str, source: str, lines: int = 200, refresh: int = 0):
         raise HTTPException(400, f"lines must be {argspec.MIN_LINES}..{argspec.MAX_LINES}")
     if source == "job":
         red = st.redactor()
-        return {"target": target, "source": "job", "ok": True, "lines": [red(l) for l in st.joblog.tail(target, lines)], "age_s": 0}
+        # no platform page for the launcher's own job log; the key is always present so callers
+        # never have to special-case its absence
+        return {"target": target, "source": "job", "ok": True, "lines": [red(l) for l in st.joblog.tail(target, lines)],
+                "age_s": 0, "log_url": ""}
     if source not in argspec.LOG_SOURCES[target]:
         raise HTTPException(404, "unknown log source")
     if target == "colab" and st.busy.get(target):
@@ -547,7 +568,10 @@ def logs(target: str, source: str, lines: int = 200, refresh: int = 0):
     v = v or {"ok": False, "error": "no result"}
     red = st.redactor()
     return {"target": target, "source": source, "ok": bool(v.get("ok")), "error": red(str(v.get("error", ""))) if not v.get("ok") else "",
-            "lines": [red(str(l)) for l in (v.get("lines") or [])][-lines:], "age_s": None if age is None else round(age, 1)}
+            "lines": [red(str(l)) for l in (v.get("lines") or [])][-lines:], "age_s": None if age is None else round(age, 1),
+            # The kernel page is where the live log actually is: `kaggle kernels logs` without -f prints
+            # nothing while a kernel is still starting. Only a fixed set of hosts may reach the DOM.
+            "log_url": safe_log_url(v.get("log_url"))}
 
 
 @app.post("/api/targets/{target}/{action}", dependencies=[Depends(require_auth)])

@@ -511,17 +511,30 @@ def quota(args, cfg, rep, run, kg: Kaggle) -> dict:
     return {"ok": True, "quota": q, "summary": f"GPU {g.get('remaining', '?')}h left of {g.get('total', '?')}h"}
 
 
+def kernel_url(slug: str) -> str:
+    """The public page for a kernel, `https://www.kaggle.com/code/<owner>/<slug>`."""
+    owner, _, name = (slug or "").partition("/")
+    return f"https://www.kaggle.com/code/{owner}/{name}" if owner and name else ""
+
+
 def kernel_logs(args, cfg, rep, run, kg: Kaggle) -> dict:
-    """Tail of the kernel log via `kaggle kernels logs` (no -f). Lines are returned in the result, redacted by the reporter."""
+    """Tail of the kernel log via `kaggle kernels logs` (no -f). Lines are returned in the result, redacted by the reporter.
+
+    `kaggle kernels logs` without -f prints nothing for a kernel that is still starting, and the
+    dashboard showed an empty pane with no explanation. `log_url` is always returned even when the
+    CLI gives no lines, because the kernel page itself is where the live log is readable.
+    """
     kg.slug = kernel_slug(cfg, kg)
+    log_url = kernel_url(kg.slug)
     r = kg.k("kernels", "logs", kg.slug, timeout=90)
     if r.rc != 0:
-        return {"ok": False, "error": "kernel log unavailable: " + P.excerpt(r.out, 160), "next": "the kernel may not exist or never ran"}
+        return {"ok": False, "error": "kernel log unavailable: " + P.excerpt(r.out, 160), "next": "the kernel may not exist or never ran",
+                "log_url": log_url}
     lines = [l[:500] for l in r.out.splitlines()][-max(1, min(args.lines, 2000)):]
     if not getattr(args, "json", False):
         for l in lines:
             rep.log(l)
-    return {"ok": True, "lines": lines, "summary": f"{len(lines)} lines"}
+    return {"ok": True, "lines": lines, "log_url": log_url, "summary": f"{len(lines)} lines"}
 
 
 def install_kaggle_json(raw: str, cfg, rep, run, kg: Kaggle) -> dict:

@@ -301,12 +301,24 @@ $("qrefresh").onclick = () => loadQuotas(true);
 const LOG_SOURCES = [["kaggle", "job", "Kaggle - launcher job log"], ["colab", "job", "Colab - launcher job log"], ["kaggle", "kernel", "Kaggle - kernel log (remote)"],
   ["colab", "uvicorn", "Colab - uvicorn log (remote)"], ["colab", "tunnel", "Colab - tunnel log (remote)"]];
 for (const [t, s, l] of LOG_SOURCES) $("lgsrc").append(h("option", {value: t + "/" + s, text: l}));
+function renderLogLink(r, s) {
+  // `kaggle kernels logs` prints nothing without -f while a kernel is still starting, so the
+  // pane can be legitimately empty. The kernel page is where the live log is; link to it there
+  // rather than leaving the reader staring at a blank pane. Built with h(), never innerHTML.
+  const box = $("lglink");
+  box.replaceChildren();
+  const url = r && typeof r.log_url === "string" ? r.log_url : "";
+  if (!url || s === "job") { box.hidden = true; return; }
+  box.hidden = false;
+  box.append("Live log on the platform: ", h("a", {href: url, target: "_blank", rel: "noopener noreferrer", text: url}));
+}
 async function loadLog() {
   const [t, s] = $("lgsrc").value.split("/"), n = $("lgn").value, v = $("lgview");
   $("lgmeta").textContent = "Loading..."; if (s !== "job") $("lgload").disabled = true;
   try {
     const r = await api(`/api/logs/${t}/${s}?lines=${n}&refresh=1`);
     v.textContent = r.ok ? (r.lines.join("\n") || "(empty)") : (r.error || "unavailable");
+    renderLogLink(r, s);
     $("lgmeta").textContent = (r.ok ? r.lines.length + " lines" : "Not available") + " - secrets are redacted" + (s === "job" ? "" : " - fetched through the launcher, " + fmtAge(r.age_s));
     v.scrollTop = v.scrollHeight;
   } catch (e) { v.textContent = "Cannot load: " + e.message; $("lgmeta").textContent = ""; }

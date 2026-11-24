@@ -93,11 +93,13 @@ elif "--quota" in args:
 elif "--logs" in args:
     n = int(val("--lines", "60"))
     if os.environ.get("FAKE_LOGS_FAIL") or not load():
-        out(t="result", ok=False, error="log unavailable: nothing running (fake)")
+        out(t="result", ok=False, error="log unavailable: nothing running (fake)",
+            log_url="https://www.kaggle.com/code/fakeuser/visoswap-studio")
     else:
         src = val("--logs", "kernel") if target == "colab" else "kernel"
         lines = [f"[{src}] line {i} ok" for i in range(300)] + [f"[{src}] CF_TUNNEL_TOKEN=fakeSecretValue123", f"[{src}] auth eyJhbGciOiJIUzI1NiJ9abcdefghijklmnopqrstuv", f"[{src}] VISOSWAP_API_KEY=fakeAccessKey456"]
-        out(t="result", ok=True, lines=lines[-n:], summary=f"{min(n, len(lines))} lines")
+        out(t="result", ok=True, lines=lines[-n:], summary=f"{min(n, len(lines))} lines",
+            log_url="https://www.kaggle.com/code/fakeuser/visoswap-studio")
 elif "--status" in args:
     st, force = load(), os.environ.get("FAKE_FORCE_STATE", "").lower()
     up = st.get("state") == "RUNNING"
