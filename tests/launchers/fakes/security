@@ -1,0 +1,3 @@
+#!/bin/sh
+[ -n "$FAKE_DIR" ] && echo "security $*" >> "$FAKE_DIR/calls.log"
+exit ${FAKE_SECURITY_RC:-0}

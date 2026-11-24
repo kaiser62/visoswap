@@ -1,0 +1,3 @@
+#!/bin/sh
+# shim: a bare `colab` on PATH during tests is always the fake, never a live CLI
+exec "$(dirname "$0")/fake_colab.py" "$@"

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VisoSwap launchers</title><link rel="stylesheet" href="/static/app.css"></head>
+<body>
+<header><h1>VisoSwap launchers</h1><button id="lock" class="ghost" title="forget token">Sign out</button></header>
+<section id="login" hidden><p>Access token (printed in the terminal when the UI first started; file <code>~/.visoswap/webui_token</code>)</p>
+<form id="lf"><input id="tok" type="password" autocomplete="off" placeholder="token" required><button>Sign in</button></form><p id="lerr" class="err"></p></section>
+<main id="app" hidden>
+<div id="cards"></div>
+<div id="prompt" class="card" hidden></div>
+<h2>Log <span id="logfor"></span></h2><pre id="log">Nothing running.</pre>
+</main>
+<script src="/static/app.js"></script></body></html>

@@ -35,6 +35,10 @@ Set `VISOSWAP_API_KEY` to require a key on the API, WebSockets and `/url=` short
 - **Colab**: no notebook lives in this repo. The Colab launcher/agent script must pass `VISOSWAP_API_KEY` through
   to the `uvicorn backend.main:app` process environment (e.g. `os.environ['VISOSWAP_API_KEY'] = userdata.get('VISOSWAP_API_KEY')`).
 
+**One-click launchers** (Kaggle and Colab, with provisioning, plus an optional local web UI to run
+them from your phone): `tools/launchers/kaggle-launch.sh`, `tools/launchers/colab-launch.sh`.
+See [docs/launchers.md](docs/launchers.md).
+
 ## Status
 
 Early. Phase 1 of the roadmap — vendoring the engine and stripping Qt — is in
