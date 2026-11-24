@@ -144,7 +144,7 @@ function metaRow(dl, label, value, extra) {
 }
 function updateCard(t, d) {
   const c = cards[t] || (cards[t] = {}); const r = c.r;
-  r.badge.className = "chip s-" + d.state; r.badge.replaceChildren(h("span", {class: "dot", "aria-hidden": "true"}), STATE_LABEL[d.state] || d.state);
+  r.badge.className = "chip s-" + d.state; r.badge.replaceChildren(STATE_LABEL[d.state] || d.state);
   r.help.textContent = d.pending ? "Querying the backend (can take a few seconds)..." : d.state_help + (d.age_s != null ? " - checked " + fmtAge(d.age_s) : "");
   r.url = d.url; r.urlrow.hidden = !d.url;
   if (d.url) { r.link.href = (d.mobile_url || d.url); r.link.textContent = d.url; }
@@ -180,8 +180,8 @@ function renderDash() {
   for (const t of Object.keys(NAMES)) { if (!cards[t]) box.append(buildCard(t)); updateCard(t, DASH.targets[t]); }
   const b = $("bridge");
   b.hidden = !DASH.bridge.configured;
-  if (DASH.bridge.configured) { b.className = "pill " + (DASH.bridge.ok ? "ok" : "bad"); b.textContent = "Mac bridge: " + (DASH.bridge.ok ? "connected" : "unreachable"); b.title = DASH.bridge.detail || "Colab runs on the host through the bridge"; }
-  $("fakepill").hidden = !DASH.fake;
+  if (DASH.bridge.configured) { b.className = "chip s-" + (DASH.bridge.ok ? "ok" : "bad"); b.textContent = "Mac bridge: " + (DASH.bridge.ok ? "connected" : "unreachable"); b.title = DASH.bridge.detail || "Colab runs on the host through the bridge"; }
+  if (DASH.fake && !DASH.bridge.configured) { b.hidden = false; b.className = "chip s-warn"; b.textContent = "Fake mode"; }
 }
 async function loadDash(force) {
   try {
@@ -211,6 +211,7 @@ async function runAction(t, act, options, confirmed) {
 }
 function follow(job, t, act) {
   activeJob = job; activeTarget = t; activeAct = act; since = 0; hidePrompt();
+  $("cancel").hidden = false;
   $("jobbox").hidden = false; $("log").textContent = ""; $("logfor").textContent = NAMES[t] + ": " + act;
   setJobState("running"); renderDash(); pollJob(); schedule(1500);
 }
@@ -229,7 +230,7 @@ async function pollJob() {
   } catch (e) { if (e.message !== "auth") setTimeout(pollJob, 3000); }
 }
 function finishJob(j) {
-  const r = j.result || {}, t = activeTarget, act = activeAct; activeJob = null;
+  const r = j.result || {}, t = activeTarget, act = activeAct; activeJob = null; $("cancel").hidden = true;
   $("log").textContent += (r.ok ? "DONE" : "FAILED: " + (r.error || "")) + (r.next ? "\nNext: " + r.next : "") + "\n";
   say(r.ok ? NAMES[t] + " " + act + ": done. " + (r.summary || "") : NAMES[t] + " " + act + " failed: " + (r.error || "unknown error"), r.ok ? "ok" : "bad");
   if (!r.ok && Array.isArray(r.checks) && r.checks.length) {      // blocked on a missing login: show it and re-run the action once it is fixed
@@ -265,7 +266,7 @@ let QUOTAS = null;
 function bar(pct, cls) { const b = h("div", {class: "bar " + (cls || ""), role: "img", "aria-label": Math.round(pct) + " percent left"}, h("i")); b.firstChild.style.setProperty("--w", Math.max(0, Math.min(100, pct)) + "%"); return b; }
 function quotaCard(t, q) {
   const body = [h("div", {class: "card-head"}, h("h3", {text: t === "kaggle" ? "Kaggle GPU hours" : "Colab compute units"}),
-    q.warn ? h("span", {class: "chip " + (q.warn === "empty" ? "bad" : "warn"), text: q.warn === "empty" ? "Empty" : "Low"}) : null)];
+    q.warn ? h("span", {class: "chip " + (q.warn === "empty" ? "s-bad" : "s-warn"), text: q.warn === "empty" ? "Empty" : "Low"}) : null)];
   if (q.pending && !q.available) body.push(h("p", {class: "muted", text: "Checking..."}));
   else if (!q.available) {
     body.push(h("p", {class: "muted", text: q.summary || "Not available"}));
@@ -313,7 +314,7 @@ $("lgload").onclick = loadLog; $("lgsrc").onchange = loadLog; $("lgn").onchange 
 $("lgcopy").onclick = () => copy($("lgview").textContent, $("lgcopy"));
 
 // ------------------------------------------------------------------ logins
-function stateBadge(s) { return h("span", {class: "chip " + (s === "ok" ? "ok" : s === "unknown" ? "warn" : "bad"), text: s === "ok" ? "Logged in" : s === "unknown" ? "Unknown" : s === "invalid" ? "Not logged in" : "Missing"}); }
+function stateBadge(s) { return h("span", {class: "chip " + (s === "ok" ? "s-ok" : s === "unknown" ? "s-warn" : "s-bad"), text: s === "ok" ? "Logged in" : s === "unknown" ? "Unknown" : s === "invalid" ? "Not logged in" : "Missing"}); }
 function readFile(input) { return new Promise((res) => { const f = input.files && input.files[0]; if (!f) return res(""); if (f.size > 8192) return res(null); const fr = new FileReader(); fr.onload = () => res(String(fr.result)); fr.readAsText(f); }); }
 function jsonImport(label, hint, path, okMsg, t) {
   const file = h("input", {type: "file", accept: ".json,application/json", "aria-label": label});

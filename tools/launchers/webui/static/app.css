@@ -33,3 +33,22 @@ pre{font-family:var(--mono);background:var(--bg);border:1px solid var(--bd);bord
 details{margin:8px 0;border-top:1px solid var(--bd);padding-top:8px}summary{cursor:pointer;min-height:36px;padding:6px 0;font-weight:600}
 label.f{display:flex;flex-direction:column;gap:4px;flex:1 1 140px;font-size:.9rem;color:var(--mut)}
 @media(max-width:480px){body{padding:0 12px 32px}.tools button{flex:1}.card button{flex:1 1 auto}}
+/* dashboard additions */
+.card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
+.state-help{margin:2px 0;color:var(--mut);font-size:.9rem}.small{font-size:.85rem}.big{font-size:1.8rem;font-weight:700;margin:4px 0}
+.urlrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+.notes{display:grid;gap:6px}.note{padding:8px 10px;border-radius:8px;background:var(--warnbg);color:var(--warn);font-size:.9rem}.note.bad{background:var(--badbg);color:var(--bad)}
+dl.meta{font-size:.92rem}
+.bar.low>i{background:var(--warn)}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.actions button{flex:1 1 90px}
+.fields,.stack{display:grid;gap:10px}.fields{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.stack{margin:8px 0}
+.field{display:flex;flex-direction:column;gap:4px;font-size:.9rem;color:var(--mut)}.field select,.field input{color:var(--fg)}
+details .body{padding:6px 0}details.off summary{color:var(--mut)}
+.checkrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0 4px}
+.banner.ok{background:var(--okbg);color:var(--ok);border-color:var(--ok)}.banner.bad{background:var(--badbg);color:var(--bad);border-color:var(--bad)}
+#prompt{padding:10px;border:1px solid var(--bd);border-radius:8px;margin:8px 0;display:grid;gap:8px}
+.row code{flex:1 1 200px}
+dialog{background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:12px;max-width:min(420px,92vw);padding:18px}
+dialog::backdrop{background:rgba(0,0,0,.55)}dialog form{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:14px}
+#lgview{min-height:8rem}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
