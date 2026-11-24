@@ -126,11 +126,13 @@ def username_from_files(kaggle_dir: Path) -> Optional[str]:
     return None
 
 
-def kernel_slug(cfg: Dict[str, str]) -> str:
+def kernel_slug(cfg: Dict[str, str], kg: "Optional[Kaggle]" = None) -> str:
     if cfg.get("KAGGLE_KERNEL"):
         return cfg["KAGGLE_KERNEL"]
     kdir = Path(os.environ.get("KAGGLE_CONFIG_DIR") or Path.home() / ".kaggle")
     user = username_from_files(kdir) or os.environ.get("KAGGLE_USERNAME")
+    if not user and kg is not None and kg.exe:   # token-only login: no kaggle.json to read the name from
+        user = P.kaggle_username(cfg, kg.run, kg.exe)
     if not user:
         raise LaunchError("cannot determine your Kaggle username", "set KAGGLE_KERNEL=<user>/visoswap-studio in ~/.visoswap/kaggle.env")
     return f"{user}/visoswap-studio"
@@ -312,7 +314,7 @@ def store_cf_token(args, cfg, rep) -> dict:
 def provision(args, cfg, rep, run, kg: Kaggle, fetch=vs_cf.default_fetch, home=None):
     rep.step("Preflight: Kaggle CLI, login, quota")
     preflight(args, cfg, rep, run, kg)
-    kg.slug = kernel_slug(cfg)
+    kg.slug = kernel_slug(cfg, kg)
     rep.log(f"kernel: {kg.slug}")
     rep.step("Provision: Cloudflare tunnel")
     cfg = vs_cf.ensure_tunnel("kaggle", cfg, rep, run, args.tunnel, fetch=fetch, home=home, interactive=can_prompt(args) and args.setup)
@@ -411,18 +413,95 @@ def finish(args, cfg, url, kg, rep) -> dict:
     return {"ok": True, "state": "RUNNING", "healthy": True, "url": url, "mobile_url": url + "/mobile"}
 
 
+def last_run_epoch(out: str, slug: str) -> Optional[float]:
+    """`kaggle kernels list --mine --format csv` row for `slug` -> lastRunTime as epoch seconds (Kaggle reports UTC).
+    An estimate of when the current run began; None when absent or unparseable."""
+    import csv
+    import datetime as _dt
+    for row in csv.DictReader(out.splitlines()):
+        if row.get("ref") == slug and row.get("lastRunTime"):
+            try:
+                d = _dt.datetime.fromisoformat(row["lastRunTime"].strip()).replace(tzinfo=_dt.timezone.utc)
+                return d.timestamp()
+            except ValueError:
+                return None
+    return None
+
+
 def status(args, cfg, rep, run, kg: Kaggle) -> dict:
-    kg.slug = kernel_slug(cfg)
+    kg.slug = kernel_slug(cfg, kg)
     kg.check_auth()
     st = kg.state()
     url = url_for(cfg) if cfg.get("TUNNEL_MODE") != "quick" else None
     healthy = bool(url and kg.health(url))
+    started = None
+    if st == "RUNNING":
+        started = last_run_epoch(kg.k("kernels", "list", "--mine", "-s", kg.slug.split("/")[1], "--format", "csv", timeout=60).out, kg.slug)
     return {"ok": True, "state": st, "healthy": healthy, "url": url, "kernel": kg.slug,
+            "started_at": started, "started_source": "kaggle lastRunTime" if started else "",
             "configured": bool(url), "summary": f"kernel {kg.slug}: {st}; backend {'healthy' if healthy else 'not answering'}"}
 
 
+def quota(args, cfg, rep, run, kg: Kaggle) -> dict:
+    """Read-only. `kaggle quota` has no JSON output; the table is parsed. Never starts a login."""
+    if not kg.exe:
+        return {"ok": True, "quota": None, "summary": "kaggle CLI not installed"}
+    r = kg.k("quota", timeout=60)
+    q = P.parse_kaggle_quota(r.out) if r.rc == 0 else None
+    if not q:
+        return {"ok": True, "quota": None, "summary": "quota unavailable: " + P.excerpt(r.out, 120)}
+    g = q.get("gpu", {})
+    return {"ok": True, "quota": q, "summary": f"GPU {g.get('remaining', '?')}h left of {g.get('total', '?')}h"}
+
+
+def kernel_logs(args, cfg, rep, run, kg: Kaggle) -> dict:
+    """Tail of the kernel log via `kaggle kernels logs` (no -f). Lines are returned in the result, redacted by the reporter."""
+    kg.slug = kernel_slug(cfg, kg)
+    r = kg.k("kernels", "logs", kg.slug, timeout=90)
+    if r.rc != 0:
+        return {"ok": False, "error": "kernel log unavailable: " + P.excerpt(r.out, 160), "next": "the kernel may not exist or never ran"}
+    lines = [l[:500] for l in r.out.splitlines()][-max(1, min(args.lines, 2000)):]
+    if not getattr(args, "json", False):
+        for l in lines:
+            rep.log(l)
+    return {"ok": True, "lines": lines, "summary": f"{len(lines)} lines"}
+
+
+def install_kaggle_json(raw: str, cfg, rep, run, kg: Kaggle) -> dict:
+    """Backup login: a pasted/uploaded kaggle.json ({"username","key"}). Validated in an isolated HOME with KAGGLE_USERNAME/KAGGLE_KEY
+    so another stored login cannot mask a bad key, then written to <config dir>/kaggle.json (700/600). Never echoed."""
+    if not kg.exe:
+        raise LaunchError("kaggle CLI not found", "pip install kaggle")
+    try:
+        d = json.loads(raw)
+        user, key = str(d["username"]).strip(), str(d["key"]).strip()
+    except (ValueError, KeyError, TypeError):
+        raise LaunchError("that is not a kaggle.json ({\"username\": ..., \"key\": ...})", "kaggle.com > Settings > API > Create Legacy API Key downloads it")
+    rep.redact.add(key)
+    if not (1 <= len(user) <= 100) or not (8 <= len(key) <= 256) or any(ch.isspace() for ch in user + key):
+        raise LaunchError("that kaggle.json looks malformed", "download a fresh one from kaggle.com > Settings > API")
+    tmp = Path(tempfile.mkdtemp(prefix="visoswap-kcheck-"))
+    try:
+        r = run.run([kg.exe, "kernels", "list", "--mine", "--page-size", "1"], timeout=90,
+                    env={"KAGGLE_USERNAME": user, "KAGGLE_KEY": key, "HOME": str(tmp), "KAGGLE_CONFIG_DIR": str(tmp / ".kaggle"),
+                         "KAGGLE_API_TOKEN": ""})
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    st = P.kaggle_auth_state(r.rc, r.out)
+    if st != "ok":
+        raise LaunchError("Kaggle rejected that key" if st == "invalid" else "could not verify the key (network/timeout); nothing was stored",
+                          "create a new key and try again")
+    d = kaggle_config_dir()
+    if not run.dry_run:
+        d.mkdir(parents=True, exist_ok=True)
+        os.chmod(d, 0o700)
+        write_private(d / "kaggle.json", json.dumps({"username": user, "key": key}) + "\n")
+    rep.log(f"kaggle.json validated and stored at {d / 'kaggle.json'} (mode 600)")
+    return {"ok": True, "summary": "kaggle.json stored"}
+
+
 def down(args, cfg, rep, run, kg: Kaggle) -> dict:
-    kg.slug = kernel_slug(cfg)
+    kg.slug = kernel_slug(cfg, kg)
     kg.check_auth()
     st = kg.state()
     if st in ("MISSING",):
@@ -440,6 +519,9 @@ def down(args, cfg, rep, run, kg: Kaggle) -> dict:
 def build_parser():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     common_args(ap, "kaggle")
+    ap.add_argument("--logs", action="store_true", help="print the tail of the kernel log (kaggle kernels logs)")
+    ap.add_argument("--lines", type=int, default=200)
+    ap.add_argument("--kaggle-json-stdin", action="store_true", help="read a kaggle.json from stdin, validate and install it (backup login)")
     ap.add_argument("--max-minutes", type=int, help="kernel self-terminates after N minutes (default 90, 0 = never)")
     ap.add_argument("--accelerator", default="t4x2", help="t4x2 (default, = NvidiaTeslaT4), or a raw `kaggle kernels push --accelerator` value")
     ap.add_argument("--models-dir", help="local model dir used to create the model dataset (default <repo>/model_assets_owned)")
@@ -457,6 +539,13 @@ def main(argv=None) -> int:
             res = check(args, cfg, rep, run, kg)
         elif args.store_cf_token:
             res = store_cf_token(args, cfg, rep)
+        elif args.quota:
+            res = quota(args, cfg, rep, run, kg)
+        elif args.logs:
+            res = kernel_logs(args, cfg, rep, run, kg)
+        elif args.kaggle_json_stdin:
+            with target_lock("kaggle", rep):
+                res = install_kaggle_json(sys.stdin.read(65536), cfg, rep, run, kg)
         elif args.cf_api_token_stdin:
             with target_lock("kaggle", rep):
                 res = cf_api_setup(args, cfg, rep, run)

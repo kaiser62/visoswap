@@ -44,7 +44,7 @@ def visoswap_home() -> Path:
 _PATTERNS = [
     re.compile(r"eyJ[A-Za-z0-9_\-+/=]{16,}"),  # Cloudflare tunnel tokens / JWTs
     re.compile(r"(?i)(--token[ =])\S+"),
-    re.compile(r"(?i)\b((?:CF_TUNNEL_TOKEN|CF_API_TOKEN|KAGGLE_KEY|API_KEY|SECRET|PASSWORD|TOKEN)\s*[=:]\s*)['\"]?[^\s'\"]{6,}"),
+    re.compile(r"(?i)\b((?:[A-Z0-9]+_)*(?:TOKEN|SECRET|PASSWORD|API_KEY|KEY)\s*[=:]\s*)['\"]?[^\s'\"]{6,}"),
     re.compile(r"(?i)(Authorization:\s*Bearer\s+)\S+"),
 ]
 
@@ -405,6 +405,7 @@ def common_args(ap, target: str) -> None:
     g.add_argument("--down", action="store_true", help="stop %s (asks for confirmation)" % ("the Kaggle kernel" if target == "kaggle" else "the Colab session"))
     g.add_argument("--check", action="store_true", help="report login/token/quota state; changes nothing")
     g.add_argument("--login", action="store_true", help="run this service's login flow (non-interactive: Kaggle only)")
+    g.add_argument("--quota", action="store_true", help="report the GPU quota (Kaggle) / compute units (Colab); read-only, never starts a login")
     g.add_argument("--relay", action="store_true", help="with --login: ask for secrets/codes via JSON prompt events answered on stdin (web UI)")
     g.add_argument("--cf-api-token-stdin", action="store_true", help="read a Cloudflare API token from stdin, create the tunnel + DNS with it, store only the tunnel token")
     g.add_argument("--store-cf-token", action="store_true", help="read a Cloudflare tunnel token from stdin and store it (mode 600); refuses if one is stored")

@@ -20,12 +20,19 @@ elif cmd == "exec":
     script = open(args[args.index("-f") + 1]).read()
     if "VS_PROBE" in script:
         p = {"gpu": "Tesla T4", "deps_missing": [], "repo": True, "sha": "abc1234", "models": 7, "cloudflared": True,
-             "token_file": bool(os.environ.get("FAKE_TOKEN_FILE")), "uvicorn": False, "tunnel": False, "health": False}
+             "token_file": bool(os.environ.get("FAKE_TOKEN_FILE")), "uvicorn": bool(os.environ.get("FAKE_UVICORN")), "tunnel": False, "health": False,
+             "uvicorn_elapsed": 600 if os.environ.get("FAKE_UVICORN") else None, "uvicorn_env": {"VISOSWAP_PROCESS_WORKERS": "1"} if os.environ.get("FAKE_UVICORN") else {}}
         print("VS_PROBE " + json.dumps(p)); print("VS_OK probe")
+    elif os.environ.get("FAKE_LOGS") and "VS_OK logs" in script:
+        print("--- /content/uvicorn.log\nINFO started\nVISOSWAP_API_KEY=%s\nJWT eyJhbGciOiJIUzI1NiJ9abcdefghijklmnopqrstuv\nINFO done\nVS_OK logs" % os.environ.get("FAKE_LOG_SECRET", "s3cretvalue123"))
     else:
         for step in ("deps", "repo", "models", "start", "logs"):
             if f'"VS_OK {step}"' in script or f"VS_OK {step}" in script:
                 print(f"VS_OK {step}")
+elif cmd == "usage" and os.path.exists(os.path.expanduser("~/.config/colab-cli/token.json")) and os.environ.get("FAKE_COLAB_EXPIRED"):
+    _t = json.load(open(os.path.expanduser("~/.config/colab-cli/token.json")))   # legacy token file: valid only when refresh_token starts with GOOD
+    if str(_t.get("refresh_token", "")).startswith("GOOD"): print("Current balance: 12.50 compute units\nUsage rate: 0.00/hr")
+    else: print("invalid_grant", file=sys.stderr); sys.exit(1)
 elif cmd == "usage":
     if os.environ.get("FAKE_USAGE_LOGIN") and os.environ.get("FAKE_COLAB_EXPIRED"):   # the user finished the login flow
         open(os.path.join(d, "logged_in"), "w").write("1")

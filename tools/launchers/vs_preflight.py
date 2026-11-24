@@ -70,6 +70,38 @@ def kaggle_auth_state(rc: int, out: str) -> str:
     return "invalid" if ("403" in low or "forbidden" in low) else "unknown"
 
 
+def parse_kaggle_quota(out: str) -> Optional[dict]:
+    """`kaggle quota` table -> {gpu: {used, remaining, total, refresh_at}, tpu: {...}} (hours). None when unparseable."""
+    res = {}
+    for line in out.splitlines():
+        m = re.match(r"\s*(GPU|TPU)\s+([\d.]+)h\s+([\d.]+)h\s+([\d.]+)h\s+(\S+)", line, re.I)
+        if m:
+            res[m.group(1).lower()] = {"used": float(m.group(2)), "remaining": float(m.group(3)), "total": float(m.group(4)),
+                                       "refresh_at": m.group(5)}
+    return res or None
+
+
+def kaggle_username(cfg: Dict[str, str], run: Runner, exe: str) -> Optional[str]:
+    """Account name for the kernel slug. Files first (no CLI call); a token-only login (Docker, access_token) has no
+    kaggle.json, so ask the CLI (`kaggle config view` prints the name, never a secret)."""
+    kdir = Path(os.environ.get("KAGGLE_CONFIG_DIR") or Path.home() / ".kaggle")
+    for f in ("kaggle.json", "credentials.json"):
+        p = kdir / f
+        if p.is_file():
+            try:
+                import json as _j
+                u = _j.loads(p.read_text()).get("username")
+            except ValueError:
+                u = None
+            if u:
+                return u
+    if os.environ.get("KAGGLE_USERNAME"):
+        return os.environ["KAGGLE_USERNAME"]
+    r = run.run([exe, "config", "view"], timeout=30)
+    m = re.search(r"username:\s*([A-Za-z0-9_.-]+)", r.out) if r.rc == 0 else None
+    return m.group(1) if m and m.group(1) != "None" else None
+
+
 def kaggle_checks(cfg: Dict[str, str], run: Runner) -> List[Check]:
     exe = cfg.get("KAGGLE_BIN") or shutil.which("kaggle")
     if not exe or not (shutil.which(exe) or os.path.exists(exe)):
@@ -107,7 +139,9 @@ def parse_usage(out: str) -> Optional[dict]:
     if not m:
         return None
     rate = re.search(r"Usage rate:\s*([\d.]+)", out)
-    return {"balance": float(m.group(1)), "rate": float(rate.group(1)) if rate else None}
+    asg = re.search(r"Active assignments:\s*(\d+)", out)
+    return {"balance": float(m.group(1)), "rate": float(rate.group(1)) if rate else None,
+            "assignments": int(asg.group(1)) if asg else None}
 
 
 def colab_login_state(rc: int, out: str) -> str:

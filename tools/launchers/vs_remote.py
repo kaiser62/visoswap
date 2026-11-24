@@ -29,7 +29,23 @@ def has(mod): return importlib.util.find_spec(mod) is not None
 mods = ["onnxruntime", "pydantic_settings", "yt_dlp", "ftfy", "regex", "numexpr", "onnxsim", "kornia", "skimage", "psutil", "onnx", "fastapi", "uvicorn", "aiosqlite", "httpx", "cv2", "PIL", "requests", "tqdm", "pydantic"]
 rc, gpu = sh("nvidia-smi --query-gpu=name --format=csv,noheader")
 rc2, sha = sh(["git", "-C", REPO, "rev-parse", "--short", "HEAD"])
+def uvicorn_info():
+    # uptime and the whitelisted (non-secret) env of the running backend, for the dashboard
+    for pid in pgrep("uvicorn backend.main"):
+        info = {"elapsed": None, "env": {}}
+        rc, out = sh(["ps", "-o", "etimes=", "-p", pid])
+        if rc == 0 and out.strip().isdigit(): info["elapsed"] = int(out.strip())
+        try:
+            raw = open("/proc/%s/environ" % pid, "rb").read().split(b"\\0")
+            e = dict(x.decode(errors="replace").split("=", 1) for x in raw if b"=" in x)
+            info["env"] = {k: e[k] for k in ("GENERATION_CONCURRENCY", "VISOSWAP_PROCESS_WORKERS", "VISOSWAP_PROFILE") if k in e}
+        except Exception:
+            pass
+        return info
+    return {"elapsed": None, "env": {}}
+_ui = uvicorn_info()
 print("VS_PROBE " + json.dumps({
+    "uvicorn_elapsed": _ui["elapsed"], "uvicorn_env": _ui["env"],
     "gpu": gpu.strip().splitlines()[0] if rc == 0 and gpu.strip() else None,
     "deps_missing": [m for m in mods if not has(m)],
     "repo": os.path.isdir(REPO + "/.git"), "sha": sha.strip() if rc2 == 0 else None,

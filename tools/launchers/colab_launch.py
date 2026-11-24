@@ -31,7 +31,7 @@ import vs_cf  # noqa: E402
 import vs_preflight as P  # noqa: E402
 import vs_remote  # noqa: E402
 from vs_common import (REPO_URL, read_relay_line, LaunchError, Reporter, Runner, common_args, confirm, fetch_health,  # noqa: E402
-                       can_prompt, load_config, make_reporter, normalize_host, save_url, target_lock, visoswap_home, wait_until)
+                       can_prompt, load_config, make_reporter, normalize_host, save_url, target_lock, visoswap_home, wait_until, write_private)
 
 REMOTE_REPO = "/content/visoswap"
 REMOTE_TOKEN = "/content/cf_token"
@@ -188,7 +188,7 @@ class Colab:
         if r.skipped:
             return ""
         for line in r.out.splitlines()[-25:]:
-            if name != "probe" and line.strip():
+            if name not in ("probe", "logs") and line.strip():
                 self.rep.log(line[:200])
         return r.out
 
@@ -529,6 +529,7 @@ def status(args, cfg, rep, run, co: Colab) -> dict:
     state = "RUNNING" if probe.get("health") else "SESSION_ONLY"
     return {"ok": True, "state": state, "healthy": healthy, "url": url, "session": co.session, "gpu": probe.get("gpu"),
             "sha": probe.get("sha"), "uvicorn": probe.get("uvicorn"), "tunnel": probe.get("tunnel"),
+            "uptime_s": probe.get("uvicorn_elapsed"), "settings": probe.get("uvicorn_env") or {},
             "configured": bool(url),
             "summary": f"session {co.session} ({probe.get('gpu')}): backend {'up' if probe.get('health') else 'down'}, public {'healthy' if healthy else 'not answering'}"}
 
@@ -574,10 +575,55 @@ def logs(args, co: Colab) -> dict:
         raise LaunchError("no Colab session", "launch first")
     co.session = d["session"]
     out = co.remote("logs", vs_remote.LOGS, 120, which=["uvicorn", "tunnel"] if args.logs == "both" else [args.logs], lines=args.lines)
-    for line in out.splitlines():
-        if not line.startswith("VS_"):
+    lines = [l[:500] for l in out.splitlines() if not l.startswith("VS_")]
+    if not getattr(args, "json", False):
+        for line in lines:
             co.rep.log(line[:300])
-    return {"ok": True, "summary": "logs shown above"}
+    return {"ok": True, "lines": lines, "summary": "logs shown above" if not getattr(args, "json", False) else f"{len(lines)} lines"}
+
+
+def quota(args, cfg, rep, run, co: Colab) -> dict:
+    """Read-only: compute-unit balance and burn rate. Without a stored Google login `colab usage` would start its OAuth flow,
+    so (like --check) it is not even run then."""
+    checks = [c for c in P.colab_checks({**cfg, "COLAB_BIN": co.exe}, run) if c.id in ("colab.cli", "colab.login")]
+    login = next((c for c in checks if c.id == "colab.login"), None)
+    if not login or login.state != "ok":
+        why = (login.detail if login else (checks[0].detail if checks else "colab CLI unavailable"))
+        return {"ok": True, "quota": None, "login_required": bool(login and login.state == "invalid"), "summary": "no Colab quota: " + why}
+    r = run.run([co.exe, "usage"], timeout=90)
+    u = P.parse_usage(r.out)
+    if not u:
+        return {"ok": True, "quota": None, "summary": "usage unavailable: " + P.excerpt(r.out, 120)}
+    return {"ok": True, "quota": u, "summary": f"{u['balance']} compute units"}
+
+
+def install_colab_token(raw: str, cfg, rep, run, co: Colab) -> dict:
+    """Backup login: import an authorized-user token file (the format the CLI keeps in its legacy token.json). The CLI reads
+    ~/.config/colab-cli/token.json when the OS keyring is unusable, so this works where no Keychain exists (Docker).
+    Validated by running `colab usage`; removed again if the CLI rejects it. Never echoed."""
+    try:
+        d = json.loads(raw)
+        need = {k: str(d[k]) for k in ("client_id", "client_secret", "refresh_token")}
+    except (ValueError, KeyError, TypeError):
+        raise LaunchError("that is not a Colab token file (needs client_id, client_secret, refresh_token)",
+                          "see the Colab login panel for how to export it on a machine where you are logged in")
+    for v in need.values():
+        rep.redact.add(v)
+    if d.get("type", "authorized_user") != "authorized_user" or any(not v or any(ch.isspace() for ch in v) for v in need.values()):
+        raise LaunchError("that token file is malformed", "export it again")
+    path = Path.home() / ".config" / "colab-cli" / "token.json"
+    if path.exists():
+        raise LaunchError("a legacy token file already exists here; not overwriting it", f"remove {path} first if you want to replace it")
+    if run.dry_run:
+        return {"ok": True, "summary": "dry run: would import the token file"}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_private(path, json.dumps({**need, "type": "authorized_user", **({"scopes": d["scopes"]} if isinstance(d.get("scopes"), list) else {})}))
+    r = run.run([co.exe, "usage"], timeout=90)
+    if P.parse_usage(r.out) is None:
+        with contextlib.suppress(OSError):
+            path.unlink()
+        raise LaunchError("the Colab CLI did not accept that token file; removed it", "export a fresh token file and try again")
+    return {"ok": True, "summary": "Colab login imported and valid"}
 
 
 def build_parser():
@@ -595,6 +641,7 @@ def build_parser():
     k.add_argument("--no-api-key", action="store_true", help="remove the access key from the VM and restart without auth")
     ap.add_argument("--logs", nargs="?", const="both", choices=("uvicorn", "tunnel", "both"), help="show remote logs")
     ap.add_argument("--lines", type=int, default=60)
+    ap.add_argument("--colab-token-stdin", action="store_true", help="read a Colab authorized-user token file from stdin and import it (backup login; works without a keyring)")
     return ap
 
 
@@ -615,6 +662,11 @@ def main(argv=None) -> int:
             res = check(args, cfg, rep, run, co)
         elif args.store_cf_token:
             res = store_cf_token(args, cfg, rep)
+        elif args.quota:
+            res = quota(args, cfg, rep, run, co)
+        elif args.colab_token_stdin:
+            with target_lock("colab", rep):
+                res = install_colab_token(sys.stdin.read(65536), cfg, rep, run, co)
         elif args.cf_api_token_stdin:
             with (contextlib.nullcontext() if args.dry_run else target_lock("colab", rep)):
                 res = cf_api_setup(args, cfg, rep, run)
