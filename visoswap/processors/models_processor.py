@@ -25,6 +25,15 @@ def _patch_cuda_libraries():
     import subprocess
     from pathlib import Path
 
+    # The preload list below is CUDA 12 specific. On a CUDA 13 torch/ORT build
+    # (e.g. current Kaggle image) it would load cu12 cuDNN/cuBLAS next to the
+    # cu13 ones and cuDNN Frontend then rejects every Conv ("OP not supported").
+    try:
+        if int((torch.version.cuda or "0").split(".")[0]) >= 13:
+            return
+    except Exception:
+        pass
+
     def _collect_dirs():
         dirs = []
         try:
