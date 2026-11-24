@@ -1,13 +1,62 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VisoSwap launchers</title><link rel="stylesheet" href="/static/app.css"></head>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>VisoSwap Dashboard</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
+</head>
 <body>
-<header><h1>VisoSwap launchers</h1><button id="lock" class="ghost" title="forget token">Sign out</button></header>
-<section id="login" hidden><p>Access token (printed in the terminal when the UI first started; file <code>~/.visoswap/webui_token</code>)</p>
-<form id="lf"><input id="tok" type="password" autocomplete="off" placeholder="token" required><button>Sign in</button></form><p id="lerr" class="err"></p></section>
+<header class="top">
+  <h1>VisoSwap dashboard</h1>
+  <div class="tools">
+    <span id="bridge" class="chip" hidden></span>
+    <button id="refresh" class="ghost" type="button" aria-label="Refresh everything">Refresh</button>
+    <button id="theme" class="ghost" type="button" aria-label="Switch colour theme">Theme</button>
+    <button id="lock" class="ghost" type="button">Sign out</button>
+  </div>
+</header>
+<p id="banner" class="banner" role="status" aria-live="polite" hidden></p>
+
+<section id="login" hidden aria-labelledby="login-h">
+  <h2 id="login-h">Sign in</h2>
+  <p class="muted">Access token: printed when the dashboard first started, stored in <code>~/.visoswap/webui_token</code>.</p>
+  <form id="lf" class="row"><label class="sr" for="tok">Access token</label>
+    <input id="tok" type="password" autocomplete="off" placeholder="access token" required><button>Sign in</button></form>
+  <p id="lerr" class="err" role="alert"></p>
+</section>
+
 <main id="app" hidden>
-<div id="cards"></div>
-<div id="prompt" class="card" hidden></div>
-<h2>Log <span id="logfor"></span></h2><pre id="log">Nothing running.</pre>
+  <section id="jobbox" class="card" hidden aria-labelledby="job-h">
+    <div class="row between"><h2 id="job-h">Running: <span id="logfor"></span></h2><span id="jobstate" class="chip"></span></div>
+    <div id="prompt" hidden></div>
+    <pre id="log" tabindex="0" aria-label="Live job log"></pre>
+    <div class="row"><button id="cancel" class="ghost" type="button" hidden>Cancel</button></div>
+  </section>
+
+  <section aria-labelledby="b-h"><h2 id="b-h">Backends</h2><div id="cards" class="grid"></div></section>
+
+  <section aria-labelledby="q-h">
+    <div class="row between"><h2 id="q-h">Quotas</h2><button id="qrefresh" class="ghost small" type="button">Refresh quotas</button></div>
+    <div id="quotas" class="grid"></div>
+  </section>
+
+  <section aria-labelledby="l-h"><h2 id="l-h">Logins</h2><div id="logins" class="grid"></div></section>
+
+  <section aria-labelledby="lg-h">
+    <h2 id="lg-h">Logs</h2>
+    <div class="card">
+      <div class="row">
+        <label class="sr" for="lgsrc">Log</label>
+        <select id="lgsrc"></select>
+        <label class="sr" for="lgn">Lines</label>
+        <select id="lgn"><option>100</option><option selected>200</option><option>500</option><option>1000</option></select>
+        <button id="lgload" type="button">Load</button>
+        <button id="lgcopy" class="ghost" type="button">Copy</button>
+      </div>
+      <p id="lgmeta" class="muted"></p>
+      <pre id="lgview" tabindex="0" aria-label="Log tail">Pick a log and press Load.</pre>
+    </div>
+  </section>
 </main>
-<script src="/static/app.js"></script></body></html>
+</body></html>
