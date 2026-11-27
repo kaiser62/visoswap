@@ -33,6 +33,29 @@ class EngineFrameGenerator(FrameGenerator):
         inst._project = dict(project)
         return inst
 
+    def _resolve_project_settings(self) -> dict[str, Any]:
+        """The project tier from the Phase 3 store, or ``{}`` without a project.
+
+        Shared by ``_get_engine`` and ``validate`` so both read the same rows
+        through the same calls. Opened and closed per call: these run once when
+        an engine is built, and once per validation, so a pooled connection
+        would buy nothing and outlive the call.
+        """
+        if not (self._project and self._project.get("id")):
+            return {}
+        import sqlite3
+
+        from visoswap.settings import db as settings_db
+        from visoswap.settings import store
+
+        connection = sqlite3.connect(get_settings().db_path)
+        connection.row_factory = sqlite3.Row
+        try:
+            settings_db.apply_settings_schema(connection)
+            return store.resolve_parameters(connection, self._project["id"])
+        finally:
+            connection.close()
+
     def _get_engine(self):
         if self._engine is None:
             import sqlite3
@@ -53,13 +76,9 @@ class EngineFrameGenerator(FrameGenerator):
             try:
                 settings_db.apply_settings_schema(connection)
                 global_settings = store.resolve_control(connection)
-                project_settings = {}
-                if self._project and self._project.get("id"):
-                    project_settings = store.resolve_parameters(
-                        connection, self._project["id"]
-                    )
             finally:
                 connection.close()
+            project_settings = self._resolve_project_settings()
             self._engine = Engine(
                 device="cuda",
                 global_settings=global_settings,
@@ -77,6 +96,18 @@ class EngineFrameGenerator(FrameGenerator):
         face = self._project.get("source_face_path") if self._project else None
         if face and not Path(face).is_file():
             raise ValueError(f"source face not found: {face}")
+
+        project_settings = self._resolve_project_settings()
+        if project_settings:
+            from visoswap.models.restorer_files import missing_restorer_files
+
+            missing = missing_restorer_files(project_settings)
+            if missing:
+                raise ValueError(
+                    "face restorer is enabled but its model files are missing: "
+                    + ", ".join(missing)
+                    + " (either install them, or turn the restorer off)"
+                )
 
     async def bind(self, project: dict[str, Any]) -> None:
         if bool(self._media) and self._project and self._project.get("id") == project.get("id"):

@@ -6,6 +6,8 @@
 
 from typing import TYPE_CHECKING
 
+import logging
+
 import torch
 import numpy as np
 from torchvision.transforms import v2
@@ -14,9 +16,23 @@ from skimage import transform as trans
 if TYPE_CHECKING:
     from visoswap.processors.models_processor import ModelsProcessor
 
+
+log = logging.getLogger(__name__)
+
+
 class FaceRestorers:
     def __init__(self, models_processor: 'ModelsProcessor'):
         self.models_processor = models_processor
+        # Reasons already logged, so a per-frame skip is reported once per engine
+        # instead of once per frame.
+        self._warned: set[str] = set()
+
+    def _warn_once(self, reason: str, message: str) -> None:
+        """Log ``message`` the first time ``reason`` occurs on this engine."""
+        if reason in self._warned:
+            return
+        self._warned.add(reason)
+        log.warning(message)
 
     def apply_facerestorer(self, swapped_face_upscaled, restorer_det_type, restorer_type, restorer_blend, fidelity_weight, detect_score):
         temp = swapped_face_upscaled
@@ -36,17 +52,31 @@ class FaceRestorers:
                 try:
                     dst, _, _ = self.models_processor.run_detect_landmark(swapped_face_upscaled, bbox=np.array([0, 0, 512, 512]), det_kpss=[], detect_mode='5', score=detect_score/100.0, from_points=False)
                 except Exception as e: # pylint: disable=broad-except
-                    print(f"exception: {e}")
+                    self._warn_once(
+                        "restorer-reference-landmark",
+                        f"face restorer skipped for this face: could not detect its "
+                        f"reference landmarks ({e}); the face is returned un-restored",
+                    )
                     return swapped_face_upscaled
 
             # Return non-enhanced face if keypoints are empty
             if not isinstance(dst, np.ndarray) or len(dst)==0:
+                self._warn_once(
+                    "restorer-no-keypoints",
+                    "face restorer skipped for this face: no reference keypoints were "
+                    "found; the face is returned un-restored",
+                )
                 return swapped_face_upscaled
             
             tform = trans.SimilarityTransform()
             try:
                 tform.estimate(dst, self.models_processor.FFHQ_kps)
-            except:
+            except: # pylint: disable=bare-except
+                self._warn_once(
+                    "restorer-align-failed",
+                    "face restorer skipped for this face: could not fit the restorer "
+                    "alignment transform; the face is returned un-restored",
+                )
                 return swapped_face_upscaled
             # Transform, scale, and normalize
             temp = v2.functional.affine(swapped_face_upscaled, tform.rotation*57.2958, (tform.translation[0], tform.translation[1]) , tform.scale, 0, center = (0,0) )
