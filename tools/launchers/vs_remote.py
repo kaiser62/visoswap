@@ -116,6 +116,9 @@ running = pgrep(JOB)
 if not running:
     open(JOB, "w").write(code)
     env = dict(os.environ, MODELS_DIR=MODELS, MODELS_SUBSET=CFG["subset"], PYTHONPATH=REPO)
+    _extra = str(CFG.get("extra_models") or "").strip()
+    if _extra and _extra.lower() != "none":
+        env["VISOSWAP_EXTRA_MODELS"] = _extra
     subprocess.Popen([sys.executable, "-u", JOB], cwd=REPO, env=env, stdout=open(LOG, "w"), stderr=subprocess.STDOUT, start_new_session=True)
     print("models job started")
 t0 = time.time()
@@ -135,7 +138,7 @@ if not shutil.which("cloudflared"):
     sh("curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared", timeout=300)
 # --- settings: explicit override > running process env > state file from the last launch > defaults.
 # Read BEFORE anything is killed. Only whitelisted, non-secret keys are ever read or printed.
-KEYS = ["GENERATION_CONCURRENCY", "VISOSWAP_PROFILE", "VISOSWAP_PROCESS_WORKERS", "MODELS_SUBSET", "MODELS_VERIFY_MODE"]
+KEYS = ["GENERATION_CONCURRENCY", "VISOSWAP_PROFILE", "VISOSWAP_PROCESS_WORKERS", "MODELS_SUBSET", "MODELS_VERIFY_MODE", "VISOSWAP_EXTRA_MODELS"]
 STATE = "/content/visoswap_launch.json"
 prev, src = {}, "defaults"
 for pid in pgrep("uvicorn backend.main"):
@@ -232,6 +235,15 @@ def merge_settings(prev, src, CFG):
         settings["VISOSWAP_PROFILE"] = "1" if CFG["profile"] else "0"
     settings.setdefault("MODELS_SUBSET", CFG["subset"])
     settings.setdefault("MODELS_VERIFY_MODE", "fast")
+    # None = keep what the VM already runs with. "none" (or empty) clears it, and
+    # a cleared value is popped rather than stored so the saved state cannot
+    # resurrect it. The literal word "none" must never reach the VM as a model.
+    _extra = CFG.get("extra_models")
+    if _extra is not None:
+        if str(_extra).strip().lower() in ("", "none"):
+            settings.pop("VISOSWAP_EXTRA_MODELS", None)
+        else:
+            settings["VISOSWAP_EXTRA_MODELS"] = str(_extra).strip()
     if src == "defaults":    # nothing known about an earlier run: profiling off, and no worker env at all (the backend picks its own policy)
         settings.setdefault("VISOSWAP_PROFILE", "0")
     return settings

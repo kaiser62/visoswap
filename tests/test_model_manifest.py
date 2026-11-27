@@ -166,3 +166,66 @@ def test_no_literal_model_count_in_manifest_module():
         if isinstance(n, ast.Constant) and n.value in (56, 6, 62, 12)
     ]
     assert not bad, "manifest.py hardcodes a model count: {!r}".format(bad)
+
+
+# --- VISOSWAP_EXTRA_MODELS -------------------------------------------------
+# One env var extends the default subset, instead of a new MODELS_SUBSET value:
+# bootstrap treats every subset except "default" as "all".
+
+
+@pytest.fixture
+def no_extra(monkeypatch):
+    monkeypatch.delenv(manifest.EXTRA_MODELS_ENV, raising=False)
+
+
+def test_extra_names_unset_is_empty(no_extra):
+    assert manifest.extra_model_names() == []
+
+
+def test_extra_names_strip_and_deduplicate(monkeypatch):
+    monkeypatch.setenv(manifest.EXTRA_MODELS_ENV, " GFPGANv1.4 , GFPGANv1.4 ,,FaceLandmark5 ")
+    assert manifest.extra_model_names() == ["GFPGANv1.4", "FaceLandmark5"]
+
+
+def test_extra_names_blank_is_empty(monkeypatch):
+    monkeypatch.setenv(manifest.EXTRA_MODELS_ENV, "  ,  ,")
+    assert manifest.extra_model_names() == []
+
+
+def test_default_entries_without_extra_is_unchanged(no_extra):
+    assert {e.name for e in manifest.default_entries()} == set(manifest.DEFAULT_SWAP_MODELS)
+
+
+def test_default_entries_adds_an_extra(monkeypatch):
+    monkeypatch.setenv(manifest.EXTRA_MODELS_ENV, "GFPGANv1.4")
+    names = {e.name for e in manifest.default_entries()}
+    assert names == set(manifest.DEFAULT_SWAP_MODELS) | {"GFPGANv1.4"}
+
+
+def test_default_entries_rejects_an_unknown_name(monkeypatch):
+    monkeypatch.setenv(manifest.EXTRA_MODELS_ENV, "NotAModel")
+    with pytest.raises(ValueError) as caught:
+        manifest.default_entries()
+    assert "NotAModel" in str(caught.value)
+
+
+def test_default_entries_rejects_an_optional_entry(monkeypatch):
+    optional = [e for e in manifest.tracked() if not e.required]
+    if not optional:
+        pytest.skip("no optional entries in this manifest")
+    monkeypatch.setenv(manifest.EXTRA_MODELS_ENV, optional[0].name)
+    with pytest.raises(ValueError) as caught:
+        manifest.default_entries()
+    assert optional[0].name in str(caught.value)
+
+
+def test_validate_extra_names_accepts_and_rejects(no_extra):
+    assert manifest.validate_extra_names(["GFPGANv1.4", "FaceLandmark5"]) == ["GFPGANv1.4", "FaceLandmark5"]
+    with pytest.raises(ValueError):
+        manifest.validate_extra_names(["Nope"])
+
+
+def test_tracked_set_does_not_move_with_the_variable(monkeypatch):
+    before = len(manifest.tracked())
+    monkeypatch.setenv(manifest.EXTRA_MODELS_ENV, "GFPGANv1.4")
+    assert len(manifest.tracked()) == before

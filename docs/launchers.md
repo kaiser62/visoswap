@@ -80,6 +80,19 @@ keys, and only they are printed) > `/content/visoswap_launch.json` from the last
 no worker env var at all so the backend's own auto policy applies, concurrency auto). A restart never adds `VISOSWAP_PROCESS_WORKERS` if the old process
 had none. The same logic runs when a launch restarts because the code changed.
 
+**Extra model files.** `--extra-models NAMES` (or `VISOSWAP_EXTRA_MODELS` in `colab.env` / `kaggle.env`, so
+dashboard and phone launches get it without UI work) adds model files to the `default` subset without changing it:
+`--extra-models GFPGANv1.4,FaceLandmark5` is the 256-plus-restorer setup. Precedence is the same as the knobs
+above; `--extra-models none` clears a configured value and removes it from the saved state. The flag counts as a
+knob, so it alone makes a healthy backend restart, and a restart that carries a value runs the model download
+step first — a restart on its own downloads nothing, and the startup check would otherwise refuse the files it
+has just been told to require. Without the variable, behaviour is unchanged (`DEFAULT_SWAP_MODELS` is untouched;
+a new `MODELS_SUBSET` value would have been wrong, because anything except `default` means *all* models).
+Extra download per fresh host: `GFPGANv1.4` 340,256,690 bytes (~340 MB); `FaceLandmark5` (`res50.onnx`, needed
+only by the restorer alignment `Reference`) 109,887,314 bytes (~110 MB). Colab and Kaggle set
+`MODELS_VERIFY_MODE=fast`, so the startup check is presence and non-zero size, not a hash; the downloader hashes
+what it fetches, and files already present are not hashed again.
+
 ## First-time setup
 
 1. Cloudflare (once, per target). Pick one:

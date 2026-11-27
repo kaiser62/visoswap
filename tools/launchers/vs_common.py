@@ -270,7 +270,8 @@ def merge_env_file(path: Path, updates: Dict[str, str], overwrite: bool = False)
 
 ENV_KEYS = ("CF_TUNNEL_TOKEN", "VISOSWAP_HOSTNAME", "CF_TUNNEL_NAME", "CF_ZONE", "CF_API_TOKEN", "CF_ACCOUNT_ID",
             "KAGGLE_KERNEL", "KAGGLE_BIN", "KAGGLE_DATASET", "COLAB_BIN", "COLAB_SESSION", "COLAB_GPU",
-            "VISOSWAP_REF", "CLOUDFLARED_BIN", "GENERATION_CONCURRENCY", "VISOSWAP_PROFILE")
+            "VISOSWAP_REF", "CLOUDFLARED_BIN", "GENERATION_CONCURRENCY", "VISOSWAP_PROFILE",
+            "VISOSWAP_EXTRA_MODELS")
 
 
 def load_config(target: str, environ: Optional[dict] = None, home: Optional[Path] = None) -> Dict[str, str]:
@@ -391,6 +392,25 @@ def concurrency_arg(v: str):
     return n
 
 
+def extra_models_arg(v: str) -> str:
+    """Comma-separated model names, or 'none' to clear an inherited value.
+
+    Validated here with the manifest itself (no torch, no cv2), so a typo fails on
+    this machine instead of after a VM has booted. '' and 'none' are both accepted
+    as "clear"; the word 'none' is never forwarded as a model name.
+    """
+    text = (v or "").strip()
+    if text.lower() == "none":
+        return "none"
+    names = [item.strip() for item in text.split(",") if item.strip()]
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from visoswap.models.manifest import validate_extra_names
+    finally:
+        sys.path.pop(0)
+    return ",".join(validate_extra_names(names))
+
+
 def can_prompt(args) -> bool:
     """The one interactivity gate: a real terminal, and not a machine/read-only/dry run."""
     return bool(sys.stdin.isatty() and sys.stdout.isatty()
@@ -415,6 +435,8 @@ def common_args(ap, target: str) -> None:
     o.add_argument("--yes", "-y", action="store_true", help="assume yes to confirmations")
     o.add_argument("--no-clipboard", action="store_true")
     o.add_argument("--concurrency", type=concurrency_arg, help="generation workers: N, or 'auto' (default: keep what is configured/running, else auto)")
+    o.add_argument("--extra-models", type=extra_models_arg, default=None, metavar="NAMES",
+                   help="also download these models, comma separated (e.g. GFPGANv1.4,FaceLandmark5); 'none' clears (default: keep what is configured/running)")
     o.add_argument("--profile", action=argparse.BooleanOptionalAction, default=None,
                    help="per-stage timing logs on/off (--no-profile); default: keep what is configured/running, else off")
     o.add_argument("--tunnel", choices=("auto", "named", "quick"), default="auto",

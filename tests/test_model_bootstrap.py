@@ -420,3 +420,50 @@ def test_verify_at_startup_records_marker_after_full(monkeypatch, tmp_path):
     marker.unlink()
     bootstrap.verify_at_startup(scratch, data_dir, "fast")
     assert not marker.exists()
+
+
+# --- VISOSWAP_EXTRA_MODELS: the extras must actually be fetched -------------
+
+
+def test_repair_fetches_an_extra_model(monkeypatch, tmp_path):
+    """With the variable set, repair is asked for the extra file it would otherwise ignore."""
+    scratch = tmp_path / "models"
+    scratch.mkdir()
+    _install_manifest(monkeypatch, scratch, [("a", b"aaa", True), ("GFPGANv1.4", b"gf", False)])
+    monkeypatch.setenv(manifest.EXTRA_MODELS_ENV, "GFPGANv1.4")
+    fetched = []
+
+    def recording(name, path, digest, url):
+        fetched.append(name)
+        (scratch / f"{name}.onnx").write_bytes(b"gf")
+
+    result = bootstrap.repair(models_dir=scratch, mode=bootstrap.FULL, subset="default", fetcher=recording)
+    assert fetched == ["GFPGANv1.4"]
+    assert result.ok
+
+
+def test_repair_without_the_variable_does_not_fetch_it(monkeypatch, tmp_path):
+    """The same manifest and the same absence, no variable: the file is not required."""
+    scratch = tmp_path / "models"
+    scratch.mkdir()
+    _install_manifest(monkeypatch, scratch, [("a", b"aaa", True), ("GFPGANv1.4", b"gf", False)])
+    monkeypatch.delenv(manifest.EXTRA_MODELS_ENV, raising=False)
+    fetched = []
+
+    def recording(name, path, digest, url):
+        fetched.append(name)
+
+    bootstrap.repair(models_dir=scratch, mode=bootstrap.FULL, subset="default", fetcher=recording)
+    assert "GFPGANv1.4" not in fetched
+
+
+def test_startup_check_refuses_when_an_extra_is_missing(monkeypatch, tmp_path):
+    """The startup check uses the same set, so a missing extra fails it, not just repair."""
+    scratch = tmp_path / "models"
+    scratch.mkdir()
+    _install_manifest(monkeypatch, scratch, [("a", b"aaa", True), ("GFPGANv1.4", b"gf", False)])
+    monkeypatch.setenv(manifest.EXTRA_MODELS_ENV, "GFPGANv1.4")
+
+    result = bootstrap._verify_core(scratch, bootstrap.FAST, subset="default")
+    assert not result.ok
+    assert "GFPGANv1.4" in {entry.name for entry in result.absent}

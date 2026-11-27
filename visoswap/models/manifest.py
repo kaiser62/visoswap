@@ -175,7 +175,78 @@ def optional_entries(models_dir: Optional[os.PathLike] = None) -> list[ManifestE
     return [entry for entry in tracked(models_dir) if not entry.required]
 
 
+#: Opt-in extra model files, comma separated, e.g. ``GFPGANv1.4,FaceLandmark5``.
+#:
+#: An environment variable rather than a new ``MODELS_SUBSET`` value on purpose:
+#: ``bootstrap.py`` treats every subset except ``default`` as "all", so a new
+#: subset name would silently pull every model on a fresh host. This extends
+#: ``default`` instead, and an unset value leaves the set exactly as it was.
+EXTRA_MODELS_ENV = "VISOSWAP_EXTRA_MODELS"
+
+
+def extra_model_names() -> list[str]:
+    """Names requested through ``VISOSWAP_EXTRA_MODELS``, in order, no duplicates.
+
+    Read at call time, like the tracked set itself, so a launcher that exports the
+    variable before ``repair`` affects the same process that verifies.
+    """
+    names: list[str] = []
+    for item in os.environ.get(EXTRA_MODELS_ENV, "").split(","):
+        name = item.strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
 def default_entries(models_dir: Optional[os.PathLike] = None) -> list[ManifestEntry]:
-    """The minimal subset of models needed for default face swapping."""
-    return [entry for entry in tracked(models_dir) if entry.name in DEFAULT_SWAP_MODELS]
+    """The minimal subset of models needed for default face swapping.
+
+    Extended by ``VISOSWAP_EXTRA_MODELS``. An unset or empty value returns exactly
+    the previous set, so behaviour without the variable does not change. A name
+    that is not tracked, or that is tracked but *optional* (no download URL, or
+    consumed only by a provider the engine refuses), raises ``ValueError``: adding
+    it could neither be fetched nor used, so claiming it would be worse than
+    saying so.
+    """
+    entries = tracked(models_dir)
+    extra = extra_model_names()
+    if not extra:
+        return [entry for entry in entries if entry.name in DEFAULT_SWAP_MODELS]
+
+    _check_extra_names(entries, extra)
+    wanted = set(DEFAULT_SWAP_MODELS) | set(extra)
+    return [entry for entry in entries if entry.name in wanted]
+
+
+def _check_extra_names(entries, names) -> None:
+    """Raise ``ValueError`` naming the first extra name that could not be used."""
+    by_name = {entry.name: entry for entry in entries}
+    for name in names:
+        entry = by_name.get(name)
+        if entry is None:
+            raise ValueError(
+                "{} names {!r}, which is not a tracked model. Known names include: {}".format(
+                    EXTRA_MODELS_ENV,
+                    name,
+                    ", ".join(sorted(DEFAULT_SWAP_MODELS)),
+                )
+            )
+        if not entry.required:
+            raise ValueError(
+                "{} names {!r}, which is tracked but optional: it has no download "
+                "URL, or only a provider the engine refuses consumes it, so it "
+                "cannot be fetched or loaded".format(EXTRA_MODELS_ENV, name)
+            )
+
+
+def validate_extra_names(names=None) -> list[str]:
+    """Check names for ``VISOSWAP_EXTRA_MODELS`` without touching a model file.
+
+    The launchers call this before any remote action, so a typo fails on the
+    user's Mac instead of after a VM has booted. It reads the manifest, which
+    needs neither torch nor cv2. ``None`` checks the environment's own value.
+    """
+    names = extra_model_names() if names is None else names
+    _check_extra_names(tracked(), names)
+    return names
 

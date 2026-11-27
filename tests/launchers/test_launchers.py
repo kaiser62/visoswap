@@ -554,9 +554,9 @@ def test_merge_settings_precedence():
 def test_settings_overrides_flags_beat_env_file():
     ov = CL.settings_overrides
     p = CL.build_parser().parse_args
-    assert ov(p([]), {}) == {"concurrency": None, "profile": None}
-    assert ov(p([]), {"GENERATION_CONCURRENCY": "3", "VISOSWAP_PROFILE": "1"}) == {"concurrency": "3" and 3, "profile": True}
-    assert ov(p(["--concurrency", "auto", "--no-profile"]), {"GENERATION_CONCURRENCY": "3", "VISOSWAP_PROFILE": "1"}) == {"concurrency": "auto", "profile": False}
+    assert ov(p([]), {}) == {"concurrency": None, "profile": None, "extra_models": None}
+    assert ov(p([]), {"GENERATION_CONCURRENCY": "3", "VISOSWAP_PROFILE": "1"}) == {"concurrency": "3" and 3, "profile": True, "extra_models": None}
+    assert ov(p(["--concurrency", "auto", "--no-profile"]), {"GENERATION_CONCURRENCY": "3", "VISOSWAP_PROFILE": "1"}) == {"concurrency": "auto", "profile": False, "extra_models": None}
     assert ov(p(["--concurrency", "2", "--profile"]), {})["concurrency"] == 2
 
 

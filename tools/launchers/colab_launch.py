@@ -175,7 +175,7 @@ class Colab:
 
     def remote(self, name: str, script: str, timeout: int, **cfg) -> str:
         base = dict(repo_dir=REMOTE_REPO, token_file=REMOTE_TOKEN, api_key_file=REMOTE_API_KEY, ref=self.ref, repo_url=REPO_URL, subset="default",
-                    restart=False, profile=None, concurrency=None, wait=240, which=["uvicorn", "tunnel"], lines=60)
+                    restart=False, profile=None, concurrency=None, extra_models=None, wait=240, which=["uvicorn", "tunnel"], lines=60)
         base.update(cfg)
         d = Path(tempfile.mkdtemp(prefix="visoswap-colab-"))
         f = d / f"{name}.py"
@@ -215,11 +215,11 @@ class Colab:
             raise LaunchError(f"remote step '{name}' failed: {why}", f"see `colab_launch.py --logs`, then re-run (every step is idempotent)")
         return out
 
-    def models(self, limit: int = 3300):
+    def models(self, limit: int = 3300, extra_models=None):
         """Model download runs as a detached remote job; poll it with short execs until it reports OK/FAIL."""
         t0 = self.clock()
         while True:
-            out = self.remote("models", vs_remote.MODELS, 400, poll=200)
+            out = self.remote("models", vs_remote.MODELS, 400, poll=200, extra_models=extra_models)
             if self.run.dry_run or "VS_OK models" in out:
                 return
             if "VS_PENDING models" not in out:
@@ -333,7 +333,8 @@ def settings_overrides(args, cfg) -> dict:
     if isinstance(conc, str) and conc.lower() != "auto":
         conc = int(conc) if conc.isdigit() else None
     prof = args.profile if args.profile is not None else {"1": True, "0": False}.get(cfg.get("VISOSWAP_PROFILE", ""))
-    return {"concurrency": conc, "profile": prof}
+    extra = args.extra_models if args.extra_models is not None else (cfg.get("VISOSWAP_EXTRA_MODELS") or None)
+    return {"concurrency": conc, "profile": prof, "extra_models": extra}
 
 
 def preflight(args, cfg, rep, run, co: Colab):
@@ -473,7 +474,7 @@ def launch(args, cfg, rep, run, co: Colab, fetch=vs_cf.default_fetch, home=None)
     quick = cfg.get("TUNNEL_MODE") == "quick"
     url = None if quick else resolve_url(cfg, probe)
     healthy = bool(url and co.health(url))
-    knobs = args.concurrency is not None or args.profile is not None
+    knobs = args.concurrency is not None or args.profile is not None or args.extra_models is not None
     # an explicit key change, or a configured key the running backend does not enforce, needs a uvicorn restart
     key_change = bool(getattr(args, "api_key_file", None) or getattr(args, "no_api_key", False)
                       or (cfg.get("VISOSWAP_API_KEY_FILE") and healthy and auth_state(url) != "required"))
@@ -489,14 +490,15 @@ def launch(args, cfg, rep, run, co: Colab, fetch=vs_cf.default_fetch, home=None)
     if "deps" in steps:
         co.step("deps", vs_remote.DEPS, 1800)
     repo_out = co.step("repo", vs_remote.REPO_STEP, 900)
-    co.models()
+    overrides = settings_overrides(args, cfg)
+    co.models(extra_models=overrides["extra_models"])
     if args.setup:
         return {"ok": True, "state": "provisioned", "summary": "Colab provisioning complete (session, deps, repo, models).", "tunnel": cfg.get("TUNNEL_MODE")}
     if not quick and cfg.get("CF_TUNNEL_TOKEN") and (not probe.get("token_file") or args.refresh_token):
         co.upload_token(cfg["CF_TUNNEL_TOKEN"])
     code_changed = "VS_CHANGED 1" in (repo_out or "")
     extra = apply_api_key(args, cfg, rep, co)
-    out = co.step("start", vs_remote.START, 600, restart=bool(args.restart or code_changed or knobs), **settings_overrides(args, cfg), **extra)
+    out = co.step("start", vs_remote.START, 600, restart=bool(args.restart or code_changed or knobs), **overrides, **extra)
     if run.dry_run:
         return {"ok": True, "state": "dry-run", "summary": "dry run complete", "url": url}
     if quick:
@@ -553,7 +555,12 @@ def restart(args, cfg, rep, run, co: Colab) -> dict:
     probe = co.probe()
     url = None if cfg.get("TUNNEL_MODE") == "quick" or args.tunnel == "quick" else resolve_url(cfg, probe)
     extra = apply_api_key(args, cfg, rep, co)
-    out = co.step("start", vs_remote.START, 600, restart=True, **settings_overrides(args, cfg), **extra)
+    overrides = settings_overrides(args, cfg)
+    # A restart alone does not download models, so an extra value would make the
+    # startup check refuse the files it is now told to require. Download first.
+    if overrides["extra_models"] and overrides["extra_models"] != "none":
+        co.models(extra_models=overrides["extra_models"])
+    out = co.step("start", vs_remote.START, 600, restart=True, **overrides, **extra)
     if run.dry_run:
         return {"ok": True, "state": "dry-run", "summary": "dry run: would restart uvicorn and the tunnel inside the same session", "url": url}
     m = re.search(r"VS_QUICK_URL (\S+)", out)

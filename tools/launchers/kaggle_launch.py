@@ -119,11 +119,14 @@ def decide(state: str, healthy: bool, restart: bool, knobs: bool) -> str:
 
 
 def inject_notebook(nb: dict, token: str, host: str, concurrency: Optional[int] = None, profile: bool = False,
-                    max_minutes: Optional[int] = None, api_key: Optional[str] = None) -> dict:
+                    max_minutes: Optional[int] = None, api_key: Optional[str] = None,
+                    extra_models: Optional[str] = None) -> dict:
     """Fill the notebook knobs in a copy (never in the repo file)."""
     if token and not host:
         raise LaunchError("CF_TUNNEL_TOKEN is set but VISOSWAP_HOSTNAME is not", "set VISOSWAP_HOSTNAME in kaggle.env")
     nb = json.loads(json.dumps(nb))
+    extra_line = "EXTRA_MODELS = ''"
+    extra_applied = False
     for cell in nb["cells"]:
         src = "".join(cell["source"])
         new = src
@@ -136,6 +139,9 @@ def inject_notebook(nb: dict, token: str, host: str, concurrency: Optional[int] 
                               f"_api_key = _api_key or {api_key!r}")
         if max_minutes is not None:
             new = new.replace("MAX_RUNTIME_MIN = 90", f"MAX_RUNTIME_MIN = {int(max_minutes)}")
+        if extra_models and extra_line in new:
+            new = new.replace(extra_line, "EXTRA_MODELS = " + repr(extra_models), 1)
+            extra_applied = True
         if "GENERATION_CONCURRENCY = 'auto'" in new:
             if concurrency:
                 new = new.replace("GENERATION_CONCURRENCY = 'auto'", f"GENERATION_CONCURRENCY = '{int(concurrency)}'")
@@ -144,6 +150,13 @@ def inject_notebook(nb: dict, token: str, host: str, concurrency: Optional[int] 
         if new != src:
             lines = new.split("\n")
             cell["source"] = [l + "\n" for l in lines[:-1]] + [lines[-1]]
+    if extra_models and not extra_applied:
+        # A value that cannot be placed must not be silently dropped: the kernel
+        # would run without the models the user asked for.
+        raise LaunchError(
+            "the notebook has no EXTRA_MODELS line, so --extra-models cannot be applied",
+            "restore EXTRA_MODELS = '' in the model cell of %s" % NOTEBOOK.name,
+        )
     return nb
 
 
@@ -428,11 +441,19 @@ def launch(args, cfg, rep, run, kg: Kaggle, fetch=vs_cf.default_fetch, home=None
     return finish(args, cfg, url, kg, rep)
 
 
+def extra_models_choice(args, cfg) -> Optional[str]:
+    """--extra-models, else VISOSWAP_EXTRA_MODELS from kaggle.env, else None (keep)."""
+    value = args.extra_models if args.extra_models is not None else (cfg.get("VISOSWAP_EXTRA_MODELS") or None)
+    if value is None or not str(value).strip() or str(value).strip().lower() == "none":
+        return None
+    return str(value).strip()
+
+
 def build_bundle(cfg, slug, dataset, args, api_key: Optional[str] = None) -> Path:
     nb = inject_notebook(json.loads(NOTEBOOK.read_text()), cfg.get("CF_TUNNEL_TOKEN", "") if cfg.get("TUNNEL_MODE") != "quick" else "",
                          normalize_host(cfg.get("VISOSWAP_HOSTNAME", "")) if cfg.get("TUNNEL_MODE") != "quick" else "",
                          args.concurrency if isinstance(args.concurrency, int) else None, bool(args.profile), args.max_minutes,
-                         api_key)
+                         api_key, extra_models_choice(args, cfg))
     d = Path(tempfile.mkdtemp(prefix="visoswap-kaggle-"))
     os.chmod(d, 0o700)
     (d / NOTEBOOK.name).write_text(json.dumps(nb, indent=1, ensure_ascii=False))
