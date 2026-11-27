@@ -77,6 +77,8 @@ ATTRIBUTION_HEADER = (
 #: the price this gate exists to charge.
 PROJECT_AUTHORED = frozenset(
     {
+        # Written for VisoSwap: restorer file presence check, nothing copied from upstream.
+        "models/restorer_files.py",
         "processors/context.py",
         "engine.py",
         "schema/__init__.py",

@@ -46,7 +46,7 @@ _SLOTS = (
 
 
 def required_restorer_models(settings: dict) -> list[str]:
-    """Model names the enabled restorer slots need, in slot order, deduplicated."""
+    """Model names the enabled restorer slots need, in settings order, deduplicated."""
     required: list[str] = []
 
     def _add(name: str) -> None:
