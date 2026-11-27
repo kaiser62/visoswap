@@ -408,7 +408,24 @@ def extra_models_arg(v: str) -> str:
         from visoswap.models.manifest import validate_extra_names
     finally:
         sys.path.pop(0)
-    return ",".join(validate_extra_names(names))
+    try:
+        return ",".join(validate_extra_names(names))
+    except ValueError as e:  # argparse hides a ValueError's text; this one is shown
+        raise argparse.ArgumentTypeError(str(e))
+
+
+def check_config_extra_models(args, cfg: Dict[str, str]) -> None:
+    """Validate VISOSWAP_EXTRA_MODELS from the env file before any remote action.
+
+    argparse only checks the flag. A flag beats the config value, so then there is nothing to check.
+    """
+    value = cfg.get("VISOSWAP_EXTRA_MODELS")
+    if args.extra_models is not None or not value:
+        return
+    try:
+        cfg["VISOSWAP_EXTRA_MODELS"] = extra_models_arg(value)
+    except argparse.ArgumentTypeError as e:
+        raise LaunchError(str(e), "fix VISOSWAP_EXTRA_MODELS in the target's env file or environment")
 
 
 def can_prompt(args) -> bool:

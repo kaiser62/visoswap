@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import vs_cf  # noqa: E402
 import vs_preflight as P  # noqa: E402
 from vs_common import (REPO_ROOT, LaunchError, Reporter, Runner, common_args, confirm, fetch_health,  # noqa: E402
-                       can_prompt, http_get, load_config, make_reporter, normalize_host, read_relay_line, save_url,
+                       can_prompt, check_config_extra_models, http_get, load_config, make_reporter, normalize_host, read_relay_line, save_url,
                        target_lock, visoswap_home, wait_until, write_private)
 
 NOTEBOOK = REPO_ROOT / "visoswap_kaggle.ipynb"
@@ -387,6 +387,7 @@ def provision(args, cfg, rep, run, kg: Kaggle, fetch=vs_cf.default_fetch, home=N
 
 
 def launch(args, cfg, rep, run, kg: Kaggle, fetch=vs_cf.default_fetch, home=None) -> dict:
+    check_config_extra_models(args, cfg)
     cfg, ds = provision(args, cfg, rep, run, kg, fetch, home)
     if args.setup:
         return {"ok": True, "summary": "Kaggle provisioning complete.", "state": "provisioned", "tunnel": cfg.get("TUNNEL_MODE")}
@@ -395,6 +396,7 @@ def launch(args, cfg, rep, run, kg: Kaggle, fetch=vs_cf.default_fetch, home=None
     if getattr(args, "no_api_key", False):
         api_key = None
     knobs = bool(args.concurrency or args.profile is not None or args.max_minutes is not None or api_key
+                 or args.extra_models is not None
                  or getattr(args, "no_api_key", False))
     url = url_for(cfg) if cfg.get("TUNNEL_MODE") != "quick" else None
     log_url = f"https://www.kaggle.com/code/{kg.slug}/log"
@@ -407,7 +409,7 @@ def launch(args, cfg, rep, run, kg: Kaggle, fetch=vs_cf.default_fetch, home=None
     if action == "abort_unknown":
         raise LaunchError("could not read the kernel status; not touching the kernel", "check `kaggle kernels status %s` by hand, then retry" % kg.slug)
     if action == "knobs_need_restart":
-        raise LaunchError("the kernel is already running; --concurrency/--profile/--max-minutes only apply to a new kernel",
+        raise LaunchError("the kernel is already running; --concurrency/--profile/--max-minutes/--extra-models only apply to a new kernel",
                           "add --restart to relaunch with those settings")
     if action == "reuse":
         return finish(args, cfg, url, kg, rep)

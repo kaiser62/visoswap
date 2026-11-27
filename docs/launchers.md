@@ -84,7 +84,8 @@ had none. The same logic runs when a launch restarts because the code changed.
 dashboard and phone launches get it without UI work) adds model files to the `default` subset without changing it:
 `--extra-models GFPGANv1.4,FaceLandmark5` is the 256-plus-restorer setup. Precedence is the same as the knobs
 above; `--extra-models none` clears a configured value and removes it from the saved state. The flag counts as a
-knob, so it alone makes a healthy backend restart, and a restart that carries a value runs the model download
+knob: on Colab it alone makes a healthy backend restart, and on a running Kaggle kernel you must add `--restart`.
+A value in the env file alone forces neither. On Colab, and a restart that carries a value runs the model download
 step first — a restart on its own downloads nothing, and the startup check would otherwise refuse the files it
 has just been told to require. Without the variable, behaviour is unchanged (`DEFAULT_SWAP_MODELS` is untouched;
 a new `MODELS_SUBSET` value would have been wrong, because anything except `default` means *all* models).

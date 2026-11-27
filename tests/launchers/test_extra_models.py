@@ -224,6 +224,38 @@ def test_flag_counts_as_a_knob():
     assert "args.extra_models is not None" in line
 
 
+class _Untouchable:
+    """Any use means the launcher acted before it validated."""
+
+    def __getattr__(self, name):
+        raise AssertionError("remote action before validation: " + name)
+
+
+@pytest.mark.parametrize("module, func", [("colab_launch", "launch"), ("colab_launch", "restart"), ("kaggle_launch", "launch")])
+def test_config_typo_fails_before_any_remote_action(module, func):
+    mod = __import__(module)
+    args = mod.build_parser().parse_args([])
+    with pytest.raises(mod.LaunchError) as caught:
+        getattr(mod, func)(args, {"VISOSWAP_EXTRA_MODELS": "GFPGAN"}, _Untouchable(), _Untouchable(), _Untouchable())
+    assert "GFPGAN" in str(caught.value)
+
+
+@pytest.mark.parametrize("value", [GFPGAN, "none"])
+def test_kaggle_flag_on_a_running_kernel_asks_for_restart(monkeypatch, value):
+    import kaggle_launch as K
+
+    monkeypatch.setattr(K, "provision", lambda *a, **k: ({"TUNNEL_MODE": "named"}, None))
+    monkeypatch.setattr(K, "load_api_key", lambda *a: None)
+    monkeypatch.setattr(K, "url_for", lambda cfg: "https://kernel.invalid")
+    rep = SimpleNamespace(step=lambda *a: None, log=lambda *a: None)
+    kg = SimpleNamespace(slug="u/k", state=lambda: "RUNNING", health=lambda url: True)
+    args = K.build_parser().parse_args(["--extra-models", value])
+    with pytest.raises(K.LaunchError) as caught:
+        K.launch(args, {}, rep, rep, kg)
+    assert "already running" in str(caught.value)
+    assert "--extra-models" in str(caught.value)
+
+
 def test_restart_runs_the_models_step_first():
     source = (L / "colab_launch.py").read_text()
     body = source.split("def restart(")[1].split("\ndef ")[0]

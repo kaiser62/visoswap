@@ -31,7 +31,7 @@ import vs_cf  # noqa: E402
 import vs_preflight as P  # noqa: E402
 import vs_remote  # noqa: E402
 from vs_common import (REPO_URL, read_relay_line, LaunchError, Reporter, Runner, common_args, confirm, fetch_health,  # noqa: E402
-                       can_prompt, load_config, make_reporter, normalize_host, save_url, target_lock, visoswap_home, wait_until, write_private)
+                       can_prompt, check_config_extra_models, load_config, make_reporter, normalize_host, save_url, target_lock, visoswap_home, wait_until, write_private)
 
 REMOTE_REPO = "/content/visoswap"
 REMOTE_TOKEN = "/content/cf_token"
@@ -453,6 +453,7 @@ def store_cf_token(args, cfg, rep) -> dict:
 
 
 def launch(args, cfg, rep, run, co: Colab, fetch=vs_cf.default_fetch, home=None) -> dict:
+    check_config_extra_models(args, cfg)
     rep.step("Preflight: Colab CLI, login, compute units")
     preflight(args, cfg, rep, run, co)
     rep.step("Provision: session")
@@ -548,6 +549,7 @@ def status(args, cfg, rep, run, co: Colab) -> dict:
 
 
 def restart(args, cfg, rep, run, co: Colab) -> dict:
+    check_config_extra_models(args, cfg)
     d = choose_session(co.sessions(), co.session)
     if d["action"] != "reuse":
         raise LaunchError("no Colab session to restart processes in", "run the launcher without --restart to create one")
